@@ -1,0 +1,29 @@
+K 25
+svn:wc:ra_dav:version-url
+V 54
+/15411-f13/!svn/ver/22/public/lab1/haskell/src/Compile
+END
+Parse.hs
+K 25
+svn:wc:ra_dav:version-url
+V 63
+/15411-f13/!svn/ver/22/public/lab1/haskell/src/Compile/Parse.hs
+END
+CodeGen.hs
+K 25
+svn:wc:ra_dav:version-url
+V 65
+/15411-f13/!svn/ver/22/public/lab1/haskell/src/Compile/CodeGen.hs
+END
+Types.hs
+K 25
+svn:wc:ra_dav:version-url
+V 63
+/15411-f13/!svn/ver/22/public/lab1/haskell/src/Compile/Types.hs
+END
+CheckAST.hs
+K 25
+svn:wc:ra_dav:version-url
+V 66
+/15411-f13/!svn/ver/22/public/lab1/haskell/src/Compile/CheckAST.hs
+END

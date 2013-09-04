@@ -1,0 +1,59 @@
+K 25
+svn:wc:ra_dav:version-url
+V 76
+/15411-f13/!svn/ver/22/public/lab1/haskell/src/Text/ParserCombinators/Parsec
+END
+Prim.hs
+K 25
+svn:wc:ra_dav:version-url
+V 84
+/15411-f13/!svn/ver/22/public/lab1/haskell/src/Text/ParserCombinators/Parsec/Prim.hs
+END
+Error.hs
+K 25
+svn:wc:ra_dav:version-url
+V 85
+/15411-f13/!svn/ver/22/public/lab1/haskell/src/Text/ParserCombinators/Parsec/Error.hs
+END
+Char.hs
+K 25
+svn:wc:ra_dav:version-url
+V 84
+/15411-f13/!svn/ver/22/public/lab1/haskell/src/Text/ParserCombinators/Parsec/Char.hs
+END
+Combinator.hs
+K 25
+svn:wc:ra_dav:version-url
+V 90
+/15411-f13/!svn/ver/22/public/lab1/haskell/src/Text/ParserCombinators/Parsec/Combinator.hs
+END
+Expr.hs
+K 25
+svn:wc:ra_dav:version-url
+V 84
+/15411-f13/!svn/ver/22/public/lab1/haskell/src/Text/ParserCombinators/Parsec/Expr.hs
+END
+Token.hs
+K 25
+svn:wc:ra_dav:version-url
+V 85
+/15411-f13/!svn/ver/22/public/lab1/haskell/src/Text/ParserCombinators/Parsec/Token.hs
+END
+Pos.hs
+K 25
+svn:wc:ra_dav:version-url
+V 83
+/15411-f13/!svn/ver/22/public/lab1/haskell/src/Text/ParserCombinators/Parsec/Pos.hs
+END
+Language.hs
+K 25
+svn:wc:ra_dav:version-url
+V 88
+/15411-f13/!svn/ver/22/public/lab1/haskell/src/Text/ParserCombinators/Parsec/Language.hs
+END
+Perm.hs
+K 25
+svn:wc:ra_dav:version-url
+V 84
+/15411-f13/!svn/ver/22/public/lab1/haskell/src/Text/ParserCombinators/Parsec/Perm.hs
+END

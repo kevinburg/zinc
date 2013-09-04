@@ -1,0 +1,29 @@
+K 25
+svn:wc:ra_dav:version-url
+V 60
+/15411-f13/!svn/ver/22/public/lab1/haskell/src/Compile/Types
+END
+AST.hs
+K 25
+svn:wc:ra_dav:version-url
+V 67
+/15411-f13/!svn/ver/22/public/lab1/haskell/src/Compile/Types/AST.hs
+END
+Job.hs
+K 25
+svn:wc:ra_dav:version-url
+V 67
+/15411-f13/!svn/ver/22/public/lab1/haskell/src/Compile/Types/Job.hs
+END
+Ops.hs
+K 25
+svn:wc:ra_dav:version-url
+V 67
+/15411-f13/!svn/ver/22/public/lab1/haskell/src/Compile/Types/Ops.hs
+END
+AbstractAssembly.hs
+K 25
+svn:wc:ra_dav:version-url
+V 80
+/15411-f13/!svn/ver/22/public/lab1/haskell/src/Compile/Types/AbstractAssembly.hs
+END
