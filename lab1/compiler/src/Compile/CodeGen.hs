@@ -9,12 +9,14 @@ module Compile.CodeGen where
 import Compile.Types
 import qualified Data.Map as Map
 
+import Debug.Trace
+
 type Alloc = (Map.Map String Int, Int)
 
 codeGen :: AST -> [AAsm]
-codeGen (Block decls stmts _) = let
+codeGen (Block decls stmts pos) = let
   temps = Map.fromList $ zip (map declName decls) [0..]
-  in concatMap (genStmt (temps, (length decls))) stmts
+  in trace (show (Block decls stmts pos)) (concatMap (genStmt (temps, (length decls))) stmts)
 
 genStmt :: Alloc -> Stmt -> [AAsm]
 genStmt alloc (Return e _) = genExp alloc e (AReg 0)

@@ -29,22 +29,26 @@ type AsgnOp = Maybe Op
 
 instance Show AST where
   show (Block decls stmts _) =
-    "int main () {\n" ++ (unlines $ (map show decls)
-                                    ++ [""]
-                                    ++ (map show stmts)) ++ "}\n"
+    "Block\n" ++
+    "  [Decl]\n" ++    
+    (unlines (map (\x -> "    " ++ show x) decls)) ++
+    "  [Stmt]\n" ++
+    (unlines (map (\x -> "    " ++ show x) stmts))
 
 instance Show Decl where
-  show (Decl i _) = "\tint " ++ i ++ ";"
+  show (Decl i _) = "Decl " ++ i ++ " _"
 
 instance Show Stmt where
-  show (Return e _) = "\treturn " ++ (show e) ++ ";"
-  show (Asgn i op e _) = "\t" ++ i ++ " " ++ (mShow op) ++ "=" ++ " " ++ (show e) ++ ";"
+  show (Return e _) = "Return " ++ "(" ++ (show e) ++ ") _"
+  show (Asgn i op e _) = "Asgn " ++ i ++ " " ++ (mShow op) ++ "=" ++ " "
+                         ++ "(" ++ (show e) ++ ") _"
 
 instance Show Expr where
-  show (ExpInt n _) = show n
-  show (ExpBinOp op e1 e2 _) = "(" ++ (show e1) ++ ") " ++ (show op) ++ " (" ++ (show e2) ++ ")"
-  show (Ident i _) = i
-  show (ExpUnOp op e _) = (show op) ++ "(" ++ (show e) ++ ")"
-
+  show (ExpInt n _) = "ExpInt " ++ show n ++ " _"
+  show (ExpBinOp op e1 e2 _) = "ExpBinOp " ++ (show op) ++ "(" ++ (show e1)
+                               ++ ") (" ++ (show e2) ++ ") _"
+  show (Ident i _) = "Ident " ++ i ++ " _"
+  show (ExpUnOp op e _) = "ExpUnOp " ++ (show op) ++ "(" ++ (show e) ++ ") _"
+  
 mShow Nothing = ""
 mShow (Just x) = show x
