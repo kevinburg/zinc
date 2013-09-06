@@ -16,7 +16,7 @@ import Compile.Types
 
 import LiftIOE
 
-import Text.ParserCombinators.Parsec
+import Text.ParserCombinators.Parsec hiding (try)
 import Control.Monad.Identity                 -- For our custom Language Definition
 import Text.Parsec hiding (parse)             -- Parser Combinators
 import Text.Parsec.Expr                       -- Expression Parser Generator
@@ -42,41 +42,38 @@ astParser = do
   parens $ return ()
   braces (do
    pos   <- getPosition
-   decls <- many decl
    stmts <- many stmt
-   return $ Block decls stmts pos)
+   return $ Block stmts pos)
    <?> "block"
 
-decl :: C0Parser Decl
-decl = (Text.Parsec.try (do
-   pos   <- getPosition
-   reserved "int"
-   ident <- identifier
-   semi
-   return $ Decl ident pos)) <|>
-   (do pos <- getPosition
-       reserved "int"
-       ident <- identifier
-       op <- asnOp
-       e <- expr
-       semi
-       return $ DeclAsgn ident pos e)
-   <?> "declaration"
-
 stmt :: C0Parser Stmt
-stmt = (do
+stmt = try (do
    pos  <- getPosition
    dest <- identifier
    op   <- asnOp
    e    <- expr
    semi
    return $ Asgn dest op e pos)
-   <|>
+   <|> try
    (do pos <- getPosition
        reserved "return"
        e <- expr
        semi
        return $ Return e pos)
+   <|> try
+   (do pos <- getPosition
+       reserved "int"
+       ident <- identifier
+       semi
+       return $ Decl ident Nothing pos)
+   <|>
+   (do pos <- getPosition
+       reserved "int"
+       ident <- identifier
+       op <- asnOp
+       e <- expr
+       semi
+       return $ Decl ident (Just e) pos)
    <?> "statement"
 
 asnOp :: C0Parser (Maybe Op)
