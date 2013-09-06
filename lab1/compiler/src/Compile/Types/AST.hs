@@ -10,15 +10,16 @@ import Text.ParserCombinators.Parsec.Pos (SourcePos)
 
 import Compile.Types.Ops
 
-data AST = Block [Decl] [Stmt] SourcePos
-data Decl = Decl {declName :: String, declPos :: SourcePos}
-data Stmt = Asgn String AsgnOp Expr SourcePos 
+data AST = Block [Stmt] SourcePos
+data Stmt = Decl String BindVal SourcePos
+          | Asgn String AsgnOp Expr SourcePos 
           | Return Expr SourcePos
 data Expr = ExpInt Integer SourcePos
           | Ident String SourcePos
           | ExpBinOp Op Expr Expr SourcePos
           | ExpUnOp Op Expr SourcePos
 type AsgnOp = Maybe Op
+type BindVal = Maybe Expr
 
 
 -- Note to the student: You will probably want to write a new pretty printer
@@ -28,23 +29,24 @@ type AsgnOp = Maybe Op
 -- back to the deriving Show instances.
 
 instance Show AST where
-  show (Block decls stmts _) =
-    "int main () {\n" ++ (unlines $ (map show decls)
-                                    ++ [""]
-                                    ++ (map show stmts)) ++ "}\n"
+  show (Block stmts _) =
+    "Block\n" ++
+    "  [Stmt]\n" ++
+    (unlines (map (\x -> "    " ++ show x) stmts))
 
-instance Show Decl where
-  show (Decl i _) = "\tint " ++ i ++ ";"
 
 instance Show Stmt where
-  show (Return e _) = "\treturn " ++ (show e) ++ ";"
-  show (Asgn i op e _) = "\t" ++ i ++ " " ++ (mShow op) ++ "=" ++ " " ++ (show e) ++ ";"
+  show (Return e _) = "Return " ++ "(" ++ (show e) ++ ") _"
+  show (Asgn  i op e _) = "Asgn " ++ i ++ " " ++ (mShow op) ++ "=" ++ " "
+                         ++ "(" ++ (show e) ++ ") _"
+  show (Decl i e _) = "Decl " ++ i ++ " = (" ++ (mShow e) ++ ") _"
 
 instance Show Expr where
-  show (ExpInt n _) = show n
-  show (ExpBinOp op e1 e2 _) = "(" ++ (show e1) ++ ") " ++ (show op) ++ " (" ++ (show e2) ++ ")"
-  show (Ident i _) = i
-  show (ExpUnOp op e _) = (show op) ++ "(" ++ (show e) ++ ")"
-
+  show (ExpInt n _) = "ExpInt " ++ show n ++ " _"
+  show (ExpBinOp op e1 e2 _) = "ExpBinOp " ++ (show op) ++ " (" ++ (show e1)
+                               ++ ") (" ++ (show e2) ++ ") _"
+  show (Ident i _) = "Ident " ++ i ++ " _"
+  show (ExpUnOp op e _) = "ExpUnOp " ++ (show op) ++ " (" ++ (show e) ++ ") _"
+  
 mShow Nothing = ""
 mShow (Just x) = show x

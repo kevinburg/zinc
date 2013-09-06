@@ -10,6 +10,8 @@ import System.Environment
 import System.IO
 import System.Exit
 
+import Debug.Trace
+
 getDefaults "c0c" = defaultJob
 getDefaults "l1c" = defaultJob {jobOutFormat = Asm}
 getDefaults _ = defaultJob

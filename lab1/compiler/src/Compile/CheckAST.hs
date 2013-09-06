@@ -31,13 +31,23 @@ assertMsgE :: String -> Bool -> Either String ()
 assertMsgE s True  = Right ()
 assertMsgE s False = Left s
 
+declName (Decl name _ _) = name
+
+getDecls y = filter pred y
+             where
+               pred = (\x -> case x of
+                          (Decl _ _ _) -> True
+                          _ -> False
+                      )
+
 checkAST :: AST -> Either String ()
-checkAST ast@(Block decls stmts _) = do
-  let variables = Set.fromList $ map declName decls
+checkAST ast@(Block stmts _) = do
+  let decls = getDecls stmts
+      variables = Set.fromList $ map declName decls
   assertMsgE (findDuplicate decls)
              $ (length decls) == (Set.size variables)
   rets <- fmap or $ runErrorState (mapM checkStmt stmts) $
-                                  (variables, Set.empty)
+                                  (Set.empty, Set.empty)
   assertMsgE "main does not return" rets
 
 checkStmt (Return e _) = do
@@ -53,6 +63,15 @@ checkStmt (Asgn i m e p) = do
   checkExpr e
   put (vars, Set.insert i defined)
   return False
+checkStmt (Decl i Nothing _) = do
+  (vars, defined) <- get
+  put (Set.insert i vars, defined)
+  return False
+checkStmt (Decl i (Just e) _) = do
+  (vars, defined) <- get
+  checkExpr e
+  put (Set.insert i vars, Set.insert i defined)
+  return False
 
 checkExpr (ExpInt n p) =
   assertMsg ((show n) ++ " too large at " ++ (show p))
@@ -66,7 +85,7 @@ checkExpr (ExpUnOp _ e _) = checkExpr e
 
 findDuplicate xs = findDuplicate' xs Set.empty
   where findDuplicate' [] _ = error "no duplicate"
-        findDuplicate' (Decl x pos : xs) s =
+        findDuplicate' (Decl x _ pos : xs) s =
           if Set.member x s
             then x ++ " re-declared at " ++ (show pos)
             else findDuplicate' xs (Set.insert x s)
