@@ -12,6 +12,7 @@ import Compile.Types.Ops
 
 data AST = Block [Decl] [Stmt] SourcePos
 data Decl = Decl {declName :: String, declPos :: SourcePos}
+          | DeclAsgn {declName :: String, declPos :: SourcePos, bindVal :: Expr}
 data Stmt = Asgn String AsgnOp Expr SourcePos 
           | Return Expr SourcePos
 data Expr = ExpInt Integer SourcePos
@@ -37,6 +38,7 @@ instance Show AST where
 
 instance Show Decl where
   show (Decl i _) = "Decl " ++ i ++ " _"
+  show (DeclAsgn i _ e) = "DeclAsgn " ++ i ++ " (" ++ (show e) ++ ") _"
 
 instance Show Stmt where
   show (Return e _) = "Return " ++ "(" ++ (show e) ++ ") _"

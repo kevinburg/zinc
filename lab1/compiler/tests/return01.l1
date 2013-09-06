@@ -1,6 +1,6 @@
 //test return 1
 int main() {
-    int a;
+    int a = 1;
     a = 1;
     return a;
 }

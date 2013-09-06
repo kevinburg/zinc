@@ -23,6 +23,8 @@ import Text.Parsec.Expr                       -- Expression Parser Generator
 import Text.Parsec.Token (GenLanguageDef(..)) -- Language Definition Structure
 import qualified Text.Parsec.Token as Tok
 
+import Debug.Trace
+
 parseAST :: FilePath -> ErrorT String IO AST
 parseAST file = do
   code <- liftIOE $ BS.readFile file
@@ -46,12 +48,19 @@ astParser = do
    <?> "block"
 
 decl :: C0Parser Decl
-decl = do
+decl = (Text.Parsec.try (do
    pos   <- getPosition
    reserved "int"
    ident <- identifier
    semi
-   return $ Decl ident pos
+   return $ Decl ident pos)) <|>
+   (do pos <- getPosition
+       reserved "int"
+       ident <- identifier
+       op <- asnOp
+       e <- expr
+       semi
+       return $ DeclAsgn ident pos e)
    <?> "declaration"
 
 stmt :: C0Parser Stmt
