@@ -51,7 +51,7 @@ my $TESTS1_N = 10;      # first n failing suite 1 tests...
 my $TESTS1_PTS = 2;     # ...are worth this many points each
 my $TESTS0_MIN = 7;     # number of error cases in tests0
 my $TESTS1_MIN = 0;     # number of error cases in tests1
-my $TESTS2_MIN = 0;     # number of error cases in tests2
+my $TESTS2_MIN = 211;     # number of error cases in tests2
 
 sub tests_grade {
     my $tried = shift;
