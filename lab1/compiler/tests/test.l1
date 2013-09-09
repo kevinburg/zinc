@@ -1,6 +1,6 @@
-//test return 1
 int main() {
     int x = 1;
     int y = 1;
-    return x + y;
+    int z = 2;
+    return x;
 }

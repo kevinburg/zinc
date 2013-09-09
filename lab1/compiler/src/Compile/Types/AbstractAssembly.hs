@@ -16,7 +16,7 @@ data AAsm = AAsm {aAssign :: [ALoc]
           | AComment String deriving Show
 
 data AVal = ALoc ALoc
-          | AImm Int deriving Show
+          | AImm Int deriving (Show, Eq, Ord)
 
 data ALoc = AReg Int
-          | ATemp Int deriving Show
+          | ATemp Int deriving (Show, Eq, Ord)
