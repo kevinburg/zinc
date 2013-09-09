@@ -7,7 +7,7 @@
 module Compile.CodeGen where
 
 import Compile.Types
-import Compile.RegisterAlloc
+import Compile.RegAlloc
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 
@@ -29,11 +29,10 @@ codeGen (Block stmts pos) = let
   decls = getDecls stmts
   temps = Map.fromList $ zip (map declName decls) [0..]
   aasm = concatMap (genStmt (temps, (length decls))) stmts
-  -- compute interference graph
-  inter = Set.filter (\(x,y) -> x /= y) $ 
-          genInter (reverse aasm) Set.empty Set.empty
-  -- move register allocation to its own module??
-  in trace (show inter) aasm
+  -- compute register mapping
+  regMap = allocateRegisters aasm
+  aasm' = map (translate regMap) aasm
+  in trace (show regMap) aasm'
 
 -- aasm generating functions
 genStmt :: Alloc -> Stmt -> [AAsm]
@@ -62,3 +61,20 @@ genExp (a,n) (ExpUnOp op e _) l = let
   i1 = genExp (a, n + 1) e (ATemp n)
   c  = [AAsm [l] op [ALoc $ ATemp n]]
   in i1 ++ c
+
+-- begin 'temp -> register' translation
+translate regMap (AAsm {aAssign = [dest], aOp = op, aArgs = srcs}) =
+  let
+    ALoc dest' = regFind regMap (ALoc dest)
+  in
+    AAsm {aAssign = [dest'], aOp = op, aArgs = map (regFind regMap) srcs}
+translate regMap (ACtrl Ret (ALoc loc)) =
+  ACtrl Ret (regFind regMap (ALoc loc))
+translate regMap stmt = stmt
+
+regFind :: Map.Map AVal AVal -> AVal -> AVal
+regFind regMap (AImm i) = AImm i
+regFind regMap aloc = 
+  case Map.lookup aloc regMap of
+    Just val -> val
+    Nothing -> aloc
