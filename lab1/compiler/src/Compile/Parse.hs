@@ -30,12 +30,19 @@ parseAST file = do
   code <- liftIOE $ BS.readFile file
   case parse astParser file code of
     Left e  -> throwError (show e)
-    Right a -> return a
+    Right a -> trace (show a) (return a)
 
 type C0Parser = Parsec ByteString ()
 
 astParser :: C0Parser AST
 astParser = do
+  b <- block
+  eof
+  return b
+  <?> "ast"
+  
+block :: C0Parser AST
+block = do
   whiteSpace
   reserved "int"
   reserved "main"

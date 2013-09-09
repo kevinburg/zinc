@@ -26,6 +26,9 @@ import LiftIOE
 
 writer file obj = liftIOE $ writeFile file $ show obj
 
+sourceWriter file obj = liftIOE $ writeFile file $ 
+                        foldr (\x -> \y -> (show x) ++ "\n" ++ y) "" obj
+
 compile :: Job -> IO ()
 compile job = do
   res <- runErrorT $ do
@@ -35,7 +38,7 @@ compile job = do
       then writer (jobOut job) ast
       else let asm = codeGen ast in
              if jobOutFormat job == Asm
-                then writer (jobOut job) asm
+                then sourceWriter (jobOut job) asm
                 else do writer asmFile ast
                         let o = if jobOutFormat job == Obj then "-c" else ""
                         gcc o asmFile (jobOut job)
