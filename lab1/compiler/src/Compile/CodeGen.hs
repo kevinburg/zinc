@@ -8,6 +8,7 @@ module Compile.CodeGen where
 
 import Compile.Types
 import qualified Data.Map as Map
+import qualified Data.Set as Set
 
 import Debug.Trace
 
@@ -22,14 +23,50 @@ getDecls y = filter pred y
                           _ -> False
                       )
 
+addNewInter (ALoc loc) s =
+  Set.map (\x -> (ALoc loc, x)) s
+addNewInter (AImm _) s = 
+  Set.empty
+
+isTemp (ALoc _) = True
+isTemp _ = False
+
+{- Generates a list of temp variables/registers that interfere.
+   Will only work for L1 programs.
+-}
+genInter [] _ inter = inter
+genInter (stmt : aasm) l inter =
+  case stmt of
+    ACtrl Ret loc -> 
+      let
+        newInter = addNewInter loc l
+        l' = Set.insert loc l
+        inter' = Set.union inter newInter
+      in genInter aasm l' inter'
+    -- only have single dest instructions
+    AAsm {aAssign = [dest], aOp = _, aArgs = srcs} ->
+      let
+        l' = Set.delete (ALoc dest) l
+        newInters = addNewInter (ALoc dest) l'
+        inter' = Set.union inter newInters
+        live = Set.union (Set.fromList (filter isTemp srcs))  l'
+      in genInter aasm live inter'
+
 codeGen :: AST -> [AAsm]
 codeGen (Block stmts pos) = let
   decls = getDecls stmts
   temps = Map.fromList $ zip (map declName decls) [0..]
-  in trace (show (Block stmts pos)) (concatMap (genStmt (temps, (length decls))) stmts)
+  aasm = concatMap (genStmt (temps, (length decls))) stmts
+  -- compute interference graph
+  inter = Set.filter (\(x,y) -> x /= y) $ 
+          genInter (reverse aasm) Set.empty Set.empty
+  -- move register allocation to its own module??
+  in trace (show inter) aasm
 
+-- aasm generating functions
 genStmt :: Alloc -> Stmt -> [AAsm]
-genStmt alloc (Return e _) = genExp alloc e (AReg 0)
+genStmt alloc (Return e _) = (genExp alloc e (AReg 0)) ++ 
+                              [ACtrl Ret (ALoc (AReg 0))]
 genStmt (a,n) (Asgn v o e s) = let
   l = ATemp $ a Map.! v
   e' = case o of
@@ -40,7 +77,6 @@ genStmt (a,n) (Decl i Nothing p) = []
 genStmt (a,n) (Decl i (Just e) p) = let
   l = ATemp $ a Map.! i
   in genExp (a,n) e l
-
 
 genExp :: Alloc -> Expr -> ALoc -> [AAsm]
 genExp _ (ExpInt n _) l = [AAsm [l] Nop [AImm $ fromIntegral n]]
