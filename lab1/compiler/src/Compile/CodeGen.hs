@@ -7,6 +7,7 @@
 module Compile.CodeGen where
 
 import Compile.Types
+import Compile.RegisterAlloc
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 
@@ -22,35 +23,6 @@ getDecls y = filter pred y
                           (Decl _ _ _) -> True
                           _ -> False
                       )
-
-addNewInter (ALoc loc) s =
-  Set.map (\x -> (ALoc loc, x)) s
-addNewInter (AImm _) s = 
-  Set.empty
-
-isTemp (ALoc _) = True
-isTemp _ = False
-
-{- Generates a list of temp variables/registers that interfere.
-   Will only work for L1 programs.
--}
-genInter [] _ inter = inter
-genInter (stmt : aasm) l inter =
-  case stmt of
-    ACtrl Ret loc -> 
-      let
-        newInter = addNewInter loc l
-        l' = Set.insert loc l
-        inter' = Set.union inter newInter
-      in genInter aasm l' inter'
-    -- only have single dest instructions
-    AAsm {aAssign = [dest], aOp = _, aArgs = srcs} ->
-      let
-        l' = Set.delete (ALoc dest) l
-        newInters = addNewInter (ALoc dest) l'
-        inter' = Set.union inter newInters
-        live = Set.union (Set.fromList (filter isTemp srcs))  l'
-      in genInter aasm live inter'
 
 codeGen :: AST -> [AAsm]
 codeGen (Block stmts pos) = let
