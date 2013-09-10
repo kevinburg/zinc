@@ -24,7 +24,7 @@ getDecls y = filter pred y
                           _ -> False
                       )
 
-codeGen :: AST -> [AAsm]
+codeGen :: AST -> [Asm]
 codeGen (Block stmts pos) = let
   decls = getDecls stmts
   temps = Map.fromList $ zip (map declName decls) [0..]
@@ -63,18 +63,14 @@ genExp (a,n) (ExpUnOp op e _) l = let
   in i1 ++ c
 
 -- begin 'temp -> register' translation
-translate regMap (AAsm {aAssign = [dest], aOp = op, aArgs = srcs}) =
-  let
-    ALoc dest' = regFind regMap (ALoc dest)
-  in
-    AAsm {aAssign = [dest'], aOp = op, aArgs = map (regFind regMap) srcs}
+translate regMap (AAsm {aAssign = [dest], aOp = Nop, aArgs = [src]}) =
+  Mov (regFind regMap src) (regFind regMap (ALoc dest))
 translate regMap (ACtrl Ret (ALoc loc)) =
-  ACtrl Ret (regFind regMap (ALoc loc))
-translate regMap stmt = stmt
+  AsmRet
 
-regFind :: Map.Map AVal AVal -> AVal -> AVal
-regFind regMap (AImm i) = AImm i
+regFind :: Map.Map AVal Arg -> AVal -> Arg
+regFind regMap (AImm i) = Val i
 regFind regMap aloc = 
   case Map.lookup aloc regMap of
-    Just val -> val
-    Nothing -> aloc
+    Just (reg) -> reg
+    Nothing -> Reg (ATemp 99)

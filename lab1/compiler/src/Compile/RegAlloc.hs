@@ -47,5 +47,5 @@ genInter (stmt : aasm) l inter vars =
    (temp -> Register temp)
 -}
 genRegMap graph vars = 
-  Set.foldr (\(ALoc x) -> \set -> Map.insert (ALoc x) (ALoc (Register x)) set)
+  Set.foldr (\(ALoc x) -> \set -> Map.insert (ALoc x) (Reg x) set)
   Map.empty vars
