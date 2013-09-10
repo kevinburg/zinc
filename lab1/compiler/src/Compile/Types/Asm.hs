@@ -5,6 +5,8 @@ import Text.ParserCombinators.Parsec.Pos (SourcePos)
 import Compile.Types.AbstractAssembly
 
 data Asm = AsmRet
-         | Mov Arg Arg deriving Show
+         | Movl Arg Arg 
+         | Addl Arg Arg 
+         | Subl Arg Arg deriving Show
 data Arg = Reg ALoc
          | Val Int deriving Show

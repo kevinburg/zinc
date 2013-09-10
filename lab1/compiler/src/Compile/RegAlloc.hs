@@ -12,7 +12,7 @@ allocateRegisters aasm =
     (res, vars) = genInter (reverse aasm) Set.empty Set.empty Set.empty
     res' = Set.filter (\(x,y) -> x/= y) res
     regMap = genRegMap res' vars
-  in trace (show (res', vars)) regMap
+  in trace (show regMap) regMap
 
 -- Begin interference graph generation code
 

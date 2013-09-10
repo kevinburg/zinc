@@ -31,8 +31,8 @@ codeGen (Block stmts pos) = let
   aasm = concatMap (genStmt (temps, (length decls))) stmts
   -- compute register mapping
   regMap = allocateRegisters aasm
-  aasm' = map (translate regMap) aasm
-  in trace (show regMap) aasm'
+  aasm' = concatMap (translate regMap) aasm
+  in aasm'
 
 -- aasm generating functions
 genStmt :: Alloc -> Stmt -> [AAsm]
@@ -64,9 +64,27 @@ genExp (a,n) (ExpUnOp op e _) l = let
 
 -- begin 'temp -> register' translation
 translate regMap (AAsm {aAssign = [dest], aOp = Nop, aArgs = [src]}) =
-  Mov (regFind regMap src) (regFind regMap (ALoc dest))
+  [Movl (regFind regMap src) (regFind regMap (ALoc dest))]
+translate regMap (AAsm {aAssign = [dest], aOp = Add, aArgs = [src1, src2]}) =
+  let
+    dest' = regFind regMap (ALoc dest)
+  in
+    [Movl (regFind regMap src1) dest',
+     Addl (regFind regMap src2) dest']
+translate regMap (AAsm {aAssign = [dest], aOp = Sub, aArgs = [src1, src2]}) =
+  let
+    dest' = regFind regMap (ALoc dest)
+  in
+    [Movl (regFind regMap src1) dest',
+     Subl (regFind regMap src2) dest']
+translate regMap (AAsm {aAssign = [dest], aOp = Neg, aArgs = [src]}) =
+  let
+    dest' = regFind regMap (ALoc dest)
+  in
+    [Movl (Val 0) dest',
+     Subl (regFind regMap src) dest']
 translate regMap (ACtrl Ret (ALoc loc)) =
-  AsmRet
+  [AsmRet]
 
 regFind :: Map.Map AVal Arg -> AVal -> Arg
 regFind regMap (AImm i) = Val i

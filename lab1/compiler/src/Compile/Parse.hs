@@ -30,7 +30,7 @@ parseAST file = do
   code <- liftIOE $ BS.readFile file
   case parse astParser file code of
     Left e  -> throwError (show e)
-    Right a -> trace (show a) (return a)
+    Right a -> return a
 
 type C0Parser = Parsec ByteString ()
 
