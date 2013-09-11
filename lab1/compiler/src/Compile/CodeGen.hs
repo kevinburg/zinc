@@ -27,40 +27,46 @@ getDecls y = filter pred y
 codeGen :: AST -> [Asm]
 codeGen (Block stmts pos) = let
   decls = getDecls stmts
-  temps = Map.fromList $ zip (map declName decls) [0..]
-  aasm = concatMap (genStmt (temps, (length decls))) stmts
+  --temps = Map.fromList $ zip (map declName decls) [0..]
+  (aasm, _, _) = foldl (\acc -> \stmt -> genStmt acc stmt) 
+                 ([], Map.empty, 0) stmts
   -- compute register mapping
   regMap = allocateRegisters aasm
   aasm' = concatMap (translate regMap) aasm
   in aasm'
 
 -- aasm generating functions
-genStmt :: Alloc -> Stmt -> [AAsm]
-genStmt alloc (Return e _) = (genExp alloc e (AReg 0)) ++ 
-                              [ACtrl Ret (ALoc (AReg 0))]
-genStmt (a,n) (Asgn v o e s) = let
-  l = ATemp $ a Map.! v
+genStmt (stmts, temps, n) (Return e _) = let
+  (stmt, n') = genExp (temps, n) e (AReg 0)
+  in (stmts ++ stmt ++ [ACtrl Ret (ALoc (AReg 0))], temps, n')
+genStmt (stmts, temps, n) (Asgn v o e s) = let
+  l = ATemp n
+  temps' = Map.insert v n temps
   e' = case o of
-         Nothing -> e
-         Just op -> ExpBinOp op (Ident v s) e s
-  in genExp (a,n) e' l
-genStmt (a,n) (Decl i Nothing p) = []
-genStmt (a,n) (Decl i (Just e) p) = let
-  l = ATemp $ a Map.! i
-  in genExp (a,n) e l
+    Nothing -> e
+    Just op -> 
+      ExpBinOp op (Ident v s) e s
+  (stmt, n') = genExp (temps, n+1) e' l
+  in (stmts ++ stmt, temps', n')
+genStmt state (Decl _ Nothing _) = state
+genStmt (stmts, temps, n) (Decl v (Just e) _) = let
+  l = ATemp n
+  temps' = Map.insert v n temps
+  (stmt, n') = genExp (temps, n+1) e l
+  in (stmts ++ stmt, temps', n')
 
-genExp :: Alloc -> Expr -> ALoc -> [AAsm]
-genExp _ (ExpInt n _) l = [AAsm [l] Nop [AImm $ fromIntegral n]]
-genExp (a,_) (Ident s _) l = [AAsm [l] Nop [ALoc $ ATemp $ a Map.! s]]
+genExp :: Alloc -> Expr -> ALoc -> ([AAsm], Int)
+genExp (_,n) (ExpInt i _) l = ([AAsm [l] Nop [AImm $ fromIntegral i]], n)
+genExp (a,n) (Ident s _) l = ([AAsm [l] Nop [ALoc $ ATemp $ a Map.! s]], n+1)
 genExp (a,n) (ExpBinOp op e1 e2 _) l = let
-  i1 = genExp (a, n + 1) e1 (ATemp n)
-  i2 = genExp (a, n + 2) e2 (ATemp $ n + 1)
+  (i1, n') = genExp (a, n + 1) e1 (ATemp n)
+  (i2, n'') = genExp (a, n' + 1) e2 (ATemp $ n')
   c  = [AAsm [l] op [ALoc $ ATemp n, ALoc $ ATemp $ n + 1]]
-  in i1 ++ i2 ++ c
+  in (i1 ++ i2 ++ c, n'')
 genExp (a,n) (ExpUnOp op e _) l = let
-  i1 = genExp (a, n + 1) e (ATemp n)
+  (i1, n') = genExp (a, n + 1) e (ATemp n)
   c  = [AAsm [l] op [ALoc $ ATemp n]]
-  in i1 ++ c
+  in (i1 ++ c, n')
 
 -- begin 'temp -> register' translation
 translate regMap (AAsm {aAssign = [dest], aOp = Nop, aArgs = [src]}) =

@@ -45,7 +45,7 @@ instance Show Expr where
   show (ExpInt n _) = "ExpInt " ++ show n ++ " _"
   show (ExpBinOp op e1 e2 _) = "ExpBinOp " ++ (show op) ++ " (" ++ (show e1)
                                ++ ") (" ++ (show e2) ++ ") _"
-  show (Ident i _) = "Ident " ++ i ++ " _"
+  show (Ident s _) = "Ident " ++ s ++ " _"
   show (ExpUnOp op e _) = "ExpUnOp " ++ (show op) ++ " (" ++ (show e) ++ ") _"
   
 mShow Nothing = ""

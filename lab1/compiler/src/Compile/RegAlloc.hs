@@ -12,7 +12,8 @@ allocateRegisters aasm =
   let
     (res, vars) = genInter aasm
     regMap = genRegMap res vars
-  in trace (show res) regMap
+    prgm = foldr (\x -> \y -> show x ++ "\n" ++ y) "" aasm
+  in trace ("\n" ++ prgm ++ "\n\n" ++ show res ++ "\n\n" ++ show regMap) regMap
 
 addNewInter :: AVal -> Set.Set AVal -> Set.Set (AVal, AVal)
 addNewInter (ALoc loc) s =
