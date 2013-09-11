@@ -32,6 +32,7 @@ instance Show Asm where
   show (AsmRet) = "\tret"
   show (Movl e1 e2) = "\tmovl " ++ show e1 ++ ", " ++ show e2
   show (Addl e1 e2) = "\taddl " ++ show e1 ++ ", " ++ show e2
+  show (Subl e1 e2) = "\tsubl " ++ show e1 ++ ", " ++ show e2
   
 instance Show Arg where
   show (Reg reg) = "%" ++ show reg

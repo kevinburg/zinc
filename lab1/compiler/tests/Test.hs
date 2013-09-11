@@ -23,6 +23,7 @@ tests =
     ),
     testGroup "Cgc"
     (
-      hUnitTestToTests testBuildGraph
+      hUnitTestToTests testBuildGraph ++
+      hUnitTestToTests testColoring
     )
   ]

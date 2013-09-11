@@ -26,12 +26,13 @@ getDecls y = filter pred y
 
 codeGen :: AST -> [Asm]
 codeGen (Block stmts pos) = let
-  decls = getDecls stmts
+  s = foldr (\x -> \y -> (show x) ++ "\n" ++ y) "\n" stmts
   --temps = Map.fromList $ zip (map declName decls) [0..]
   (aasm, _, _) = foldl (\acc -> \stmt -> genStmt acc stmt) 
                  ([], Map.empty, 0) stmts
   -- compute register mapping
-  regMap = allocateRegisters aasm
+  prgm = foldr (\x -> \y -> (show x) ++ "\n" ++ y) "" aasm
+  regMap = trace s (trace prgm (allocateRegisters aasm))
   aasm' = concatMap (translate regMap) aasm
   in aasm'
 
@@ -57,11 +58,11 @@ genStmt (stmts, temps, n) (Decl v (Just e) _) = let
 
 genExp :: Alloc -> Expr -> ALoc -> ([AAsm], Int)
 genExp (_,n) (ExpInt i _) l = ([AAsm [l] Nop [AImm $ fromIntegral i]], n)
-genExp (a,n) (Ident s _) l = ([AAsm [l] Nop [ALoc $ ATemp $ a Map.! s]], n+1)
+genExp (a,n) (Ident s _) l = ([AAsm [l] Nop [ALoc $ ATemp $ a Map.! s]], n)
 genExp (a,n) (ExpBinOp op e1 e2 _) l = let
   (i1, n') = genExp (a, n + 1) e1 (ATemp n)
   (i2, n'') = genExp (a, n' + 1) e2 (ATemp $ n')
-  c  = [AAsm [l] op [ALoc $ ATemp n, ALoc $ ATemp $ n + 1]]
+  c  = [AAsm [l] op [ALoc $ ATemp n, ALoc $ ATemp $ n']]
   in (i1 ++ i2 ++ c, n'')
 genExp (a,n) (ExpUnOp op e _) l = let
   (i1, n') = genExp (a, n + 1) e (ATemp n)
@@ -74,15 +75,25 @@ translate regMap (AAsm {aAssign = [dest], aOp = Nop, aArgs = [src]}) =
 translate regMap (AAsm {aAssign = [dest], aOp = Add, aArgs = [src1, src2]}) =
   let
     dest' = regFind regMap (ALoc dest)
+    s = regFind regMap src1
   in
-    [Movl (regFind regMap src1) dest',
-     Addl (regFind regMap src2) dest']
+   if s == dest' then
+     [Movl s dest',
+      Addl (regFind regMap src2) dest']
+   else
+     [Movl (regFind regMap src2) dest',
+      Addl s dest']
 translate regMap (AAsm {aAssign = [dest], aOp = Sub, aArgs = [src1, src2]}) =
   let
     dest' = regFind regMap (ALoc dest)
+    s = regFind regMap src1
   in
-    [Movl (regFind regMap src1) dest',
-     Subl (regFind regMap src2) dest']
+   if s == dest' then
+     [Movl s dest',
+      Subl (regFind regMap src2) dest']
+   else
+     [Movl (regFind regMap src2) dest',
+      Subl s dest']
 translate regMap (AAsm {aAssign = [dest], aOp = Neg, aArgs = [src]}) =
   let
     dest' = regFind regMap (ALoc dest)
