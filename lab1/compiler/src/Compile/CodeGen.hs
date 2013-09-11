@@ -91,4 +91,4 @@ regFind regMap (AImm i) = Val i
 regFind regMap aloc = 
   case Map.lookup aloc regMap of
     Just (reg) -> reg
-    Nothing -> Reg (ATemp 99)
+    Nothing -> Reg EAX

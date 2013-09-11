@@ -3,6 +3,7 @@ module Compile.RegAlloc where
 import Compile.Types
 import qualified Data.Set as Set
 import qualified Data.Map as Map
+import qualified Compile.Cgc as Cgc
 
 import Debug.Trace
 
@@ -46,5 +47,7 @@ genInter' (stmt : aasm) l inter vars =
       in genInter' aasm live inter' (Set.insert (ALoc dest) vars)
 
 genRegMap graph vars = 
-  Set.foldr (\(ALoc x) -> \set -> Map.insert (ALoc x) (Reg x) set)
-  Map.empty vars
+  let
+    g = Cgc.buildGraph (Set.toList vars) (Set.toList graph)
+    m = Cgc.coloring g
+  in Map.map (\r -> Reg r) m
