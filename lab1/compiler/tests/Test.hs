@@ -15,7 +15,11 @@ tests =
   [
     testGroup "RegAlloc"
     [
-      testGroup "Migrated from HUnit" $ hUnitTestToTests testAddNewInter1,
-      testGroup "Migrated from HUnit" $ hUnitTestToTests testAddNewInter2
+      testGroup "Migrated from HUnit"  
+        (
+          hUnitTestToTests testAddNewInter1 ++
+          hUnitTestToTests testAddNewInter2 ++
+          hUnitTestToTests testGenInter1
+        )
     ]
   ]
