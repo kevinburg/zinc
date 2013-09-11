@@ -27,6 +27,7 @@ import LiftIOE
 writer file obj = liftIOE $ writeFile file $ show obj
 
 sourceWriter file obj = liftIOE $ writeFile file $ 
+                        "\t.globl  _c0_main\n" ++ "_c0_main:\n" ++
                         foldr (\x -> \y -> (show x) ++ "\n" ++ y) "" obj
 
 compile :: Job -> IO ()
