@@ -13,3 +13,12 @@ Executable c0c
   Build-Depends:  base, filepath, mtl, process, bytestring, syb, containers
   Extensions:     DeriveDataTypeable, RankNTypes, FlexibleInstances,
                   MultiParamTypeClasses, FlexibleContexts
+
+test-suite c0c-test
+  type:              exitcode-stdio-1.0
+  hs-source-dirs:    tests, src
+  main-is:           Test.hs
+  build-depends:     base,
+                     HUnit,
+                     test-framework,
+                     test-framework-hunit

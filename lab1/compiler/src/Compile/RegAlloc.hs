@@ -14,8 +14,7 @@ allocateRegisters aasm =
     regMap = genRegMap res' vars
   in trace (show regMap) regMap
 
--- Begin interference graph generation code
-
+addNewInter :: AVal -> Set.Set AVal -> Set.Set (AVal, AVal)
 addNewInter (ALoc loc) s =
   Set.map (\x -> (ALoc loc, x)) s
 addNewInter (AImm _) s =
@@ -41,11 +40,6 @@ genInter (stmt : aasm) l inter vars =
         live = Set.union (Set.fromList (filter isTemp srcs)) l'
       in genInter aasm live inter' (Set.insert (ALoc dest) vars)
 
--- End interference graph geenration code
-
-{- until the graph coloring code works, the mapping looks like 
-   (temp -> Register temp)
--}
 genRegMap graph vars = 
   Set.foldr (\(ALoc x) -> \set -> Map.insert (ALoc x) (Reg x) set)
   Map.empty vars
