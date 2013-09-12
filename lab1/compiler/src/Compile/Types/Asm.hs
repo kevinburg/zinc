@@ -10,7 +10,7 @@ data Asm = AsmRet
          | Subl Arg Arg
 
 data Arg = Reg Register
-         | Val Int
+         | Val Int deriving Eq
 
 data Register = EAX
               | EBX
@@ -26,7 +26,7 @@ data Register = EAX
               | R12
               | R13
               | R14
-              | R15
+              | R15 deriving Eq
 
 instance Show Asm where
   show (AsmRet) = "\tret"
