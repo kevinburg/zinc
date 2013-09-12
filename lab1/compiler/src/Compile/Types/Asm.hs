@@ -8,6 +8,8 @@ data Asm = AsmRet
          | Movl Arg Arg 
          | Addl Arg Arg 
          | Subl Arg Arg
+         | Imull Arg Arg
+         | Negl Arg
 
 data Arg = Reg Register
          | Val Int deriving Eq
@@ -33,6 +35,8 @@ instance Show Asm where
   show (Movl e1 e2) = "\tmovl " ++ show e1 ++ ", " ++ show e2
   show (Addl e1 e2) = "\taddl " ++ show e1 ++ ", " ++ show e2
   show (Subl e1 e2) = "\tsubl " ++ show e1 ++ ", " ++ show e2
+  show (Imull e1 e2) = "\timull " ++ show e1 ++ ", " ++ show e2
+  show (Negl e) = "\tnegl " ++ show e
   
 instance Show Arg where
   show (Reg reg) = "%" ++ show reg

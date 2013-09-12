@@ -94,12 +94,23 @@ translate regMap (AAsm {aAssign = [dest], aOp = Sub, aArgs = [src1, src2]}) =
    else
      [Movl (regFind regMap src2) dest',
       Subl s dest']
+translate regMap (AAsm {aAssign = [dest], aOp = Mul, aArgs = [src1, src2]}) =
+  let
+    dest' = regFind regMap (ALoc dest)
+    s = regFind regMap src1
+  in
+   if s == dest' then
+     [Movl s dest',
+      Imull (regFind regMap src2) dest']
+   else
+     [Movl (regFind regMap src2) dest',
+      Imull s dest']
 translate regMap (AAsm {aAssign = [dest], aOp = Neg, aArgs = [src]}) =
   let
     dest' = regFind regMap (ALoc dest)
   in
-    [Movl (Val 0) dest',
-     Subl (regFind regMap src) dest']
+    [Movl (regFind regMap src) dest',
+     Negl dest']
 translate regMap (ACtrl Ret (ALoc loc)) =
   [AsmRet]
 
