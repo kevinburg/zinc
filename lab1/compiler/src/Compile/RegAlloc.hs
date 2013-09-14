@@ -38,6 +38,24 @@ genInter' (stmt : aasm) l inter vars =
         newInter = Set.map (\x -> (loc, x)) l
         inter' = Set.union inter newInter
       in genInter' aasm l' inter' (Set.insert loc vars)
+    AAsm {aAssign = [dest], aOp = Div, aArgs = srcs} ->
+      let
+        l' = Set.insert (ALoc dest) l
+        newInter = Set.map (\x -> (ALoc dest, x)) l
+        inter' = Set.union inter newInter
+        live = Set.union (Set.fromList (filter isTemp srcs)) l'
+        inter'' = Set.union inter' 
+                  (Set.fromList [(a,b) | a <- Set.toList live, b <- [ALoc (AReg 0), ALoc (AReg 3)]])
+      in genInter' aasm live inter'' (Set.insert (ALoc dest) vars)
+    AAsm {aAssign = [dest], aOp = Mod, aArgs = srcs} ->
+      let
+        l' = Set.insert (ALoc dest) l
+        newInter = Set.map (\x -> (ALoc dest, x)) l
+        inter' = Set.union inter newInter
+        live = Set.union (Set.fromList (filter isTemp srcs)) l'
+        inter'' = Set.union inter' 
+                  (Set.fromList [(a,b) | a <- Set.toList live, b <- [ALoc (AReg 0), ALoc (AReg 3)]])
+      in genInter' aasm live inter'' (Set.insert (ALoc dest) vars)
     AAsm {aAssign = [dest], aOp = _, aArgs = srcs} ->
       let
         l' = Set.delete (ALoc dest) l

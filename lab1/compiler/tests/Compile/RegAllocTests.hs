@@ -29,6 +29,7 @@ testGenInter1 =
 
 testAllocate1 =
   "allocate1" ~: (Map.fromList [(ALoc (AReg 0), Reg EAX),
+                                (ALoc (AReg 3), Reg EDX),
                                 (ALoc (ATemp 0), Reg EAX),
                                 (ALoc (ATemp 1), Reg EBX)]) @=?
   allocateRegisters program1
