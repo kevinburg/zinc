@@ -6,6 +6,8 @@ import qualified Data.Heap as PQ
 
 import Compile.Types
 
+import Debug.Trace
+
 type Vertex = AVal
 type Edge = (Vertex, Vertex)
 type Graph = Map.Map Vertex [Vertex]
@@ -29,10 +31,8 @@ isnghbr g v1 v2 = v2 `elem` (nghbr g v1)
 seo :: Graph -> [Vertex]
 seo g = let verts = Map.keys g
             weights = PQ.fromAscList (map (\x -> (0,x)) verts) 
-            -- This register gets EAX
-            weights' = PQ.insert (9999, ALoc $ AReg 0) weights
         in
-          List.reverse (seo' g weights' [])
+          List.reverse (seo' g weights [])
 
 seo' :: Graph -> PQ.MaxHeap (Int, Vertex) -> [Vertex] -> [Vertex]
 seo' g weights l =
@@ -49,13 +49,17 @@ seo' g weights l =
 -- Vertex paired with Int, which represents color
 coloring :: Graph -> Map.Map Vertex Register
 coloring g = let m = Map.map (\x-> -1) g
-                 s = seo g
-                 res = color g m s
+                 m' = Map.insert (ALoc $ AReg 0) 0
+                      (Map.insert (ALoc $ AReg 3) 3 m)
+                 s = List.filter (\r -> case r of
+                                     ALoc (AReg _) -> False
+                                     _ -> True) (seo g)
+                 res = color g m' s
                  order = registerOrder ()
-             in Map.map (\v -> 
+             in trace (show res) (Map.map (\v -> 
                           let 
                             Just reg = Map.lookup v order
-                          in reg) res
+                          in reg) res)
 
 color :: Graph -> Map.Map Vertex Int -> [Vertex] -> Map.Map Vertex Int
 color g m [] = m
@@ -71,4 +75,4 @@ mex [] = 0
 mex l = List.minimum([0..((List.maximum l)+2)] List.\\ l)
 
 registerOrder () =
-  Map.fromList (zip [0..] [EAX,EBX,ECX,EDX,ESI,EDI,R9,R10])
+  Map.fromList (zip [0..] [EAX,EBX,ECX,EDX,ESI,EDI,R8D,R9D,R10D,R11D,R12D,R13D,R14D,R15D])

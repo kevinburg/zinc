@@ -23,6 +23,7 @@ graph1 = buildGraph [ALoc (ATemp 0), ALoc (ATemp 1), ALoc (AReg 0), ALoc (ATemp 
 testColoring :: Test
 testColoring =
   "testColoring" ~: (Map.fromList [(ALoc (AReg 0), EAX),
+                                   (ALoc (AReg 3), EDX),
                                    (ALoc (ATemp 0), EAX),
                                    (ALoc (ATemp 1), EBX),
                                    (ALoc (ATemp 2), EAX)]) @=?
