@@ -10,6 +10,7 @@ data Asm = AsmRet
          | Subl Arg Arg
          | Imull Arg Arg
          | Negl Arg
+         | Idivl Arg
 
 data Arg = Reg Register
          | Val Int deriving Eq
@@ -22,13 +23,14 @@ data Register = EAX
               | EDI
               | ESP
               | EBP
-              | R9
-              | R10
-              | R11
-              | R12
-              | R13
-              | R14
-              | R15 deriving Eq
+              | R8D
+              | R9D
+              | R10D
+              | R11D
+              | R12D
+              | R13D
+              | R14D
+              | R15D deriving Eq
 
 instance Show Asm where
   show (AsmRet) = "\tret"
@@ -37,6 +39,7 @@ instance Show Asm where
   show (Subl e1 e2) = "\tsubl " ++ show e1 ++ ", " ++ show e2
   show (Imull e1 e2) = "\timull " ++ show e1 ++ ", " ++ show e2
   show (Negl e) = "\tnegl " ++ show e
+  show (Idivl e) = "\tidivl " ++ show e
   
 instance Show Arg where
   show (Reg reg) = "%" ++ show reg
@@ -49,3 +52,11 @@ instance Show Register where
   show EDX = "edx"
   show ESI = "esi"
   show EDI = "edi"
+  show R8D = "r8d"
+  show R9D = "r9d"
+  show R10D = "r10d"
+  show R11D = "r11d"
+  show R12D = "r12d"
+  show R13D = "r13d"
+  show R14D = "r14d"
+  show R15D = "r15d"
