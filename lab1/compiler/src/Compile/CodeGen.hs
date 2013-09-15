@@ -32,7 +32,7 @@ codeGen (Block stmts pos) = let
                  ([], Map.empty, 0) stmts
   -- compute register mapping
   prgm = foldr (\x -> \y -> (show x) ++ "\n" ++ y) "" aasm
-  regMap = trace s (trace prgm (allocateRegisters aasm))
+  regMap = allocateRegisters aasm
   aasm' = concatMap (translate regMap) aasm
   in aasm'
 
@@ -86,14 +86,14 @@ translate regMap (AAsm {aAssign = [dest], aOp = Add, aArgs = [src1, src2]}) =
 translate regMap (AAsm {aAssign = [dest], aOp = Sub, aArgs = [src1, src2]}) =
   let
     dest' = regFind regMap (ALoc dest)
-    s = regFind regMap src1
+    s2 = regFind regMap src2
   in
-   if s == dest' then
-     [Movl s dest',
-      Subl (regFind regMap src2) dest']
+   if s2 == dest' then
+     [Negl s2,
+      Addl (regFind regMap src1) s2] 
    else
-     [Movl (regFind regMap src2) dest',
-      Subl s dest']
+     [Movl (regFind regMap src1) dest',
+      Subl s2 dest']
 translate regMap (AAsm {aAssign = [dest], aOp = Mul, aArgs = [src1, src2]}) =
   let
     dest' = regFind regMap (ALoc dest)

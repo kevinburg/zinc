@@ -56,7 +56,7 @@ coloring g = let m = Map.map (\x-> -1) g
                                      _ -> True) (seo g)
                  res = color g m' s
                  order = registerOrder ()
-             in trace (show res) (Map.map (\v -> 
+             in  (Map.map (\v -> 
                           let 
                             Just reg = Map.lookup v order
                           in reg) res)
