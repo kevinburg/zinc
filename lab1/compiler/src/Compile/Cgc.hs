@@ -74,9 +74,9 @@ mex :: [ Int ] -> Int
 mex [] = 0
 mex l = let m = List.minimum([0..((List.maximum l)+2)] List.\\ l)
         in
-         if m > (length(registerOrder())-1)
+         if m > (Map.size(registerOrder())-1)
          then m
-         else length(registerOrder())
+         else Map.size(registerOrder())
 
 -- Orders the registers in the order we want to use them (ESP, EBP for stack)
 registerOrder () =
