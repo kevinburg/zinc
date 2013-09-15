@@ -56,7 +56,7 @@ block = do
 stmt :: C0Parser Stmt
 stmt = try (do
    pos  <- getPosition
-   dest <- identifier
+   dest <- lvalue
    op   <- asnOp
    e    <- expr
    semi
@@ -76,7 +76,7 @@ stmt = try (do
    <|>
    (do pos <- getPosition
        reserved "int"
-       ident <- identifier
+       ident <- lvalue
        op <- asnOp
        e <- expr
        semi
@@ -112,6 +112,14 @@ term = do
        n <- natural
        return $ ExpInt n p)
    <?> "term"
+
+lvalue = do
+  parens lvalue
+  <|>
+  (do
+      i <- identifier
+      return i)
+  <?> "lvalue"
 
 c0Def :: GenLanguageDef ByteString () Identity
 c0Def = LanguageDef
