@@ -72,7 +72,12 @@ color g m s = let n = nghbr g (List.head s)
 --Finds the Minimally Excluded Element of a list
 mex :: [ Int ] -> Int
 mex [] = 0
-mex l = List.minimum([0..((List.maximum l)+2)] List.\\ l)
+mex l = let m = List.minimum([0..((List.maximum l)+2)] List.\\ l)
+        in
+         if m > (length(registerOrder())-1)
+         then m
+         else length(registerOrder())
 
+-- Orders the registers in the order we want to use them (ESP, EBP for stack)
 registerOrder () =
   Map.fromList (zip [0..] [EAX,EBX,ECX,EDX,ESI,EDI,R8D,R9D,R10D,R11D,R12D,R13D,R14D,R15D])
