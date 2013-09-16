@@ -2,6 +2,8 @@ module Compile.Types.Asm where
 
 import Text.ParserCombinators.Parsec.Pos (SourcePos)
 
+import qualified Numeric as Num
+
 import Compile.Types.AbstractAssembly
 
 data Asm = AsmRet
@@ -13,6 +15,7 @@ data Asm = AsmRet
          | Idivl Arg
 
 data Arg = Reg Register
+         | Stk Int -- Stack offset int
          | Val Int deriving Eq
 
 data Register = EAX
@@ -30,7 +33,7 @@ data Register = EAX
               | R12D
               | R13D
               | R14D
-              | R15D deriving Eq
+              | R15D Int deriving Eq
 
 instance Show Asm where
   show (AsmRet) = "\tret"
@@ -44,6 +47,10 @@ instance Show Asm where
 instance Show Arg where
   show (Reg reg) = "%" ++ show reg
   show (Val i) = "$" ++ show i
+  show (Stk i) = let neg = if i < 0 then "-0x" else "0x"
+                     offset = neg ++ Num.showHex (abs(i)) "(%ebp)"
+                 in
+                  offset
   
 instance Show Register where
   show EAX = "eax"
@@ -59,4 +66,4 @@ instance Show Register where
   show R12D = "r12d"
   show R13D = "r13d"
   show R14D = "r14d"
-  show R15D = "r15d"
+  show R15D _ = "r15d"

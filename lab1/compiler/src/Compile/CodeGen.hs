@@ -128,5 +128,6 @@ regFind :: Map.Map AVal Arg -> AVal -> Arg
 regFind regMap (AImm i) = Val i
 regFind regMap aloc = 
   case Map.lookup aloc regMap of
+    Just (Reg R15D) -> Stk (-12)
     Just (reg) -> reg
     Nothing -> Reg EAX
