@@ -34,7 +34,9 @@ codeGen (Block stmts pos) = let
   prgm = foldr (\x -> \y -> (show x) ++ "\n" ++ y) "" aasm
   regMap = allocateRegisters aasm
   aasm' = concatMap (translate regMap) aasm
-  in aasm'
+  in [Push (Reg RBP),
+      Mov (Reg RSP) (Reg RBP)
+      ] ++ aasm'
 
 -- aasm generating functions
 genStmt (stmts, temps, n) (Return e _) = let
@@ -71,18 +73,37 @@ genExp (a,n) (ExpUnOp op e _) l = let
 
 -- begin 'temp -> register' translation
 translate regMap (AAsm {aAssign = [dest], aOp = Nop, aArgs = [src]}) =
-  [Movl (regFind regMap src) (regFind regMap (ALoc dest))]
+  let
+    s = regFind regMap src
+  in
+   case s of
+     (Stk _) ->
+       [Movl s (Reg R15D),
+        Movl (Reg R15D) (regFind regMap (ALoc dest))]
+     _ ->
+       [Movl (regFind regMap src) (regFind regMap (ALoc dest))]
 translate regMap (AAsm {aAssign = [dest], aOp = Add, aArgs = [src1, src2]}) =
   let
     dest' = regFind regMap (ALoc dest)
     s = regFind regMap src1
+    s2 = regFind regMap src2
   in
-   if s == dest' then
-     [Movl s dest',
-      Addl (regFind regMap src2) dest']
-   else
-     [Movl (regFind regMap src2) dest',
-      Addl s dest']
+   case (s, s2) of
+     (Stk _, _) ->
+       [Movl s (Reg R15D),
+        Addl (regFind regMap src2) (Reg R15D),
+        Movl (Reg R15D) dest']
+     (_, Stk _) ->
+        [Movl s2 (Reg R15D),
+        Addl s (Reg R15D),
+        Movl (Reg R15D) dest']
+     _ ->
+       if s == dest' then
+         [Movl s dest',
+          Addl (regFind regMap src2) dest']
+       else
+         [Movl (regFind regMap src2) dest',
+          Addl s dest']
 translate regMap (AAsm {aAssign = [dest], aOp = Sub, aArgs = [src1, src2]}) =
   let
     dest' = regFind regMap (ALoc dest)
@@ -128,6 +149,5 @@ regFind :: Map.Map AVal Arg -> AVal -> Arg
 regFind regMap (AImm i) = Val i
 regFind regMap aloc = 
   case Map.lookup aloc regMap of
-    Just (Reg (R15D i)) -> Stk i
     Just (reg) -> reg
     Nothing -> Reg EAX

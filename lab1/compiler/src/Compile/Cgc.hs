@@ -47,7 +47,7 @@ seo' g weights l =
 
 -- Greedy coloring algorithm, takes a graph, outputs a list of tuples
 -- Vertex paired with Int, which represents color
-coloring :: Graph -> Map.Map Vertex Register
+coloring :: Graph -> Map.Map Vertex Arg
 coloring g = let m = Map.map (\x-> -1) g
                  m' = Map.insert (ALoc $ AReg 0) 0
                       (Map.insert (ALoc $ AReg 3) 3 m)
@@ -57,14 +57,19 @@ coloring g = let m = Map.map (\x-> -1) g
                  res = color g m' s
                  order = registerOrder ()
              in  (Map.map (\v -> 
-                          let 
-                            Just reg = Map.lookup v order
-                          in reg) res)
+                            case (v < (Map.size(order)-1)) of
+                              True ->
+                                let Just reg = Map.lookup v order
+                                in Reg reg
+                              False ->
+                                let offset = (v - Map.size(order) + 2)
+                                in Stk (-(offset*4))
+                          ) res)
 
 color :: Graph -> Map.Map Vertex Int -> [Vertex] -> Map.Map Vertex Int
 color g m [] = m
 color g m s = let n = nghbr g (List.head s)
-                  n' = List.map(\x -> m Map.! x) n
+                  n' = List.map (\x -> m Map.! x) n
                   m' = Map.insert (List.head s) (mex n') m
               in
                color g m' (tail s)
@@ -74,10 +79,12 @@ mex :: [ Int ] -> Int
 mex [] = 0
 mex l = let m = List.minimum([0..((List.maximum l)+2)] List.\\ l)
         in
+         m
+         {-
          if m < (Map.size(registerOrder())-1)
          then m
          else Map.size(registerOrder())-1
-
+          -}
 -- Orders the registers in the order we want to use them (ESP, EBP for stack)
 registerOrder () =
-  Map.fromList (zip [0..] [EAX,EBX,ECX,EDX,ESI,EDI,R8D,R9D,R10D,R11D,R12D,R13D,R14D,(R15D 0)])
+  Map.fromList (zip [0..] [EAX,EBX,ECX,EDX,ESI,EDI,R8D,R9D,R10D,R11D,R12D,R13D,R14D])

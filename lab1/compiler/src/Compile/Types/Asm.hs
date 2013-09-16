@@ -13,6 +13,9 @@ data Asm = AsmRet
          | Imull Arg Arg
          | Negl Arg
          | Idivl Arg
+         | Push Arg
+         | Subb Arg Arg
+         | Mov Arg Arg
 
 data Arg = Reg Register
          | Stk Int -- Stack offset int
@@ -24,8 +27,8 @@ data Register = EAX
               | EDX
               | ESI
               | EDI
-              | ESP
-              | EBP
+              | RSP
+              | RBP
               | R8D
               | R9D
               | R10D
@@ -33,22 +36,24 @@ data Register = EAX
               | R12D
               | R13D
               | R14D
-              | R15D Int deriving Eq
+              | R15D deriving Eq
 
 instance Show Asm where
   show (AsmRet) = "\tret"
   show (Movl e1 e2) = "\tmovl " ++ show e1 ++ ", " ++ show e2
+  show (Mov e1 e2) = "\tmov " ++ show e1 ++ ", " ++ show e2
   show (Addl e1 e2) = "\taddl " ++ show e1 ++ ", " ++ show e2
   show (Subl e1 e2) = "\tsubl " ++ show e1 ++ ", " ++ show e2
+  show (Subb e1 e2) = "\tsub " ++ show e1 ++ ", " ++ show e2
   show (Imull e1 e2) = "\timull " ++ show e1 ++ ", " ++ show e2
   show (Negl e) = "\tnegl " ++ show e
   show (Idivl e) = "\tidivl " ++ show e
-  
+  show (Push e) = "\tpush " ++ show e
 instance Show Arg where
   show (Reg reg) = "%" ++ show reg
   show (Val i) = "$" ++ show i
   show (Stk i) = let neg = if i < 0 then "-0x" else "0x"
-                     offset = neg ++ Num.showHex (abs(i)) "(%ebp)"
+                     offset = neg ++ Num.showHex (abs(i)) "(%rbp)"
                  in
                   offset
   
@@ -66,4 +71,6 @@ instance Show Register where
   show R12D = "r12d"
   show R13D = "r13d"
   show R14D = "r14d"
-  show (R15D _) = "r15d"
+  show R15D = "r15d"
+  show RSP = "rsp"
+  show RBP = "rbp"
