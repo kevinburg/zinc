@@ -30,6 +30,7 @@ import Control.Monad.Identity
 import Text.Parsec.Prim
 import Text.Parsec.Char
 import Text.Parsec.Combinator
+import qualified Text.ParserCombinators.Parsec
 
 -----------------------------------------------------------
 -- Language Definition
@@ -567,8 +568,14 @@ makeTokenParser languageDef
                         }
                       <?> ""
 
-    decimal         = number 10 digit
-    hexadecimal     = do{ oneOf "xX"; number 16 hexDigit }
+    decimal         = --try (do { char '0';
+                      --     oneOf "0123456789";
+                      --     Text.ParserCombinators.Parsec.unexpected "leading 0 in decimal"
+                      --     }) <|>
+                      do { char '0';
+                           return 0} <|>
+                      number 10 digit
+    hexadecimal     = do{ char '0'; oneOf "xX"; number 16 hexDigit }
     octal           = do{ oneOf "oO"; number 8 octDigit  }
 
     number base baseDigit

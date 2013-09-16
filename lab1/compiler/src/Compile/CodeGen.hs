@@ -57,7 +57,7 @@ genStmt (stmts, temps, n) (Decl v (Just e) _) = let
   in (stmts ++ stmt, temps', n')
 
 genExp :: Alloc -> Expr -> ALoc -> ([AAsm], Int)
-genExp (_,n) (ExpInt i _) l = ([AAsm [l] Nop [AImm $ fromIntegral i]], n)
+genExp (_,n) (ExpInt _ i _) l = ([AAsm [l] Nop [AImm $ fromIntegral i]], n)
 genExp (a,n) (Ident s _) l = ([AAsm [l] Nop [ALoc $ ATemp $ a Map.! s]], n)
 genExp (a,n) (ExpBinOp op e1 e2 _) l = let
   (i1, n') = genExp (a, n + 1) e1 (ATemp n)

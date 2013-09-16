@@ -14,12 +14,13 @@ data AST = Block [Stmt] SourcePos
 data Stmt = Decl String BindVal SourcePos
           | Asgn String AsgnOp Expr SourcePos 
           | Return Expr SourcePos
-data Expr = ExpInt Integer SourcePos
+data Expr = ExpInt IntT Integer SourcePos
           | Ident String SourcePos
           | ExpBinOp Op Expr Expr SourcePos
           | ExpUnOp Op Expr SourcePos
 type AsgnOp = Maybe Op
 type BindVal = Maybe Expr
+data IntT = Dec | Hex
 
 
 -- Note to the student: You will probably want to write a new pretty printer
@@ -42,7 +43,7 @@ instance Show Stmt where
   show (Decl i e _) = "Decl " ++ i ++ " = (" ++ (mShow e) ++ ") _"
 
 instance Show Expr where
-  show (ExpInt n _) = "ExpInt " ++ show n ++ " _"
+  show (ExpInt _ n _) = "ExpInt " ++ show n ++ " _"
   show (ExpBinOp op e1 e2 _) = "ExpBinOp " ++ (show op) ++ " (" ++ (show e1)
                                ++ ") (" ++ (show e2) ++ ") _"
   show (Ident s _) = "Ident " ++ s ++ " _"
