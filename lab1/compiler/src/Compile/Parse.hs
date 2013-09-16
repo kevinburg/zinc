@@ -111,9 +111,14 @@ term = do
        i <- identifier
        return $ Ident i p)
    <|>
+   try
+   (do p <- getPosition
+       n <- hexadecimal
+       return $ ExpInt Hex n p)
+    <|>
    (do p <- getPosition
        n <- natural
-       return $ ExpInt n p)
+       return $ ExpInt Dec n p)
    <?> "term"
 
 lvalue = do
@@ -164,6 +169,8 @@ reservedOp :: String -> C0Parser ()
 reservedOp = Tok.reservedOp c0Tokens
 natural    :: C0Parser Integer
 natural    = Tok.natural    c0Tokens
+decimal = Tok.decimal c0Tokens
+hexadecimal = Tok.hexadecimal c0Tokens
 whiteSpace :: C0Parser ()
 whiteSpace = Tok.whiteSpace c0Tokens
 commaSep   :: C0Parser a -> C0Parser [a]

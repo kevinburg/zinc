@@ -30,6 +30,7 @@ import Control.Monad.Identity
 import Text.Parsec.Prim
 import Text.Parsec.Char
 import Text.Parsec.Combinator
+import qualified Text.ParserCombinators.Parsec
 
 -----------------------------------------------------------
 -- Language Definition
@@ -493,7 +494,7 @@ makeTokenParser languageDef
     float           = lexeme floating   <?> "float"
     integer         = lexeme int        <?> "integer"
     natural         = lexeme nat        <?> "natural"
-
+    hexadecimal     = lexeme hex        <?> "hexadecimal"
 
     -- floats
     floating        = do{ n <- decimal
@@ -560,15 +561,17 @@ makeTokenParser languageDef
                     <|> (char '+' >> return id)
                     <|> return id
 
-    nat             = zeroNumber <|> decimal
+    nat             = decimal
 
     zeroNumber      = do{ char '0'
-                        ; hexadecimal <|> octal <|> decimal <|> return 0
+                        ; hex <|> octal <|> decimal <|> return 0
                         }
                       <?> ""
 
-    decimal         = number 10 digit
-    hexadecimal     = do{ oneOf "xX"; number 16 hexDigit }
+    decimal         = do { char '0';
+                           return 0
+                         } <|> number 10 digit
+    hex     = do{ char '0'; oneOf "xX"; number 16 hexDigit }
     octal           = do{ oneOf "oO"; number 8 octDigit  }
 
     number base baseDigit

@@ -73,9 +73,12 @@ checkStmt (Decl i (Just e) _) = do
   put (Set.insert i vars, Set.insert i defined)
   return False
 
-checkExpr (ExpInt n p) =
+checkExpr (ExpInt Dec n p) =
   assertMsg ((show n) ++ " too large at " ++ (show p))
             (n <= 2^31)
+checkExpr (ExpInt Hex n p) =
+  assertMsg ((show n) ++ " too large at " ++ (show p))
+            (n < 2^32)
 checkExpr (Ident s p) = do
   (vars, defined) <- get
   assertMsg (s ++ " used undeclared at " ++ (show p)) (Set.member s vars)
