@@ -80,7 +80,10 @@ stmt = try (do
        op <- asnOp
        e <- expr
        semi
-       return $ Decl ident (Just e) pos)
+       case op of
+         Nothing -> return $ Decl ident (Just e) pos
+         Just _ -> Text.ParserCombinators.Parsec.unexpected "bad decl assign op"
+   )
    <?> "statement"
 
 asnOp :: C0Parser (Maybe Op)
