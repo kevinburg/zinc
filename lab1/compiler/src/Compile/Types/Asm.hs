@@ -66,4 +66,4 @@ instance Show Register where
   show R12D = "r12d"
   show R13D = "r13d"
   show R14D = "r14d"
-  show R15D _ = "r15d"
+  show (R15D _) = "r15d"
