@@ -12,6 +12,7 @@ module Compile.Parse where
 
 import Control.Monad.Error
 import Data.ByteString as BS
+import Data.ByteString.Char8 as C8
 import Compile.Types
 
 import LiftIOE
@@ -28,9 +29,23 @@ import Debug.Trace
 parseAST :: FilePath -> ErrorT String IO AST
 parseAST file = do
   code <- liftIOE $ BS.readFile file
-  case parse astParser file code of
-    Left e  -> throwError (show e)
-    Right a -> return a
+  case BS.breakSubstring (C8.pack "--") code of
+    (code', post) ->
+      case BS.length(post) of
+        0 ->
+          case parse astParser file code of
+            Left e  -> throwError (show e)
+            Right a -> return a
+        _ ->
+          let
+            e = BS.index post 2
+          in
+           if e /= (BS.index (C8.pack "\n") 0) then
+             throwError "u suck"
+           else
+             case parse astParser file code of
+               Left e  -> throwError (show e)
+               Right a -> return a
 
 type C0Parser = Parsec ByteString ()
 
@@ -145,7 +160,7 @@ c0Def = LanguageDef
                        "return", "break", "continue", "NULL", "alloc",
                        "alloc_array", "typedef", "struct", "else", "assert",
                        "true", "false", "bool"],
-    reservedOpNames = ["+",  "*",  "-",  "/",  "%", "?", ":", "->", "."],
+    reservedOpNames = ["+",  "*",  "-",  "/",  "%", "?", ":", "->", ".", "--"],
     caseSensitive   = True}
 
 c0Tokens :: Tok.GenTokenParser ByteString () Identity
