@@ -16,6 +16,10 @@ data Asm = AsmRet
          | Push Arg
          | Subb Arg Arg
          | Mov Arg Arg
+         | Pop Arg
+         | Movslq Arg Arg
+         | Shrl Arg Arg
+         | Cdq
 
 data Arg = Reg Register
          | Stk Int -- Stack offset int
@@ -36,11 +40,14 @@ data Register = EAX
               | R12D
               | R13D
               | R14D
-              | R15D deriving Eq
+              | R15D 
+              | RDX deriving Eq
 
 instance Show Asm where
   show (AsmRet) = "\tret"
   show (Movl e1 e2) = "\tmovl " ++ show e1 ++ ", " ++ show e2
+  show (Shrl e1 e2) = "\tshrl " ++ show e1 ++ ", " ++ show e2
+  show (Movslq e1 e2) = "\tmovslq " ++ show e1 ++ ", " ++ show e2
   show (Mov e1 e2) = "\tmov " ++ show e1 ++ ", " ++ show e2
   show (Addl e1 e2) = "\taddl " ++ show e1 ++ ", " ++ show e2
   show (Subl e1 e2) = "\tsubl " ++ show e1 ++ ", " ++ show e2
@@ -49,6 +56,9 @@ instance Show Asm where
   show (Negl e) = "\tnegl " ++ show e
   show (Idivl e) = "\tidivl " ++ show e
   show (Push e) = "\tpush " ++ show e
+  show (Pop e) = "\tpop " ++ show e
+  show Cdq = "\tcdq"
+  
 instance Show Arg where
   show (Reg reg) = "%" ++ show reg
   show (Val i) = "$" ++ show i
@@ -74,3 +84,4 @@ instance Show Register where
   show R15D = "r15d"
   show RSP = "rsp"
   show RBP = "rbp"
+  show RDX = "rdx"

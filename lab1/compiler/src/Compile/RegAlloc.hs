@@ -68,4 +68,4 @@ genRegMap graph vars =
   let
     g = Cgc.buildGraph (Set.toList vars) (Set.toList graph)
     m = Cgc.coloring g
-  in trace (show m) m
+  in m
