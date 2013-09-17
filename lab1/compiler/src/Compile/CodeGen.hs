@@ -28,8 +28,12 @@ codeGen :: AST -> [Asm]
 codeGen (Block stmts pos) = let
   s = foldr (\x -> \y -> (show x) ++ "\n" ++ y) "\n" stmts
   --temps = Map.fromList $ zip (map declName decls) [0..]
+  (s1, s2) = break (\x -> case x of
+                       (Return _ _) -> True
+                       _ -> False) stmts
+  stmts' = s1 ++ [s2 !! 0]
   (aasm, _, _) = foldl (\acc -> \stmt -> genStmt acc stmt) 
-                 ([], Map.empty, 0) stmts
+                 ([], Map.empty, 0) stmts'
   -- compute register mapping
   prgm = foldr (\x -> \y -> (show x) ++ "\n" ++ y) "" aasm
   regMap = allocateRegisters aasm

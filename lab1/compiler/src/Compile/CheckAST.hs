@@ -47,30 +47,32 @@ checkAST ast@(Block stmts _) = do
   assertMsgE (findDuplicate decls)
              $ (length decls) == (Set.size variables)
   rets <- fmap or $ runErrorState (mapM checkStmt stmts) $
-                                  (Set.empty, Set.empty)
+                                  (Set.empty, Set.empty, False)
   assertMsgE "main does not return" rets
 
 checkStmt (Return e _) = do
+  (vars, defined, ret) <- get
   checkExpr e
+  put (vars, defined, True)
   return True
 checkStmt (Asgn i m e p) = do
-  (vars, defined) <- get
+  (vars, defined, ret) <- get
   assertMsg (i ++ " not declared at " ++ (show p)) (Set.member i vars)
   case m of
     Just _  -> assertMsg (i ++ " used undefined at " ++ (show p))
-                         (Set.member i defined)
+                         ((Set.member i defined) || ret)
     Nothing -> return ()
   checkExpr e
-  put (vars, Set.insert i defined)
+  put (vars, Set.insert i defined, ret)
   return False
 checkStmt (Decl i Nothing _) = do
-  (vars, defined) <- get
-  put (Set.insert i vars, defined)
+  (vars, defined, ret) <- get
+  put (Set.insert i vars, defined, ret)
   return False
 checkStmt (Decl i (Just e) _) = do
-  (vars, defined) <- get
+  (vars, defined, ret) <- get
   checkExpr e
-  put (Set.insert i vars, Set.insert i defined)
+  put (Set.insert i vars, Set.insert i defined, ret)
   return False
 
 checkExpr (ExpInt Dec n p) =
@@ -80,9 +82,9 @@ checkExpr (ExpInt Hex n p) =
   assertMsg ((show n) ++ " too large at " ++ (show p))
             (n < 2^32)
 checkExpr (Ident s p) = do
-  (vars, defined) <- get
+  (vars, defined, ret) <- get
   assertMsg (s ++ " used undeclared at " ++ (show p)) (Set.member s vars)
-  assertMsg (s ++ " used undefined at " ++ (show p)) (Set.member s defined)
+  assertMsg (s ++ " used undefined at " ++ (show p)) ((Set.member s defined) || ret)
 checkExpr (ExpBinOp _ e1 e2 _) = mapM_ checkExpr [e1, e2]
 checkExpr (ExpUnOp _ e _) = checkExpr e
 
