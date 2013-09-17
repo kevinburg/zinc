@@ -107,43 +107,67 @@ translate regMap (AAsm {aAssign = [dest], aOp = Add, aArgs = [src1, src2]}) =
 translate regMap (AAsm {aAssign = [dest], aOp = Sub, aArgs = [src1, src2]}) =
   let
     dest' = regFind regMap (ALoc dest)
+    s = regFind regMap src1
     s2 = regFind regMap src2
   in
-   if s2 == dest' then
-     [Negl s2,
-      Addl (regFind regMap src1) s2] 
-   else
-     [Movl (regFind regMap src1) dest',
-      Subl s2 dest']
+   case (s, s2) of
+     _ ->
+       if s2 == dest' then
+         [Negl s2,
+          Movl s (Reg R15D),
+          Addl (Reg R15D) s2] 
+       else
+         [Movl s (Reg R15D),
+          Movl (Reg R15D) dest',
+          Movl s2 (Reg R15D),
+          Subl (Reg R15D) dest']
 translate regMap (AAsm {aAssign = [dest], aOp = Mul, aArgs = [src1, src2]}) =
   let
     dest' = regFind regMap (ALoc dest)
     s = regFind regMap src1
+    s2 = regFind regMap src2
   in
-   if s == dest' then
-     [Movl s dest',
-      Imull (regFind regMap src2) dest']
-   else
-     [Movl (regFind regMap src2) dest',
-      Imull s dest']
+   case (s, s2) of
+     (Stk _, _) ->
+       [Movl s (Reg R15D),
+        Imull (regFind regMap src2) (Reg R15D),
+        Movl (Reg R15D) dest']
+     (_, Stk _) ->
+        [Movl s2 (Reg R15D),
+        Imull s (Reg R15D),
+        Movl (Reg R15D) dest']
+     _ ->
+       if s == dest' then
+         [Movl s dest',
+          Imull (regFind regMap src2) dest']
+       else
+         [Movl (regFind regMap src2) dest',
+          Imull s dest']
 translate regMap (AAsm {aAssign = [dest], aOp = Div, aArgs = [src1, src2]}) =
   [Movl (regFind regMap src1) (Reg EAX),
-   Movl (Val 0) (Reg EDX),
+   Cdq,
    Idivl (regFind regMap src2),
    Movl (Reg EAX) (regFind regMap (ALoc dest))]
 translate regMap (AAsm {aAssign = [dest], aOp = Mod, aArgs = [src1, src2]}) =
   [Movl (regFind regMap src1) (Reg EAX),
-   Movl (Val 0) (Reg EDX),
+   Cdq,
    Idivl (regFind regMap src2),
    Movl (Reg EDX) (regFind regMap (ALoc dest))]
 translate regMap (AAsm {aAssign = [dest], aOp = Neg, aArgs = [src]}) =
   let
     dest' = regFind regMap (ALoc dest)
+    s = regFind regMap src
   in
-    [Movl (regFind regMap src) dest',
-     Negl dest']
+   case (s, dest') of
+     (Stk _, Stk _) ->
+       [Movl s (Reg R15D),
+        Movl (Reg R15D) dest',
+        Negl dest']
+     _ ->
+       [Movl (regFind regMap src) dest',
+        Negl dest']
 translate regMap (ACtrl Ret (ALoc loc)) =
-  [AsmRet]
+  [Pop (Reg RBP), AsmRet]
 
 regFind :: Map.Map AVal Arg -> AVal -> Arg
 regFind regMap (AImm i) = Val i
