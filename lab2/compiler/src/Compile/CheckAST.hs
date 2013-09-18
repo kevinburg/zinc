@@ -13,6 +13,7 @@ import Control.Monad
 import qualified Data.Set as Set
 
 import Compile.Types
+import Debug.Trace
 
 -- Note to the student
 -- When your checker gets larger, you may wish to formalize the state
@@ -42,7 +43,7 @@ getDecls y = filter pred y
 
 checkAST :: Program -> Either String ()
 checkAST ast@(Program (Block stmts _)) = do
-  Right ()
+  trace (show ast) $ Right ()
   {-  let decls = getDecls stmts
       variables = Set.fromList $ map declName decls
   assertMsgE (findDuplicate decls)
