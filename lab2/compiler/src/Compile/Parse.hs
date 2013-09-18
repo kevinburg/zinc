@@ -1,12 +1,6 @@
-{- L1 Compiler
-   Author: Matthew Maurer <mmaurer@andrew.cmu.edu>
-   Modified by: Ryan Pearl <rpearl@andrew.cmu.edu>
-                Maxime Serrano <mserrano@andrew.cmu.edu>
-
-   The start of a parser.
-
-   Note that this uses a modified version of Parsec. We do 
-   not advise replacing this modified version with a stock one.
+{- L2 Compiler
+   Authors: Kevin Burg <kburg@andrew.cmu.edu>
+            John Cole <jhcole@andrew.cmu.edu>
 -}
 module Compile.Parse where
 
@@ -26,42 +20,28 @@ import qualified Text.Parsec.Token as Tok
 
 import Debug.Trace
 
-parseAST :: FilePath -> ErrorT String IO AST
+parseAST :: FilePath -> ErrorT String IO Program
 parseAST file = do
   code <- liftIOE $ BS.readFile file
-  case BS.breakSubstring (C8.pack "--") code of
-    (code', post) ->
-      case BS.length(post) of
-        0 ->
-          case parse astParser file code of
-            Left e  -> throwError (show e)
-            Right a -> return a
-        _ ->
-          let
-            e = BS.index post 2
-          in
-           if e /= (BS.index (C8.pack "\n") 0) then
-             throwError "u suck"
-           else
-             case parse astParser file code of
-               Left e  -> throwError (show e)
-               Right a -> return a
+  case parse programParser file code of
+    Left e  -> throwError (show e)
+    Right a -> return a
 
 type C0Parser = Parsec ByteString ()
 
-astParser :: C0Parser AST
-astParser = do
-  b <- block
-  eof
-  return b
-  <?> "ast"
-  
-block :: C0Parser AST
-block = do
+programParser :: C0Parser Program
+programParser = do
   whiteSpace
   reserved "int"
   reserved "main"
   parens $ return ()
+  b <- block
+  eof
+  return $ Program b
+  <?> "program"
+  
+block :: C0Parser Block
+block = do
   braces (do
    pos   <- getPosition
    stmts <- many stmt
@@ -70,36 +50,106 @@ block = do
 
 stmt :: C0Parser Stmt
 stmt = try (do
-   pos  <- getPosition
-   dest <- lvalue
-   op   <- asnOp
-   e    <- expr
-   semi
-   return $ Asgn dest op e pos)
-   <|> try
-   (do pos <- getPosition
-       reserved "return"
-       e <- expr
-       semi
-       return $ Return e pos)
-   <|> try
-   (do pos <- getPosition
-       reserved "int"
-       ident <- identifier
-       semi
-       return $ Decl ident Nothing pos)
-   <|>
-   (do pos <- getPosition
-       reserved "int"
-       ident <- lvalue
-       op <- asnOp
-       e <- expr
-       semi
-       case op of
-         Nothing -> return $ Decl ident (Just e) pos
-         Just _ -> Text.ParserCombinators.Parsec.unexpected "bad decl assign op"
-   )
-   <?> "statement"
+               pos <- getPosition
+               stmt <- simp
+               semi
+               return $ Simp stmt pos) <|>
+       try (do
+               pos <- getPosition
+               stmt <- ctrl
+               return $ Ctrl stmt pos) <|>
+       try (do
+               pos <- getPosition
+               stmt <- block
+               return $ BlockStmt stmt pos)
+       <?> "stmt"
+
+simp :: C0Parser Simp
+simp = try (do
+               pos <- getPosition
+               dest <- lvalue
+               op <- asnOp
+               e <- expr
+               return $ Asgn dest op e pos) <|>
+       try (do
+               pos <- getPosition
+               t <- typeParse
+               ident <- identifier
+               semi
+               return $ Decl t ident Nothing pos) <|>
+       try (do
+               pos <- getPosition
+               t <- typeParse
+               ident <- identifier
+               op <- asnOp
+               e <- expr
+               case op of
+                 Nothing -> return $ Decl t ident (Just e) pos
+                 Just _ -> Text.ParserCombinators.Parsec.unexpected "Bad Decl asnOp") <|>
+       try (do
+               pos <- getPosition
+               dest <- lvalue
+               op <- postOp
+               return $ PostOp dest op pos) <|>
+       try (do
+               pos <- getPosition
+               e <- expr
+               return $ Expr e pos)
+       <?> "simp"
+
+ctrl :: C0Parser Ctrl
+ctrl = try (do
+               pos <- getPosition
+               reserved "if"
+               e <- parens expr
+               s <- stmt
+               eop <- elseOpt
+               return $ If e s eop pos) <|>
+       try (do
+               pos <- getPosition
+               reserved "while"
+               e <- parens expr
+               s <- stmt
+               return $ While e s pos) <|>
+       try (do
+               pos <- getPosition
+               reserved "return"
+               e <- expr
+               semi
+               return $ Return e pos) <|>
+       try (do
+               pos <- getPosition
+               reserved "for"
+               (s1,e,s2) <- forBody
+               s <- stmt
+               return $ For s1 e s2 s pos)
+       <?> "ctrl"
+       
+-- Somebody needs to do this correctly
+elseOpt :: C0Parser (Maybe Stmt)
+elseOpt = do
+              return $ Nothing
+          <?> "elseOpt"
+
+-- Fill this in. The problem is that the first and third arguments
+-- to the for loop are optional. Is there a better way than just
+-- checking all the cases? i.e checking for (; e; s), (s; e;;), etc..
+forBody :: C0Parser ((Maybe Simp), Expr, (Maybe Simp))
+forBody = (do
+              pos <- getPosition
+              return $ (Nothing, TrueT pos, Nothing))
+          <?> "forBody"
+
+typeParse :: C0Parser Type
+typeParse = try (do
+                    pos <- getPosition
+                    reserved "int"
+                    return Int) <|>
+            try (do
+                    pos <- getPosition
+                    reserved "bool"
+                    return Bool)
+            <?> "type"
 
 asnOp :: C0Parser (Maybe Op)
 asnOp = do
@@ -114,26 +164,35 @@ asnOp = do
                x     -> fail $ "Nonexistent assignment operator: " ++ x
    <?> "assignment operator"
 
+postOp :: C0Parser Op
+postOp = do
+  op <- operator
+  return Add
+  <?> "postOp"
 
 expr :: C0Parser Expr
 expr = buildExpressionParser opTable term <?> "expr"
 
 term :: C0Parser Expr
 term = do
-   parens expr
-   <|>
+  parens expr <|>
    (do p <- getPosition
        i <- identifier
-       return $ Ident i p)
-   <|>
-   try
+       return $ Ident i p) <|>
    (do p <- getPosition
-       n <- hexadecimal
-       return $ ExpInt Hex n p)
-    <|>
+       reserved "true"
+       return $ TrueT p) <|>
    (do p <- getPosition
-       n <- natural
-       return $ ExpInt Dec n p)
+       reserved "false"
+       return $ FalseT p) <|>
+   try (do
+           p <- getPosition
+           n <- hexadecimal
+           return $ ExpInt Hex n p) <|>
+   try (do
+           p <- getPosition
+           n <- natural
+           return $ ExpInt Dec n p)
    <?> "term"
 
 lvalue = do

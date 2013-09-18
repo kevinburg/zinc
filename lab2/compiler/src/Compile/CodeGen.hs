@@ -15,17 +15,18 @@ import Debug.Trace
 
 type Alloc = (Map.Map String Int, Int)
 
-declName (Decl name _ _) = name
+declName (Decl name _ _ _) = name
 
 getDecls y = filter pred y
              where
                pred = (\x -> case x of
-                          (Decl _ _ _) -> True
+                          (Decl _ _ _ _) -> True
                           _ -> False
                       )
 
-codeGen :: AST -> [Asm]
-codeGen (Block stmts pos) = let
+codeGen :: Program -> [Asm]
+codeGen (Program (Block stmts pos)) = []
+ {-                                     let
   s = foldr (\x -> \y -> (show x) ++ "\n" ++ y) "\n" stmts
   --temps = Map.fromList $ zip (map declName decls) [0..]
   (s1, s2) = break (\x -> case x of
@@ -179,3 +180,4 @@ regFind regMap aloc =
   case Map.lookup aloc regMap of
     Just (reg) -> reg
     Nothing -> Reg EAX
+-}

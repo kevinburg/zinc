@@ -10,43 +10,32 @@ import Text.ParserCombinators.Parsec.Pos (SourcePos)
 
 import Compile.Types.Ops
 
-data AST = Block [Stmt] SourcePos
-data Stmt = Decl String BindVal SourcePos
-          | Asgn String AsgnOp Expr SourcePos 
-          | Return Expr SourcePos
-data Expr = ExpInt IntT Integer SourcePos
+data Program = Program Block deriving Show
+data Block = Block [Stmt] SourcePos deriving Show
+data Type = Int
+          | Bool deriving Show
+data Simp = Decl Type String (Maybe Expr) SourcePos
+          | Asgn String (Maybe Op) Expr SourcePos
+          | PostOp String Op SourcePos
+          | Expr Expr SourcePos deriving Show
+data Stmt = Simp Simp SourcePos
+          | Ctrl Ctrl SourcePos
+          | BlockStmt Block SourcePos deriving Show
+data Ctrl = If Expr Stmt (Maybe Stmt) SourcePos
+          | While Expr Stmt SourcePos
+          | For (Maybe Simp) Expr (Maybe Simp) Stmt SourcePos
+          | Return Expr SourcePos deriving Show
+data Expr = ExpInt IntT Integer SourcePos            
+          | TrueT SourcePos
+          | FalseT SourcePos
           | Ident String SourcePos
-          | ExpBinOp Op Expr Expr SourcePos
           | ExpUnOp Op Expr SourcePos
-type AsgnOp = Maybe Op
-type BindVal = Maybe Expr
-data IntT = Hex | Dec
+          | ExpBinOp Op Expr Expr SourcePos
+          | ExpTernOp Expr Expr Expr SourcePos deriving Show
+data IntT = Hex | Dec deriving Show
 
 -- Note to the student: You will probably want to write a new pretty printer
 -- using the module Text.PrettyPrint.HughesPJ from the pretty package
 -- This is a quick and dirty pretty printer.
 -- Once that is written, you may find it helpful for debugging to switch
 -- back to the deriving Show instances.
-
-instance Show AST where
-  show (Block stmts _) =
-    "Block\n" ++
-    "  [Stmt]\n" ++
-    (unlines (map (\x -> "    " ++ show x) stmts))
-
-
-instance Show Stmt where
-  show (Return e _) = "Return " ++ "(" ++ (show e) ++ ") _"
-  show (Asgn  i op e _) = "Asgn " ++ i ++ " " ++ (mShow op) ++ "=" ++ " "
-                         ++ "(" ++ (show e) ++ ") _"
-  show (Decl i e _) = "Decl " ++ i ++ " = (" ++ (mShow e) ++ ") _"
-
-instance Show Expr where
-  show (ExpInt _ n _) = "ExpInt " ++ show n ++ " _"
-  show (ExpBinOp op e1 e2 _) = "ExpBinOp " ++ (show op) ++ " (" ++ (show e1)
-                               ++ ") (" ++ (show e2) ++ ") _"
-  show (Ident s _) = "Ident " ++ s ++ " _"
-  show (ExpUnOp op e _) = "ExpUnOp " ++ (show op) ++ " (" ++ (show e) ++ ") _"
-  
-mShow Nothing = ""
-mShow (Just x) = show x

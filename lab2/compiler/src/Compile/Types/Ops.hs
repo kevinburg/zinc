@@ -6,6 +6,8 @@
 -}
 module Compile.Types.Ops where
 
+data AsgnOp = Eq
+
 data Op = Mul
         | Add
         | Sub
