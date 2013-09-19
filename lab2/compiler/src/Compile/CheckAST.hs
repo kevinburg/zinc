@@ -13,6 +13,7 @@ import Control.Monad
 import qualified Data.Set as Set
 
 import Compile.Types
+import Debug.Trace
 
 -- Note to the student
 -- When your checker gets larger, you may wish to formalize the state
@@ -31,25 +32,27 @@ assertMsgE :: String -> Bool -> Either String ()
 assertMsgE s True  = Right ()
 assertMsgE s False = Left s
 
-declName (Decl name _ _) = name
+declName (Decl _ name _ _) = name
 
 getDecls y = filter pred y
              where
                pred = (\x -> case x of
-                          (Decl _ _ _) -> True
+                          (Decl _ _ _ _) -> True
                           _ -> False
                       )
 
-checkAST :: AST -> Either String ()
-checkAST ast@(Block stmts _) = do
-  let decls = getDecls stmts
+checkAST :: Program -> Either String ()
+checkAST ast@(Program (Block stmts _)) = do
+  trace (show ast) $ Right ()
+  {-  let decls = getDecls stmts
       variables = Set.fromList $ map declName decls
   assertMsgE (findDuplicate decls)
              $ (length decls) == (Set.size variables)
   rets <- fmap or $ runErrorState (mapM checkStmt stmts) $
                                   (Set.empty, Set.empty, False)
   assertMsgE "main does not return" rets
-
+-}
+  {-
 checkStmt (Return e _) = do
   (vars, defined, ret) <- get
   checkExpr e
@@ -94,3 +97,4 @@ findDuplicate xs = findDuplicate' xs Set.empty
           if Set.member x s
             then x ++ " re-declared at " ++ (show pos)
             else findDuplicate' xs (Set.insert x s)
+-}

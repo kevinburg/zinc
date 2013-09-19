@@ -1,6 +1,6 @@
-all: l1c
+all: l2c
 
-l1c:
+l2c:
 	runhaskell Setup.hs configure --user
 	runhaskell Setup.hs build
 	rm -rf bin/
