@@ -90,7 +90,7 @@ simp = try (do
                pos <- getPosition
                dest <- lvalue
                op <- postOp
-               return $ PostOp dest op pos) <|>
+               return $ PostOp op (Ident dest pos) pos) <|>
        try (do
                pos <- getPosition
                e <- expr
@@ -160,6 +160,11 @@ asnOp = do
                "-="  -> Just Sub
                "/="  -> Just Div
                "%="  -> Just Mod
+               "&="  -> Just BAnd
+               "^="  -> Just BXor
+               "|="  -> Just BOr
+               "<<=" -> Just Shl
+               ">>=" -> Just Shr
                "="   -> Nothing
                x     -> fail $ "Nonexistent assignment operator: " ++ x
    <?> "assignment operator"
@@ -254,13 +259,29 @@ semiSep    = Tok.semiSep c0Tokens
 brackets   :: C0Parser a -> C0Parser a
 brackets   = Tok.brackets c0Tokens
 
-opTable :: [[Operator ByteString () Identity Expr]]
-opTable = [[prefix "-"   (ExpUnOp  Neg)],
-           [binary "*"   (ExpBinOp Mul)  AssocLeft,
-            binary "/"   (ExpBinOp Div)  AssocLeft,
-            binary "%"   (ExpBinOp Mod)  AssocLeft],
-           [binary "+"   (ExpBinOp Add)  AssocLeft,
-            binary "-"   (ExpBinOp Sub)  AssocLeft]]
+opTable = [[prefix  "-"   (ExpUnOp Neg),
+            prefix  "~"   (ExpUnOp BNot),
+            prefix  "!"   (ExpUnOp LNot),
+            postfix "++"  (ExpUnOp Incr), -- this is parsed in an expression now. I would like to be able
+            postfix "--"  (ExpUnOp Decr)],-- to seperate postfix terms from expressions.
+           [binary  "*"   (ExpBinOp Mul)  AssocLeft,
+            binary  "/"   (ExpBinOp Div)  AssocLeft,
+            binary  "%"   (ExpBinOp Mod)  AssocLeft],
+           [binary  "+"   (ExpBinOp Add)  AssocLeft,
+            binary  "-"   (ExpBinOp Sub)  AssocLeft],
+           [binary  "<<"  (ExpBinOp Shl)  AssocLeft,
+            binary  ">>"  (ExpBinOp Shr)  AssocLeft],
+           [binary  "<"   (ExpBinOp Lt)   AssocLeft,
+            binary  "<="  (ExpBinOp Leq)  AssocLeft,
+            binary  ">"   (ExpBinOp Gt)   AssocLeft,
+            binary  ">="  (ExpBinOp Geq)  AssocLeft],
+           [binary  "&"   (ExpBinOp BAnd) AssocLeft],
+           [binary  "^"   (ExpBinOp BXor) AssocLeft],
+           [binary  "|"   (ExpBinOp BOr)  AssocLeft],
+           [binary  "&&"  (ExpBinOp LAnd) AssocLeft],
+           [binary  "||"  (ExpBinOp BOr)  AssocLeft],
+           [binary  "=="  (ExpBinOp Eq)   AssocLeft,
+            binary  "!="  (ExpBinOp Neq)  AssocLeft]]
 {-
 We used a few helper functions which are in the Parsec documentation of Text.Parsec.Expr, located at \url{http://hackage.haskell.org/packages/archive/parsec/3.1.0/doc/html/Text-Parsec-Expr.html} The functions ``binary'', ``prefix'', and ``postfix'' were taken from there and are not my work, however they are used because rewriting them would look much the same, and they do not provide any core functionality, just make my code easier to read. Type signatures and location annotations were added by me.
 -}
@@ -273,3 +294,6 @@ prefix  name f = Prefix $ do pos <- getPosition
                              reservedOp name
                              return $ \x -> f x pos
 
+postfix name f = Postfix $ do pos <- getPosition
+                              reservedOp name
+                              return $ \x -> f x pos

@@ -1,12 +1,10 @@
-{- L1 Compiler
-   Author: Matthew Maurer <mmaurer@andrew.cmu.edu>
-   Modified by: Ryan Pearl <rpearl@andrew.cmu.edu>
+{- L2 Compiler
+   Authors: Kevin Burg <kburg@andrew.cmu.edu>
+            John Cole <kburg@andrew.cmu.edu>
 
    Abstract Assembly operations
 -}
 module Compile.Types.Ops where
-
-data AsgnOp = Eq
 
 data Op = Mul
         | Add
@@ -14,8 +12,25 @@ data Op = Mul
         | Div
         | Neg
         | Mod
+        | BAnd
+        | BXor
+        | BOr
+        | LAnd
+        | LOr
+        | Shl
+        | Shr
         | Nop
-
+        | Eq
+        | Neq
+        | BNot
+        | LNot
+        | Incr
+        | Decr
+        | Lt
+        | Leq
+        | Gt
+        | Geq
+          
 instance Show Op where
   show Mul = "*"
   show Add = "+"
@@ -23,6 +38,23 @@ instance Show Op where
   show Div = "/"
   show Neg = "-"
   show Mod = "%"
+  show LAnd = "&&"
+  show LOr = "||"
+  show BAnd = "&"
+  show BXor = "^"
+  show BOr = "|"
+  show Shl = "<<"
+  show Shr = ">>"
+  show Eq = "=="
+  show Neq = "!="
+  show BNot = "~"
+  show LNot = "!"
+  show Incr = "++"
+  show Decr = "--"
+  show Lt = "<"
+  show Leq = "<="
+  show Gt = ">"
+  show Geq = ">="
   show Nop = "[nop]"
 
 data COp = Ret deriving Show
