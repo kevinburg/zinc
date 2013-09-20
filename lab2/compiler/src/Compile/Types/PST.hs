@@ -4,7 +4,7 @@
 
    Defines the AST we parse to
 -}
-module Compile.Types.AST where
+module Compile.Types.PST where
 
 import Text.ParserCombinators.Parsec.Pos (SourcePos)
 

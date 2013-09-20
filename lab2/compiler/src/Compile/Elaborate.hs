@@ -2,27 +2,28 @@ module Compile.Elaborate where
 
 import Compile.Types
 import Debug.Trace
+import Control.Exception
+import Data.Typeable
 
 
 elaborate :: Program -> S
 elaborate (Program (Block stmts _)) =
   case elaborate' stmts of
-    Left s -> throw s
+    Left (Error s) -> ANup
     Right s -> s
 
 data Error = Error String
 
 elaborate' :: [Stmt] -> Either Error S
-elaborate' [] = Nop
-elaborate' ((Simp (Decl T I Nothing)) : xs) =
+elaborate' [] = Right ANup
+elaborate' ((Simp (Decl t i Nothing _) _) : xs) =
   case elaborate' xs of
     Left s -> Left s
-    Right s -> Declare I T s
-elaborate' ((Simp (Decl T I (Just E))) : xs) =
+    Right s -> Right (ADeclare i t s)
+elaborate' ((Simp (Decl t i (Just e) _) _) : xs) =
   case elaborate' xs of
     Left s -> Left s
     Right s ->
-      case contained I E of
-        True -> Left "Recursive declaration of " ++ (show I)
-        False -> Declare I T (Seq (Assign X E) s)
-elaborate' 
+      case False of --contained i e of
+        True -> Left (Error ("Recursive declaration of " ++ (show i)))
+        False -> Right $ ADeclare i t (ASeq (AAssign i e) s)

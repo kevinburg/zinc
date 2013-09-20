@@ -21,6 +21,7 @@ import Compile.Types
 import Compile.Parse
 import Compile.CheckAST
 import Compile.CodeGen
+import Compile.Elaborate
 
 import LiftIOE
 
@@ -34,8 +35,10 @@ compile :: Job -> IO ()
 compile job = do
   res <- runErrorT $ do
     ast <- parseAST $ jobSource job
-    elab <- elaborate ast --gets the elaboration of the AST
-    liftEIO $ checkAST ast
+    let
+      elab = elaborate ast --gets the elaboration of the AST
+     in
+     liftEIO $ checkAST ast
     if jobOutFormat job == C0
       then writer (jobOut job) ast
       else let asm = codeGen ast in

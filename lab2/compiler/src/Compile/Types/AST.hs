@@ -9,13 +9,13 @@ module Compile.Types.AST where
 import Text.ParserCombinators.Parsec.Pos (SourcePos)
 
 import Compile.Types.Ops
-import Compile.Type.PST
+import Compile.Types.PST
 
-data S = Assign String Expr
-       | If Expr Stmt Stmt
-       | While Expr Stmt
-       | Return Expr
-       | Nop
-       | Seq Stmt Stmt
-       | Declare String Type Stmt deriving Show
+data S = AAssign String Expr
+       | AIf Expr S S
+       | AWhile Expr S
+       | AReturn Expr
+       | ANup
+       | ASeq S S
+       | ADeclare String Type S deriving Show
                                              

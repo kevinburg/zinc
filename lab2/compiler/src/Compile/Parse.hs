@@ -120,7 +120,7 @@ ctrl = try (do
        try (do
                pos <- getPosition
                reserved "for"
-               (s1,e,s2) <- forBody
+               (s1,e,s2) <- parens forBody
                s <- stmt
                return $ For s1 e s2 s pos)
        <?> "ctrl"
@@ -139,9 +139,20 @@ elseOpt = (do
 -- checking all the cases? i.e checking for (; e; s), (s; e;;), etc..
 forBody :: C0Parser ((Maybe Simp), Expr, (Maybe Simp))
 forBody = (do
-              pos <- getPosition
-              return $ (Nothing, TrueT pos, Nothing))
+              s1 <- simpOpt
+              e <- expr
+              s2 <- simpOpt
+              return $ (s1, e, s2))
           <?> "forBody"
+
+simpOpt :: C0Parser (Maybe Simp)
+simpOpt = try (do
+                  s <- simp
+                  return $ Just s) <|>
+              (do
+                  return Nothing)
+               <?> "simpOpt"
+
 
 typeParse :: C0Parser Type
 typeParse = try (do
