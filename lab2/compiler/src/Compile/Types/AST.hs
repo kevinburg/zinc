@@ -10,17 +10,29 @@ import Text.ParserCombinators.Parsec.Pos (SourcePos)
 
 import Compile.Types.Ops
 
-data AST = Block [Stmt] SourcePos
-data Stmt = Decl String BindVal SourcePos
-          | Asgn String AsgnOp Expr SourcePos 
+data Program = Program Block
+data Block = Block [Stmt] SourcePos
+data Type = Int
+          | Bool deriving Show
+data Simp = Decl Type String (Maybe Expr) SourcePos
+          | Asgn String (Maybe Op) Expr SourcePos
+          | PostOp Op Expr SourcePos
+          | Expr Expr SourcePos
+data Stmt = Simp Simp SourcePos
+          | Ctrl Ctrl SourcePos
+          | BlockStmt Block SourcePos
+data Ctrl = If Expr Stmt (Maybe Stmt) SourcePos
+          | While Expr Stmt SourcePos
+          | For (Maybe Simp) Expr (Maybe Simp) Stmt SourcePos
           | Return Expr SourcePos
-data Expr = ExpInt IntT Integer SourcePos
+data Expr = ExpInt IntT Integer SourcePos            
+          | TrueT SourcePos
+          | FalseT SourcePos
           | Ident String SourcePos
-          | ExpBinOp Op Expr Expr SourcePos
           | ExpUnOp Op Expr SourcePos
-type AsgnOp = Maybe Op
-type BindVal = Maybe Expr
-data IntT = Hex | Dec
+          | ExpBinOp Op Expr Expr SourcePos
+          | ExpTernOp Expr Expr Expr SourcePos
+data IntT = Hex | Dec deriving Show
 
 -- Note to the student: You will probably want to write a new pretty printer
 -- using the module Text.PrettyPrint.HughesPJ from the pretty package
@@ -28,25 +40,33 @@ data IntT = Hex | Dec
 -- Once that is written, you may find it helpful for debugging to switch
 -- back to the deriving Show instances.
 
-instance Show AST where
-  show (Block stmts _) =
-    "Block\n" ++
-    "  [Stmt]\n" ++
-    (unlines (map (\x -> "    " ++ show x) stmts))
-
+instance Show Program where
+  show (Program b) = "Program\n" ++ (show b)
+  
+instance Show Block where
+  show (Block stmts _) = foldr (\x -> \y ->  "\n\t" ++ (show x) ++ y) "" stmts
+  
+instance Show Simp where
+  show (Decl t s e _) = "(Decl " ++ (show t) ++ " " ++ s ++ " " ++ (show e) ++ ")"
+  show (Asgn s op e _) = "(Asgn " ++ s ++ " " ++ (show op) ++ " " ++ (show e) ++ ")"
+  show (PostOp op e _) = "(PostOp " ++ (show op) ++ " " ++ (show e) ++ ")"
+  show (Expr e _) = "(Expr " ++ (show e) ++ ")"
 
 instance Show Stmt where
-  show (Return e _) = "Return " ++ "(" ++ (show e) ++ ") _"
-  show (Asgn  i op e _) = "Asgn " ++ i ++ " " ++ (mShow op) ++ "=" ++ " "
-                         ++ "(" ++ (show e) ++ ") _"
-  show (Decl i e _) = "Decl " ++ i ++ " = (" ++ (mShow e) ++ ") _"
-
-instance Show Expr where
-  show (ExpInt _ n _) = "ExpInt " ++ show n ++ " _"
-  show (ExpBinOp op e1 e2 _) = "ExpBinOp " ++ (show op) ++ " (" ++ (show e1)
-                               ++ ") (" ++ (show e2) ++ ") _"
-  show (Ident s _) = "Ident " ++ s ++ " _"
-  show (ExpUnOp op e _) = "ExpUnOp " ++ (show op) ++ " (" ++ (show e) ++ ") _"
+  show (Simp s _) = "(Simp " ++ (show s) ++ ")"
+  show (Ctrl c _) = "(Ctrl " ++ (show c) ++ ")"
+  show (BlockStmt b _) = "\n\n\t(BlockStmt " ++ (show b) ++ ")\n\n\t"
   
-mShow Nothing = ""
-mShow (Just x) = show x
+instance Show Expr where
+  show (ExpInt _ i _) = "(ExpInt " ++ (show i) ++ ")"
+  show (TrueT _) = "true"
+  show (FalseT _) = "false"
+  show (Ident s _) = "(Ident " ++ s ++ ")"
+  show (ExpUnOp op e _) = "(ExpUnOp " ++ (show op) ++ " " ++ (show e) ++ ")"
+  show (ExpBinOp op e1 e2 _) = "(ExpBinOp " ++ (show op) ++ " " ++ (show e1) ++ " " ++ (show e2) ++ ")"
+  
+instance Show Ctrl where
+  show (Return e _) = "(Return " ++ (show e) ++ ")"
+  show (If e s1 s2 _) = "(If " ++ (show e) ++ " " ++ (show s1) ++ " " ++ (show s2) ++ ")"
+  show (While e s _) = "(While " ++ (show e) ++ " " ++ (show s) ++ ")"
+  show (For s1 e s2 s3 _) = "(For " ++ (show s1) ++ " " ++ (show e) ++ " " ++ (show s2) ++ " " ++ (show s3) ++ ")"
