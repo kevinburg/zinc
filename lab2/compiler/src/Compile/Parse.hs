@@ -125,11 +125,14 @@ ctrl = try (do
                return $ For s1 e s2 s pos)
        <?> "ctrl"
        
--- Somebody needs to do this correctly
 elseOpt :: C0Parser (Maybe Stmt)
-elseOpt = do
-              return $ Nothing
-          <?> "elseOpt"
+elseOpt = (do
+              reserved "else"
+              s <- stmt
+              return $ Just s) <|>
+          do
+            return Nothing
+            <?> "elseOpt"
 
 -- Fill this in. The problem is that the first and third arguments
 -- to the for loop are optional. Is there a better way than just
