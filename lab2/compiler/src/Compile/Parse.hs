@@ -134,13 +134,12 @@ elseOpt = (do
             return Nothing
             <?> "elseOpt"
 
--- Fill this in. The problem is that the first and third arguments
--- to the for loop are optional. Is there a better way than just
--- checking all the cases? i.e checking for (; e; s), (s; e;;), etc..
 forBody :: C0Parser ((Maybe Simp), Expr, (Maybe Simp))
 forBody = (do
               s1 <- simpOpt
+              semi
               e <- expr
+              semi
               s2 <- simpOpt
               return $ (s1, e, s2))
           <?> "forBody"
