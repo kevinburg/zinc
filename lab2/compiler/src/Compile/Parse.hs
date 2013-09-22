@@ -75,17 +75,16 @@ simp = try (do
                pos <- getPosition
                t <- typeParse
                ident <- identifier
-               semi
-               return $ Decl t ident Nothing pos) <|>
-       try (do
-               pos <- getPosition
-               t <- typeParse
-               ident <- identifier
                op <- asnOp
                e <- expr
                case op of
                  Nothing -> return $ Decl t ident (Just e) pos
                  Just _ -> Text.ParserCombinators.Parsec.unexpected "Bad Decl asnOp") <|>
+       try (do
+               pos <- getPosition
+               t <- typeParse
+               ident <- identifier
+               return $ Decl t ident Nothing pos) <|>
        try (do
                pos <- getPosition
                dest <- lvalue
