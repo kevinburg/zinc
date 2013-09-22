@@ -22,7 +22,6 @@ import Compile.Parse
 import Compile.CheckAST
 import Compile.CodeGen
 import Compile.Elaborate
-import Compile.Typechecker
 
 import LiftIOE
 
@@ -39,7 +38,7 @@ compile job = do
     let
       elab = elaborate ast --gets the elaboration of the AST
      in
-     liftEIO $ checkAST ast
+     liftEIO $ checkAST elab
     if jobOutFormat job == C0
       then writer (jobOut job) ast
       else let asm = codeGen ast in

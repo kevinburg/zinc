@@ -1,100 +1,79 @@
-{- L1 Compiler
-   Author: Matthew Maurer <mmaurer@andrew.cmu.edu>
-   Modified by: Ryan Pearl <rpearl@andrew.cmu.edu>
-
-   Beginnings of a typechecker
--}
 module Compile.CheckAST where
 
-import Control.Monad.State
-import Control.Monad.Error
-import Control.Monad
-
-import qualified Data.Set as Set
-
 import Compile.Types
+import qualified Data.Map as Map
 import Debug.Trace
 
--- Note to the student
--- When your checker gets larger, you may wish to formalize the state
--- a little more.
+data CheckS = ValidS
+            | BadS String
+              
+data CheckE = ValidE Type
+            | BadE String
 
--- This is hacky and not designed to scale.
+type Context = Map.Map String Type
 
-runErrorState :: ErrorT String (State s) a -> s -> Either String a
-runErrorState m s = evalState (runErrorT m) s
+-- Checks that the abstract syntax adheres to the static semantics
+-- TODO: check variable initialization
+checkAST :: S -> Either String ()
+checkAST s =
+  case checkReturns s of
+    False -> Left "One or more control flow paths do not return"
+    True ->
+      case checkS s Map.empty of
+        ValidS -> Right ()
+        BadS s -> Left s
 
-assertMsg :: (Monad m) => String -> Bool -> ErrorT String m ()
-assertMsg s True  = return ()
-assertMsg s False = throwError s
+-- Verifies that all control flow paths end with a return statement
+checkReturns :: S -> Bool
+checkReturns ANup = False
+checkReturns (AAssign _ _) = False
+checkReturns (AWhile _ _) = False
+checkReturns (AReturn _) = True
+checkReturns (AIf _ s1 s2) = (checkReturns s1) && (checkReturns s2)
+checkReturns (ASeq s1 s2) = (checkReturns s1) || (checkReturns s2)
+checkReturns (ADeclare _ _ s) = checkReturns s
 
-assertMsgE :: String -> Bool -> Either String ()
-assertMsgE s True  = Right ()
-assertMsgE s False = Left s
-
-declName (Decl _ name _ _) = name
-
-getDecls y = filter pred y
-             where
-               pred = (\x -> case x of
-                          (Decl _ _ _ _) -> True
-                          _ -> False
-                      )
-
-checkAST :: Program -> Either String ()
-checkAST ast@(Program (Block stmts _)) = do
-  trace (show ast) $ Right ()
-  {-  let decls = getDecls stmts
-      variables = Set.fromList $ map declName decls
-  assertMsgE (findDuplicate decls)
-             $ (length decls) == (Set.size variables)
-  rets <- fmap or $ runErrorState (mapM checkStmt stmts) $
-                                  (Set.empty, Set.empty, False)
-  assertMsgE "main does not return" rets
--}
-  {-
-checkStmt (Return e _) = do
-  (vars, defined, ret) <- get
-  checkExpr e
-  put (vars, defined, True)
-  return True
-checkStmt (Asgn i m e p) = do
-  (vars, defined, ret) <- get
-  assertMsg (i ++ " not declared at " ++ (show p)) (Set.member i vars)
-  case m of
-    Just _  -> assertMsg (i ++ " used undefined at " ++ (show p))
-                         ((Set.member i defined) || ret)
-    Nothing -> return ()
-  checkExpr e
-  put (vars, Set.insert i defined, ret)
-  return False
-checkStmt (Decl i Nothing _) = do
-  (vars, defined, ret) <- get
-  put (Set.insert i vars, defined, ret)
-  return False
-checkStmt (Decl i (Just e) _) = do
-  (vars, defined, ret) <- get
-  checkExpr e
-  put (Set.insert i vars, Set.insert i defined, ret)
-  return False
-
-checkExpr (ExpInt Dec n p) =
-  assertMsg ((show n) ++ " too large at " ++ (show p))
-            (n <= 2^31)
-checkExpr (ExpInt Hex n p) =
-  assertMsg ((show n) ++ " too large at " ++ (show p))
-            (n < 2^32)
-checkExpr (Ident s p) = do
-  (vars, defined, ret) <- get
-  assertMsg (s ++ " used undeclared at " ++ (show p)) (Set.member s vars)
-  assertMsg (s ++ " used undefined at " ++ (show p)) ((Set.member s defined) || ret)
-checkExpr (ExpBinOp _ e1 e2 _) = mapM_ checkExpr [e1, e2]
-checkExpr (ExpUnOp _ e _) = checkExpr e
-
-findDuplicate xs = findDuplicate' xs Set.empty
-  where findDuplicate' [] _ = error "no duplicate"
-        findDuplicate' (Decl x _ pos : xs) s =
-          if Set.member x s
-            then x ++ " re-declared at " ++ (show pos)
-            else findDuplicate' xs (Set.insert x s)
--}
+-- Performs static type checking on a statements  under a typing context
+checkS :: S -> Context -> CheckS
+checkS ANup ctx = ValidS
+checkS (ASeq s1 s2) ctx = 
+  case checkS s1 ctx of
+    BadS s -> BadS s
+    ValidS -> checkS s2 ctx
+checkS (ADeclare i t s) ctx =
+  case Map.lookup i ctx of
+    Just _ -> BadS $ "Redeclaring " ++ i
+    Nothing -> checkS s $ Map.insert i t ctx
+checkS (AReturn e) ctx = 
+  case checkE e ctx of
+    BadE s -> BadS s
+    ValidE Bool -> BadS "Main returns type bool"
+    ValidE Int -> ValidS
+checkS (AWhile e s) ctx = 
+  case checkE e ctx of
+    BadE s -> BadS s
+    ValidE Int -> BadS "While condition is not type bool"
+    ValidE Bool -> checkS s ctx
+checkS (AAssign i e) ctx =
+  case Map.lookup i ctx of
+    Nothing -> BadS $ "Assigning " ++ i ++ " undeclared"
+    Just t1 ->
+      case checkE e ctx of
+        BadE s -> BadS s
+        ValidE t2 -> if t1 == t2 then ValidS
+                     else BadS $ i ++ " declared with type " ++ (show t1) ++ 
+                          " assigned with type " ++ (show t2)
+checkS (AIf e s1 s2) ctx =
+  case checkE e ctx of
+    BadE s -> BadS s
+    ValidE Int -> BadS "If condition is not type bool"
+    ValidE Bool ->
+      case checkS s1 ctx of
+        BadS s -> BadS s
+        ValidS -> checkS s2 ctx
+  
+-- Performs static type checking on an expression under a typing context
+checkE :: Expr -> Context -> CheckE
+checkE (ExpInt _ _ _) _ = ValidE Int
+checkE (TrueT _) _ = ValidE Bool
+checkE (FalseT _) _ = ValidE Bool
