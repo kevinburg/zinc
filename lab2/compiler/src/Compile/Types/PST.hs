@@ -64,6 +64,7 @@ instance Show Expr where
   show (Ident s _) = "(Ident " ++ s ++ ")"
   show (ExpUnOp op e _) = "(ExpUnOp " ++ (show op) ++ " " ++ (show e) ++ ")"
   show (ExpBinOp op e1 e2 _) = "(ExpBinOp " ++ (show op) ++ " " ++ (show e1) ++ " " ++ (show e2) ++ ")"
+  show (ExpTernOp e1 e2 e3 _) = "(ExpTernOp " ++ (show e1) ++ " " ++ (show e2) ++ " " ++ (show e3) ++ ")"
   
 instance Show Ctrl where
   show (Return e _) = "(Return " ++ (show e) ++ ")"

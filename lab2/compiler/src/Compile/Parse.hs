@@ -188,8 +188,26 @@ postOp = do
   return Add
   <?> "postOp"
 
+ternOp :: C0Parser (Maybe (Expr, Expr))
+ternOp = try (do
+                 reserved "?"
+                 l <- expr
+                 reserved ":"
+                 r <- expr
+                 return $ Just (l,r)) <|> 
+         do return Nothing
+
 expr :: C0Parser Expr
-expr = buildExpressionParser opTable term <?> "expr"
+expr = do
+  e <- expr'
+  e' <- ternOp
+  case e' of
+    Nothing -> return e
+    Just (l,r) -> do p <- getPosition
+                     return $ ExpTernOp e l r p 
+
+expr' :: C0Parser Expr
+expr' = buildExpressionParser opTable term  <?> "expr"
 
 term :: C0Parser Expr
 term = do
