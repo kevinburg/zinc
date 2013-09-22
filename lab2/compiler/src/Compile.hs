@@ -22,6 +22,7 @@ import Compile.Parse
 import Compile.CheckAST
 import Compile.CodeGen
 import Compile.Elaborate
+import Compile.Typechecker
 
 import LiftIOE
 
