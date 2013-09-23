@@ -2,15 +2,8 @@ module Compile.CheckAST where
 
 import Compile.Types
 import qualified Data.Map as Map
+import qualified Data.Set as Set
 import Debug.Trace
-
-data CheckS = ValidS
-            | BadS String
-              
-data CheckE = ValidE Type
-            | BadE String
-
-type Context = Map.Map String Type
 
 -- Checks that the abstract syntax adheres to the static semantics
 -- TODO: check variable initialization
@@ -20,8 +13,12 @@ checkAST s =
     False -> Left "One or more control flow paths do not return"
     True ->
       case checkS s Map.empty of
-        ValidS -> Right ()
         BadS s -> Left s
+        ValidS -> 
+          case checkInit s Set.empty of
+            Left s -> Left s
+            Right _ -> Right ()
+          
 
 -- Verifies that all control flow paths end with a return statement
 checkReturns :: S -> Bool
@@ -32,6 +29,14 @@ checkReturns (AReturn _) = True
 checkReturns (AIf _ s1 s2) = (checkReturns s1) && (checkReturns s2)
 checkReturns (ASeq s1 s2) = (checkReturns s1) || (checkReturns s2)
 checkReturns (ADeclare _ _ s) = checkReturns s
+
+data CheckS = ValidS
+            | BadS String
+              
+data CheckE = ValidE Type
+            | BadE String
+
+type Context = Map.Map String Type
 
 -- Performs static type checking on a statements  under a typing context
 checkS :: S -> Context -> CheckS
@@ -77,3 +82,47 @@ checkE :: Expr -> Context -> CheckE
 checkE (ExpInt _ _ _) _ = ValidE Int
 checkE (TrueT _) _ = ValidE Bool
 checkE (FalseT _) _ = ValidE Bool
+
+-- Checks that no variables are used before definition
+checkInit :: S -> Set.Set String -> Either String (Set.Set String)
+checkInit ANup live = Right live
+checkInit (AReturn e) live = 
+  case Set.isSubsetOf (uses e) live of
+    False -> Left "Return statement uses undefined variable(s)"
+    True -> Right Set.empty
+checkInit (AAssign i e) live = 
+  case Set.isSubsetOf (uses e) live of
+    False -> Left $ "Undeclared variable on RHS of define for " ++ i
+    True -> Right $ Set.delete i live
+checkInit (AIf e s1 s2) live = 
+  case Set.isSubsetOf (uses e) live of
+    False -> Left "If condition uses undefined variable(s)"
+    True ->
+      case (checkInit s1 live, checkInit s2 live) of
+        (Left s, _) -> Left s
+        (_, Left s) -> Left s
+        (Right live1, Right live2) ->
+          Right $ Set.difference live $ Set.intersection live1 live2
+checkInit (AWhile e s) live =
+  case Set.isSubsetOf (uses e) live of
+    False -> Left "While condition uses undefined variable(s)"
+    True ->
+      case checkInit s live of
+        Left s -> Left s
+        Right _ -> Right live
+checkInit (ASeq s1 s2) live =
+  case checkInit s1 live of
+    Left s -> Left s
+    Right live' -> checkInit s2 live'
+checkInit (ADeclare i _ s) live =
+  case checkInit s (Set.insert i live) of
+    Left s -> Left s
+    Right _ -> Right live
+    
+-- Evaluates to a list of identifiers used in the expression
+uses :: Expr -> Set.Set String
+uses (Ident i _) = Set.singleton i
+uses (ExpUnOp _ e _) = uses e
+uses (ExpBinOp _ e1 e2 _) = Set.union (uses e1) (uses e2)
+uses (ExpTernOp e1 e2 e3 _) = Set.unions [uses e1, uses e2, uses e3]
+uses _ = Set.empty
