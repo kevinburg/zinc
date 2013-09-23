@@ -20,4 +20,5 @@ data AVal = ALoc ALoc
 
 data ALoc = AReg Int
           | ATemp Int
+          | AVar String
           | Register ALoc deriving (Show, Eq, Ord)

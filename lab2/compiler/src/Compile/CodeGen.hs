@@ -13,69 +13,51 @@ import qualified Data.Set as Set
 
 import Debug.Trace
 
-type Alloc = (Map.Map String Int, Int)
-
-declName (Decl name _ _ _) = name
-
-getDecls y = filter pred y
-             where
-               pred = (\x -> case x of
-                          (Decl _ _ _ _) -> True
-                          _ -> False
-                      )
-
 codeGen :: Program -> [Asm]
-codeGen (Program (Block stmts pos)) = []
- {-                                     let
-  s = foldr (\x -> \y -> (show x) ++ "\n" ++ y) "\n" stmts
-  --temps = Map.fromList $ zip (map declName decls) [0..]
-  (s1, s2) = break (\x -> case x of
-                       (Return _ _) -> True
-                       _ -> False) stmts
-  stmts' = s1 ++ [s2 !! 0]
-  (aasm, _, _) = foldl (\acc -> \stmt -> genStmt acc stmt) 
-                 ([], Map.empty, 0) stmts'
-  -- compute register mapping
-  prgm = foldr (\x -> \y -> (show x) ++ "\n" ++ y) "" aasm
-  regMap = allocateRegisters aasm
-  aasm' = concatMap (translate regMap) aasm
-  in [Push (Reg RBP),
-      Mov (Reg RSP) (Reg RBP)
-      ] ++ aasm'
+codeGen (Program (Block stmts _)) =
+  let
+    aasm = foldl (\acc -> \stmt -> genStmt acc stmt) ([], 0) stmts
+  in []
 
--- aasm generating functions
-genStmt (stmts, temps, n) (Return e _) = let
-  (stmt, n') = genExp (temps, n) e (AReg 0)
-  in (stmts ++ stmt ++ [ACtrl Ret (ALoc (AReg 0))], temps, n')
-genStmt (stmts, temps, n) (Asgn v o e s) = let
-  l = ATemp n
-  temps' = Map.insert v n temps
-  e' = case o of
-    Nothing -> e
-    Just op -> 
-      ExpBinOp op (Ident v s) e s
-  (stmt, n') = genExp (temps, n+1) e' l
-  in (stmts ++ stmt, temps', n')
-genStmt state (Decl _ Nothing _) = state
-genStmt (stmts, temps, n) (Decl v (Just e) _) = let
-  l = ATemp n
-  temps' = Map.insert v n temps
-  (stmt, n') = genExp (temps, n+1) e l
-  in (stmts ++ stmt, temps', n')
-
-genExp :: Alloc -> Expr -> ALoc -> ([AAsm], Int)
-genExp (_,n) (ExpInt _ i _) l = ([AAsm [l] Nop [AImm $ fromIntegral i]], n)
-genExp (a,n) (Ident s _) l = ([AAsm [l] Nop [ALoc $ ATemp $ a Map.! s]], n)
-genExp (a,n) (ExpBinOp op e1 e2 _) l = let
-  (i1, n') = genExp (a, n + 1) e1 (ATemp n)
-  (i2, n'') = genExp (a, n' + 1) e2 (ATemp $ n')
+genStmt acc (Simp (Decl _ _ Nothing _) _) = acc
+genStmt (stmts, n) (Simp (Decl _ i (Just e) _) _) =
+  let
+    (stmt, n') = genExp n e (AVar i)
+  in (stmts ++ stmt, n')
+genStmt (stmts, n) (Simp (Asgn i o e s) _) = 
+  let
+    e' = case o of
+      Nothing -> e
+      Just op -> ExpBinOp op (Ident i s) e s
+    (stmt, n') = genExp n e' (AVar i)
+  in (stmts ++ stmt, n')
+genStmt (stmts, n) (Simp (PostOp o (Ident i _) s) _) =
+  let
+    op = case o of
+      Incr -> Add
+      Decr -> Sub
+    e' = ExpBinOp op (Ident i s) (ExpInt Dec 1 s) s
+    (stmt, n') = genExp n e' (AVar i)
+  in (stmts ++ stmt, n')
+genStmt (stmts, n) (Simp (Expr e _) _) = 
+  let
+    (stmt, n') = genExp (n+1) e (ATemp n)
+  in (stmts ++ stmt, n')
+         
+genExp :: Int -> Expr -> ALoc -> ([AAsm], Int)
+genExp n (ExpInt _ i _) l = ([AAsm [l] Nop [AImm $ fromIntegral i]], n)
+genExp n (Ident s _) l = ([AAsm [l] Nop [ALoc $ AVar s]], n)
+genExp n (ExpBinOp op e1 e2 _) l = let
+  (i1, n') = genExp (n + 1) e1 (ATemp n)
+  (i2, n'') = genExp (n' + 1) e2 (ATemp n')
   c  = [AAsm [l] op [ALoc $ ATemp n, ALoc $ ATemp $ n']]
   in (i1 ++ i2 ++ c, n'')
-genExp (a,n) (ExpUnOp op e _) l = let
-  (i1, n') = genExp (a, n + 1) e (ATemp n)
+genExp n (ExpUnOp op e _) l = let
+  (i1, n') = genExp (n + 1) e (ATemp n)
   c  = [AAsm [l] op [ALoc $ ATemp n]]
   in (i1 ++ c, n')
 
+{-
 -- begin 'temp -> register' translation
 translate regMap (AAsm {aAssign = [dest], aOp = Nop, aArgs = [src]}) =
   let
