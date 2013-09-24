@@ -56,5 +56,3 @@ instance Show Op where
   show Gt = ">"
   show Geq = ">="
   show Nop = "[nop]"
-
-data COp = Ret deriving Show

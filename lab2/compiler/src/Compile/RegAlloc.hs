@@ -32,7 +32,7 @@ genInter stmts =
 genInter' [] _ inter vars = (inter, vars)
 genInter' (stmt : aasm) l inter vars =
   case stmt of
-    ACtrl Ret loc ->
+    ACtrl (Ret loc) ->
       let
         l' = Set.insert loc l
         newInter = Set.map (\x -> (loc, x)) l

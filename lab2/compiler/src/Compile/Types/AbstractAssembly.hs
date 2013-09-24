@@ -12,8 +12,14 @@ data AAsm = AAsm {aAssign :: [ALoc]
                  ,aOp     :: Op
                  ,aArgs   :: [AVal]
                  }
-          | ACtrl COp AVal
+          | ACtrl COp
           | AComment String deriving Show
+
+data COp = Ret AVal
+         | Ifz String -- If (!AVal) goto lbl
+         | Goto String
+         | Lbl String
+         deriving Show 
 
 data AVal = ALoc ALoc
           | AImm Int deriving (Show, Eq, Ord)

@@ -16,47 +16,83 @@ import Debug.Trace
 codeGen :: Program -> [Asm]
 codeGen (Program (Block stmts _)) =
   let
-    aasm = foldl (\acc -> \stmt -> genStmt acc stmt) ([], 0) stmts
+    aasm = genStmt (Map.empty, 0, 0) stmts
   in []
 
-genStmt acc (Simp (Decl _ _ Nothing _) _) = acc
-genStmt (stmts, n) (Simp (Decl _ i (Just e) _) _) =
+-- updates the abstract assembly at a label
+update aasm Nothing = Just aasm
+update aasm (Just acc) = Just $ acc ++ aasm
+     
+genStmt (acc, _, _) [] = acc
+genStmt acc ((Simp (Decl _ _ Nothing _) _) : xs) = genStmt acc xs
+genStmt (acc, n, l) ((Simp (Decl _ i (Just e) _) _) : xs) =
   let
-    (stmt, n') = genExp n e (AVar i)
-  in (stmts ++ stmt, n')
-genStmt (stmts, n) (Simp (Asgn i o e s) _) = 
+    (aasm, n', l') = genExp (n, l) e (AVar i)
+    acc' = Map.alter (update aasm) l acc
+  in genStmt (acc', n', l') xs
+genStmt (acc, n, l) ((Simp (Asgn i o e s) _) : xs) = 
   let
     e' = case o of
       Nothing -> e
       Just op -> ExpBinOp op (Ident i s) e s
-    (stmt, n') = genExp n e' (AVar i)
-  in (stmts ++ stmt, n')
-genStmt (stmts, n) (Simp (PostOp o (Ident i _) s) _) =
+    (aasm, n', l') = genExp (n, l) e' (AVar i)
+    acc' = Map.alter (update aasm) l acc
+  in genStmt (acc', n', l') xs
+genStmt (acc, n, l) ((Simp (PostOp o (Ident i _) s) _) : xs) =
   let
     op = case o of
       Incr -> Add
       Decr -> Sub
     e' = ExpBinOp op (Ident i s) (ExpInt Dec 1 s) s
-    (stmt, n') = genExp n e' (AVar i)
-  in (stmts ++ stmt, n')
-genStmt (stmts, n) (Simp (Expr e _) _) = 
+    (aasm, n', l') = genExp (n, l) e' (AVar i)
+    acc' = Map.alter (update aasm) l acc 
+  in genStmt (acc', n', l') xs
+genStmt (acc, n, l) ((Simp (Expr e _) _) : xs) = 
   let
-    (stmt, n') = genExp (n+1) e (ATemp n)
-  in (stmts ++ stmt, n')
+    (aasm, n', l') = genExp (n + 1, l) e (ATemp n)
+    acc' = Map.alter (update aasm) l acc
+  in genStmt (acc, n', l') xs
+genStmt acc ((BlockStmt (Block stmts _) _) : xs) = genStmt acc stmts
+genStmt (acc, n, l) ((Ctrl (Return e _) _) : xs) =
+  let
+    (aasm, _, l') = genExp (n, l) e (AReg 0)
+    aasm' = aasm ++ [ACtrl $ Ret (ALoc $ AReg 0)]
+  in Map.alter (update aasm') l' acc
          
-genExp :: Int -> Expr -> ALoc -> ([AAsm], Int)
-genExp n (ExpInt _ i _) l = ([AAsm [l] Nop [AImm $ fromIntegral i]], n)
-genExp n (Ident s _) l = ([AAsm [l] Nop [ALoc $ AVar s]], n)
-genExp n (ExpBinOp op e1 e2 _) l = let
-  (i1, n') = genExp (n + 1) e1 (ATemp n)
-  (i2, n'') = genExp (n' + 1) e2 (ATemp n')
-  c  = [AAsm [l] op [ALoc $ ATemp n, ALoc $ ATemp $ n']]
-  in (i1 ++ i2 ++ c, n'')
-genExp n (ExpUnOp op e _) l = let
-  (i1, n') = genExp (n + 1) e (ATemp n)
-  c  = [AAsm [l] op [ALoc $ ATemp n]]
-  in (i1 ++ c, n')
+genExp :: (Int, Int) -> Expr -> ALoc -> ([AAsm], Int, Int)
+genExp (n,l) (ExpInt _ i _) loc = ([AAsm [loc] Nop [AImm $ fromIntegral i]], n, l)
+genExp (n,l) (TrueT _) loc = ([AAsm [loc] Nop [AImm 0]], n, l)
+genExp (n,l) (FalseT _) loc = ([AAsm [loc] Nop [AImm 1]], n, l)
+genExp (n,l) (Ident s _) loc = ([AAsm [loc] Nop [ALoc $ AVar s]], n, l)
+genExp (n,l) (ExpBinOp op e1 e2 _) loc = let
+  (i1, n', l') = genExp (n + 1, l) e1 (ATemp n)
+  (i2, n'', l'') = genExp (n' + 1, l') e2 (ATemp n')
+  c  = [AAsm [loc] op [ALoc $ ATemp n, ALoc $ ATemp $ n']]
+  in (i1 ++ i2 ++ c, n'', l'')
+genExp (n, l) (ExpUnOp op e _) loc = let
+  (i1, n', l') = genExp (n + 1, l) e (ATemp n)
+  c  = [AAsm [loc] op [ALoc $ ATemp n]]
+  in (i1 ++ c, n', l')
 
+-- a;fjskalfjasl;kfjf
+{-
+genExp (n, l) (ExpTernOp e1 e2 e3 _) l = let
+  (i1, n', l') = genExp (n + 1, l) e1 (ATemp n)
+  (i2, n'', l'') = genExp (n' + 1, l') e1 (ATemp n')
+  (i3, n''', l''') = genExp (n'' + 1, l'') e1 (ATemp n'')
+  aasm =
+    
+    i1 ++ [Actrl $ Ifz ("else" ++ (show l)) $ ALoc (ATemp n)] ++
+    i2 ++ [AAsm [l] Nop [ALoc $ ATemp n'],
+           Goto (show $ l'''+1),
+           Lbl ("else" ++ (show l))] ++
+    i3 ++ [AAsm [l] Nop [ALoc $ ATemp n''],
+           Lbl (show $ l'''+1)]
+  in ([], n''', l'''+1 )
+-}
+
+
+     
 {-
 -- begin 'temp -> register' translation
 translate regMap (AAsm {aAssign = [dest], aOp = Nop, aArgs = [src]}) =
