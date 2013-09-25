@@ -88,11 +88,38 @@ checkE (Ident i _) ctx =
     Just t -> ValidE t    
 checkE (ExpUnOp op e _) ctx =
   let
-    opT = opType op
-  in if opT = (checkE e ctx) then ValidE
-     else BadE "op expr mismatch"
--- TODO: complete this function
-    
+    ([opT], ret) = opType op
+  in case (checkE e ctx) of
+    BadE s -> BadE s
+    ValidE t -> if opT == t then ValidE ret
+                else BadE "op expr mismatch"
+checkE (ExpBinOp op e1 e2 _) ctx =
+  if (op == Eq) || (op == Neq) then
+    case (checkE e1 ctx, checkE e2 ctx) of
+      (BadE s, _) -> BadE s
+      (_, BadE s) -> BadE s
+      (ValidE t1, ValidE t2) -> if t1 == t2 then ValidE Bool
+                                else BadE "eq type mismatch"
+  else
+    let
+      ([opT1, opT2], ret) = opType op
+    in case (checkE e1 ctx, checkE e2 ctx) of
+      (BadE s, _) -> BadE s
+      (_, BadE s) -> BadE s
+      (ValidE t1, ValidE t2) ->
+        if (t1 == opT1) && (t2 == opT2) then ValidE ret
+        else BadE "op expr mismatch"
+checkE (ExpTernOp e1 e2 e3 _) ctx =
+  case (checkE e1 ctx, checkE e2 ctx, checkE e3 ctx) of
+    (BadE s, _, _) -> BadE s
+    (_, BadE s, _) -> BadE s
+    (_, _, BadE s) -> BadE s
+    (ValidE t1, ValidE t2, ValidE t3) ->
+      case t1 of
+        Int -> BadE "cond in ternary op not type bool"
+        Bool -> if t2 == t3 then ValidE t2
+                else BadE "ternary result type mismatch"
+                      
 -- Checks that no variables are used before definition
 checkInit :: S -> Set.Set String -> Either String (Set.Set String)
 checkInit ANup live = Right live

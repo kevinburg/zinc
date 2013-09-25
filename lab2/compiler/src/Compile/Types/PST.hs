@@ -12,8 +12,6 @@ import Compile.Types.Ops
 
 data Program = Program Block
 data Block = Block [Stmt] SourcePos
-data Type = Int
-          | Bool deriving (Show, Eq)
 data Simp = Decl Type String (Maybe Expr) SourcePos
           | Asgn String (Maybe Op) Expr SourcePos
           | PostOp Op Expr SourcePos

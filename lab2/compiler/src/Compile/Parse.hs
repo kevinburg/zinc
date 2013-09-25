@@ -309,7 +309,7 @@ opTable = [[prefix  "-"   (ExpUnOp Neg),
            [binary  "^"   (ExpBinOp BXor) AssocLeft],
            [binary  "|"   (ExpBinOp BOr)  AssocLeft],
            [binary  "&&"  (ExpBinOp LAnd) AssocLeft],
-           [binary  "||"  (ExpBinOp BOr)  AssocLeft],
+           [binary  "||"  (ExpBinOp LOr)  AssocLeft],
            [binary  "=="  (ExpBinOp Eq)   AssocLeft,
             binary  "!="  (ExpBinOp Neq)  AssocLeft]]
 {-

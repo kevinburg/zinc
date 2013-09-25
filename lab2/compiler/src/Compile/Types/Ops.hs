@@ -6,6 +6,8 @@
 -}
 module Compile.Types.Ops where
 
+data Type = Int | Bool deriving (Eq, Show)
+
 data Op = Mul
         | Add
         | Sub
@@ -29,8 +31,30 @@ data Op = Mul
         | Lt
         | Leq
         | Gt
-        | Geq
-          
+        | Geq deriving Eq
+
+opType Mul = ([Int, Int], Int)
+opType Add = ([Int, Int], Int)
+opType Sub = ([Int, Int], Int)
+opType Div = ([Int, Int], Int)
+opType Neg = ([Int], Int)
+opType Mod = ([Int, Int], Int)
+opType BAnd = ([Int, Int], Int)
+opType BXor = ([Int, Int], Int)
+opType BOr = ([Int, Int], Int)
+opType LAnd = ([Bool, Bool], Bool)
+opType LOr = ([Bool, Bool], Bool)
+opType Shl = ([Int, Int], Int)
+opType Shr = ([Int, Int], Int)
+opType BNot = ([Bool], Bool)
+opType LNot = ([Bool], Bool)
+opType Incr = ([Int], Int)
+opType Decr = ([Int], Int)
+opType Lt = ([Int, Int], Bool)
+opType Leq = ([Int, Int], Bool)
+opType Gt = ([Int, Int], Bool)
+opType Geq = ([Int, Int], Bool)
+             
 instance Show Op where
   show Mul = "*"
   show Add = "+"
