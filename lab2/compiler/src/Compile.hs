@@ -35,10 +35,8 @@ compile :: Job -> IO ()
 compile job = do
   res <- runErrorT $ do
     ast <- parseAST $ jobSource job
-    let
-      elab = elaborate ast --gets the elaboration of the AST
-     in
-     liftEIO $ checkAST elab
+    elab <- liftEIO $ elaborate ast
+    liftEIO $ checkAST elab
     if jobOutFormat job == C0
       then writer (jobOut job) ast
       else let asm = codeGen ast in

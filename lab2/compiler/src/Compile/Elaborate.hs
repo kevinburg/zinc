@@ -6,11 +6,11 @@ import Control.Exception
 import Data.Typeable
 
 
-elaborate :: Program -> S
+elaborate :: Program -> Either String S
 elaborate (Program (Block stmts _)) =
   case elaborate' stmts of
-    Left (Error s) -> ANup
-    Right s -> s
+    Left (Error s) -> Left s
+    Right s -> trace (show s) (Right s)
 
 data Error = Error String
 

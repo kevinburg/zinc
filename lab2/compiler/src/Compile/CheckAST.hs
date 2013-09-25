@@ -82,31 +82,41 @@ checkE :: Expr -> Context -> CheckE
 checkE (ExpInt _ _ _) _ = ValidE Int
 checkE (TrueT _) _ = ValidE Bool
 checkE (FalseT _) _ = ValidE Bool
-
+checkE (Ident i _) ctx = 
+  case Map.lookup i ctx of
+    Nothing -> BadE $ i ++ " used undeclared."
+    Just t -> ValidE t    
+checkE (ExpUnOp op e _) ctx =
+  let
+    opT = opType op
+  in if opT = (checkE e ctx) then ValidE
+     else BadE "op expr mismatch"
+-- TODO: complete this function
+    
 -- Checks that no variables are used before definition
 checkInit :: S -> Set.Set String -> Either String (Set.Set String)
 checkInit ANup live = Right live
 checkInit (AReturn e) live = 
-  case Set.isSubsetOf (uses e) live of
-    False -> Left "Return statement uses undefined variable(s)"
-    True -> Right Set.empty
+  case checkLive (uses e) live of
+    True -> Left "Return statement uses undefined variable(s)"
+    False -> Right Set.empty
 checkInit (AAssign i e) live = 
-  case Set.isSubsetOf (uses e) live of
-    False -> Left $ "Undeclared variable on RHS of define for " ++ i
-    True -> Right $ Set.delete i live
+  case checkLive (uses e) live of
+    True -> Left $ "Undeclared variable on RHS of define for " ++ i
+    False -> Right $ Set.delete i live
 checkInit (AIf e s1 s2) live = 
-  case Set.isSubsetOf (uses e) live of
-    False -> Left "If condition uses undefined variable(s)"
-    True ->
+  case checkLive (uses e) live of
+    True -> Left "If condition uses undefined variable(s)"
+    False ->
       case (checkInit s1 live, checkInit s2 live) of
         (Left s, _) -> Left s
         (_, Left s) -> Left s
         (Right live1, Right live2) ->
           Right $ Set.difference live $ Set.intersection live1 live2
 checkInit (AWhile e s) live =
-  case Set.isSubsetOf (uses e) live of
-    False -> Left "While condition uses undefined variable(s)"
-    True ->
+  case checkLive (uses e) live of
+    True -> Left "While condition uses undefined variable(s)"
+    False ->
       case checkInit s live of
         Left s -> Left s
         Right _ -> Right live
@@ -118,6 +128,9 @@ checkInit (ADeclare i _ s) live =
   case checkInit s (Set.insert i live) of
     Left s -> Left s
     Right _ -> Right live
+    
+checkLive s live =
+  Set.fold (||) False $ Set.map (\x -> Set.member x live) s
     
 -- Evaluates to a list of identifiers used in the expression
 uses :: Expr -> Set.Set String
