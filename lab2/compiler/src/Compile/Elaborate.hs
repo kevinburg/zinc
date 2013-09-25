@@ -24,27 +24,28 @@ elaborate' ((Simp (Decl t i (Just e) _) _) : xs) =
   case elaborate' xs of
     Left s -> Left s
     Right s ->
-      case contained i e of -- contained NYI
+      case contained i e of
         True -> Left (Error ("Recursive declaration of " ++ (show i)))
         False -> Right $ ADeclare i t (ASeq (AAssign i e) s)
 elaborate' ((Simp (Asgn i Nothing e _)_) : xs)  =
   case elaborate' xs of
     Left s -> Left s
-    Right s -> Right $ AAssign i e
-elaborate' ((Simp (Asgn i (Just e) e2 _)_) : xs) =
+    Right s -> Right $ ASeq (AAssign i e) s
+elaborate' ((Simp (Asgn i (Just op) e2 p) _) : xs) =
   case elaborate' xs of
     Left s -> Left s
-    Right s -> Right $ ASeq (AAssign i e2) s
+    Right s -> Right $ ASeq (AAssign i (ExpBinOp op (Ident i p) e2 p)) s
 elaborate' ((Simp (PostOp o e _)_) : xs) =
   case elaborate' xs of
     Left s -> Left s
-    Right s -> case e of
-      Ident _ _-> Right $ ASeq (AAssign "" e) s
-      _ -> Left (Error ("Applying " ++ (show o) ++ " to non-identifier " ++ (show e)))
-elaborate' ((Simp (Expr e _)_) : xs) =
-  case elaborate' xs of
-    Left s -> Left s
-    Right s -> Right $ ASeq (AAssign "" e) s
+    Right s -> 
+      case e of
+        Ident i p -> 
+          case o of 
+            Incr -> Right $ ASeq (AAssign i (ExpBinOp Add (Ident i p) (ExpInt Dec 1 p) p)) s
+            Decr -> Right $ ASeq (AAssign i (ExpBinOp Sub (Ident i p) (ExpInt Dec 1 p) p)) s
+        _ -> Left (Error ("Applying " ++ (show o) ++ " to non-identifier " ++ (show e)))
+elaborate' ((Simp (Expr e _)_) : xs) = elaborate' xs
 -- CONTROL FLOW --
   -- IF --
 elaborate' ((Ctrl (If e st (Nothing) _) _) : xs) =
@@ -67,41 +68,25 @@ elaborate' ((Ctrl (While e st _) _) : xs) =
     Right s -> case elaborate' [st] of
       Left s' -> Left s'
       Right s' -> Right $ ASeq (AWhile e s') s
-  -- FOR - for(; expr;){} --
-elaborate' ((Ctrl (For (Nothing) e (Nothing) st _) _) : xs) =
-  case elaborate' xs of
-    Left s -> Left s
-    Right s -> case elaborate' [st] of
-      Left s' -> Left s'
-      Right s' -> Right $ ASeq (AWhile e s') s
-  -- FOR - for(decl; expr;){} --
-elaborate' ((Ctrl (For (Just simp) e (Nothing) st _) _) : xs) =
-  case elaborate' xs of
-    Left s -> Left s
-    Right s -> case elaborate' [st] of
-      Left s' -> Left s'
-      Right s' -> 
-        case simp of
-          Decl t i Nothing _ -> Right $ ASeq (AWhile e s') s
-          Decl t i (Just expr) _ -> Right $ ASeq (AWhile e s') s
-          Asgn i Nothing e _ -> Right $ ASeq (AWhile e s') s
-          Asgn i (Just expr) e _ -> Right $ ASeq (AWhile e s') s
-  -- FOR - for(; expr; Asgn/PostOp/Expr){} --
-elaborate' ((Ctrl (For (Nothing) e (Just simp) st _) _) : xs) =
-  case elaborate' xs of
-    Left s -> Left s
-    Right s -> case elaborate' [st] of
-      Left s' -> Left s'
-      Right s' -> case simp of
-        PostOp _ _ _ -> Right $ ASeq (AWhile e s') s
-        Expr _ _ -> Right $ ASeq (AWhile e s') s
-  -- FOR - for(decl; expr; Asgn/PostOp/Expr){} --
-elaborate' ((Ctrl (For (Just simp1) e (Just simp2) st _) _) : xs) =
-  case elaborate' xs of
-    Left s -> Left s
-    Right s -> case elaborate' [st] of
-      Left s' -> Left s'
-      Right s' -> {-case on simp1 and simp2 here -} Right $ ASeq (AWhile e s') s
+  -- FOR --
+elaborate' ((Ctrl (For (Just (Decl t i e _)) exp s2 s3 _) p) : xs) =      
+  case (elaborate' xs, elaborate' (mList s2 p), elaborate' [s3]) of
+    (Left err, _, _) -> Left err
+    (_, Left err, _) -> Left err
+    (_, _, Left err) -> Left err
+    (Right s, Right step, Right body) ->
+      case e of
+        Nothing ->
+          Right $ ASeq (ADeclare i t (AWhile exp (ASeq body step))) s
+        (Just e') ->
+          Right $ ASeq (ADeclare i t (ASeq (AAssign i e') (AWhile exp (ASeq body step)))) s
+elaborate' ((Ctrl (For s1 exp s2 s3 _) p) : xs) =
+    case (elaborate' xs, elaborate' (mList s1 p), elaborate' (mList s2 p), elaborate' [s3]) of
+    (Left err, _, _, _) -> Left err
+    (_, Left err, _, _) -> Left err
+    (_, _, Left err, _) -> Left err
+    (Right s, Right init, Right step, Right body) ->
+      Right $ ASeq (ASeq init (AWhile exp (ASeq body step))) s
   -- RETURN --
 elaborate' ((Ctrl (Return e _) _) : xs) =
   case elaborate' xs of
@@ -115,6 +100,9 @@ elaborate' ((BlockStmt (Block l _) _) : xs) =
       Left s' -> Left s'
       Right s' -> Right $ ASeq s' s
 
+-- extremely special case function
+mList Nothing _ = []
+mList (Just x) p = [Simp x p]
 
     
 contained :: String -> Expr -> Bool
