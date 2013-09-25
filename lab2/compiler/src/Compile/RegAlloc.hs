@@ -18,7 +18,7 @@ addNewInter :: AVal -> Set.Set AVal -> Set.Set (AVal, AVal)
 addNewInter (ALoc loc) s =
   Set.map (\x -> (ALoc loc, x)) s
 addNewInter (AImm _) s =
-  Set.empty
+  Set.empty 
 
 isTemp (ALoc _) = True
 isTemp _ = False
