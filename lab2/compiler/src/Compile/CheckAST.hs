@@ -15,7 +15,7 @@ checkAST s =
       case checkS s Map.empty of
         BadS s -> Left s
         ValidS -> 
-          case checkInit s Set.empty of
+          case checkInit s (Set.empty, Set.empty) of
             Left s -> Left s
             Right _ -> Right ()
           
@@ -121,40 +121,41 @@ checkE (ExpTernOp e1 e2 e3 _) ctx =
                 else BadE "ternary result type mismatch"
                       
 -- Checks that no variables are used before definition
-checkInit :: S -> Set.Set String -> Either String (Set.Set String)
-checkInit ANup live = Right live
-checkInit (AReturn e) live = 
+checkInit :: S -> (Set.Set String, Set.Set String) -> Either String (Set.Set String, Set.Set String)
+checkInit ANup acc = Right acc
+checkInit (AReturn e) (live, defn) = 
   case checkLive (uses e) live of
     True -> Left "Return statement uses undefined variable(s)"
-    False -> Right Set.empty
-checkInit (AAssign i e) live = 
+    False -> Right (Set.empty, defn)
+checkInit (AAssign i e) (live, defn) = 
   case checkLive (uses e) live of
     True -> Left $ "Undeclared variable on RHS of define for " ++ i
-    False -> Right $ Set.delete i live
-checkInit (AIf e s1 s2) live = 
+    False -> Right $ (Set.delete i live, Set.insert i defn)
+checkInit (AIf e s1 s2) (live, defn) = 
   case checkLive (uses e) live of
     True -> Left "If condition uses undefined variable(s)"
     False ->
-      case (checkInit s1 live, checkInit s2 live) of
+      case (checkInit s1 (live, defn), checkInit s2 (live, defn)) of
         (Left s, _) -> Left s
         (_, Left s) -> Left s
-        (Right live1, Right live2) ->
-          Right $ Set.difference live $ Set.intersection live1 live2
-checkInit (AWhile e s) live =
+        (Right (_, defn1), Right (_, defn2)) ->
+          Right (Set.difference live $ Set.intersection defn1 defn2,
+                 Set.union defn $ Set.intersection defn1 defn2)
+checkInit (AWhile e s) (live, defn) =
   case checkLive (uses e) live of
     True -> Left "While condition uses undefined variable(s)"
     False ->
-      case checkInit s live of
+      case checkInit s (live, defn) of
         Left s -> Left s
-        Right _ -> Right live
-checkInit (ASeq s1 s2) live =
-  case checkInit s1 live of
+        Right _ -> Right (live, defn)
+checkInit (ASeq s1 s2) acc =
+  case checkInit s1 acc of
     Left s -> Left s
-    Right live' -> checkInit s2 live'
-checkInit (ADeclare i _ s) live =
-  case checkInit s (Set.insert i live) of
+    Right acc' -> checkInit s2 acc'
+checkInit (ADeclare i _ s) (live, defn) =
+  case checkInit s (Set.insert i live, defn) of
     Left s -> Left s
-    Right _ -> Right live
+    Right _ -> Right (live, defn)
     
 checkLive s live =
   Set.fold (||) False $ Set.map (\x -> Set.member x live) s

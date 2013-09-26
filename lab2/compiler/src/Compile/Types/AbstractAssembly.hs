@@ -16,7 +16,7 @@ data AAsm = AAsm {aAssign :: [ALoc]
           | AComment String deriving Show
 
 data COp = Ret AVal
-         | Ifz String -- If (!AVal) goto lbl
+         | Ifz AVal String -- If (!AVal) goto lbl
          | Goto String
          | Lbl String
          deriving Show 
