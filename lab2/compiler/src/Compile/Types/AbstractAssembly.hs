@@ -7,6 +7,7 @@
 module Compile.Types.AbstractAssembly where
 
 import Compile.Types.Ops
+import qualified Data.Set as Set
 
 data AAsm = AAsm {aAssign :: [ALoc]
                  ,aOp     :: Op
@@ -19,6 +20,8 @@ data COp = Ret AVal
          | Ifz AVal String -- If (!AVal) goto lbl
          | Goto String
          | Lbl String
+         | GotoP String (Set.Set AVal)
+         | IfzP AVal String (Set.Set AVal)
          deriving Show 
 
 data AVal = ALoc ALoc

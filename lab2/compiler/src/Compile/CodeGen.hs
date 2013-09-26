@@ -13,11 +13,17 @@ import qualified Data.Set as Set
 
 import Debug.Trace
 
-codeGen :: Program -> [Asm]
+import Compile.SSA
+
+codeGen :: Program -> [AAsm]
 codeGen (Program (Block stmts _)) =
   let
-    aasm = genStmt ([], 0, 0) stmts
-  in trace (show aasm) []
+    (aasm, _, _) = genStmt ([], 0, 0) stmts
+    program = foldr (\x -> \acc -> (show x) ++ "\n" ++ acc) "" aasm
+    s = ssa aasm
+    s1 = Map.toList s
+    s2 = foldr (\x -> \acc -> (show x) ++ "\n\n" ++ acc) "" s1
+  in trace s2 aasm
 
 -- updates the abstract assembly at a label
 update aasm Nothing = Just aasm
@@ -60,8 +66,8 @@ genStmt (acc, n, l) ((Ctrl (If e s Nothing _) _) : xs) =
   let
     (aasme, n', l') = genExp (n + 1, l) e (ATemp n)
     (aasms, n'', l'') = genStmt ([], n', l') [s] 
-    aasm = [ACtrl $ Ifz (ALoc (ATemp n)) (show $ l''+1),
-            ACtrl $ Goto (show $ l''+2),
+    aasm = [ACtrl $ Ifz (ALoc (ATemp n)) (show $ l''+2),
+            ACtrl $ Goto (show $ l''+1),
             ACtrl $ Lbl (show $ l''+1)]
     aasm' = aasme ++ aasm ++ aasms ++
             [ACtrl $ Goto (show $ l''+2), ACtrl $ Lbl (show $ l''+2)]

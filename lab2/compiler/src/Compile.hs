@@ -22,6 +22,7 @@ import Compile.Parse
 import Compile.CheckAST
 import Compile.CodeGen
 import Compile.Elaborate
+import Compile.SSA
 
 import LiftIOE
 import Debug.Trace
@@ -36,7 +37,7 @@ compile :: Job -> IO ()
 compile job = do
   res <- runErrorT $ do
     ast <- parseAST $ jobSource job
-    elab <- liftEIO $ trace (show ast) (elaborate ast)
+    elab <- liftEIO $ elaborate ast
     liftEIO $ checkAST elab
     if jobOutFormat job == C0
       then writer (jobOut job) ast

@@ -10,7 +10,7 @@ elaborate :: Program -> Either String S
 elaborate (Program (Block stmts _)) =
   case elaborate' stmts of
     Left (Error s) -> Left s
-    Right s -> trace (show s) (Right s)
+    Right s -> Right s
 
 data Error = Error String
 
@@ -45,10 +45,17 @@ elaborate' ((Simp (PostOp o e _)_) : xs) =
             Incr -> Right $ ASeq (AAssign i (ExpBinOp Add (Ident i p) (ExpInt Dec 1 p) p)) s
             Decr -> Right $ ASeq (AAssign i (ExpBinOp Sub (Ident i p) (ExpInt Dec 1 p) p)) s
         _ -> Left (Error ("Applying " ++ (show o) ++ " to non-identifier " ++ (show e)))
-elaborate' ((Simp (Expr (ExpUnOp Incr (Ident _ _) _)_)_): xs) = elaborate' xs
-elaborate' ((Simp (Expr (ExpUnOp Decr (Ident _ _) _)_)_): xs) = elaborate' xs
+elaborate' ((Simp (Expr (ExpUnOp Incr (Ident i p) _)_)_): xs) = 
+  case elaborate' xs of
+    Left s -> Left s
+    Right s -> Right $ ASeq (AAssign i (ExpBinOp Add (Ident i p) (ExpInt Dec 1 p) p)) s
+elaborate' ((Simp (Expr (ExpUnOp Decr (Ident i p) _)_)_): xs) =
+  case elaborate' xs of
+    Left s -> Left s
+    Right s -> Right $ ASeq (AAssign i (ExpBinOp Sub (Ident i p) (ExpInt Dec 1 p) p)) s
 elaborate' ((Simp (Expr (ExpUnOp Incr _ _) _)_): xs) = Left $ Error "bad incr"
 elaborate' ((Simp (Expr (ExpUnOp Decr _ _) _)_): xs) = Left $ Error "bad decr"
+elaborate' ((Simp (Expr _ _)_): xs) = elaborate' xs
 -- CONTROL FLOW --
   -- IF --
 elaborate' ((Ctrl (If e st (Nothing) _) _) : xs) =
