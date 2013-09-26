@@ -65,9 +65,31 @@ genStmt (acc, n, l) ((Ctrl (If e s Nothing _) _) : xs) =
             ACtrl $ Lbl (show $ l''+1)]
     aasm' = aasme ++ aasm ++ aasms ++
             [ACtrl $ Goto (show $ l''+2), ACtrl $ Lbl (show $ l''+2)]
-  in genStmt (acc ++ aasm', n'', l''+1) xs
-     
-     
+  in genStmt (acc ++ aasm', n'', l''+2) xs
+genStmt (acc, n, l) ((Ctrl (If e s1 (Just s2) _) _) : xs) =
+   let
+    (aasme, n1, l1) = genExp (n+1, l) e (ATemp n)
+    (aasms1, n2, l2) = genStmt ([], n1, l1) [s1] 
+    (aasms2, n3, l3) = genStmt ([], n2, l2) [s2] 
+    aasm = [ACtrl $ Ifz (ALoc (ATemp n)) (show $ l3+2),
+            ACtrl $ Goto (show $ l3+1),
+            ACtrl $ Lbl (show $ l3+1)]
+    aasm' = aasme ++ aasm ++ aasms1 ++
+            [ACtrl $ Goto (show $ l3+3), ACtrl $ Lbl (show $ l3+2)] ++
+            aasms2 ++ [ACtrl $ Goto (show $ l3+3), ACtrl $ Lbl (show $ l3+3)]
+  in genStmt (acc ++ aasm', n3, l3+3) xs
+genStmt (acc, n, l) ((Ctrl (While e s _) _) : xs) =
+  let
+    (aasme, n1, l1) = genExp (n+1, l) e (ATemp n)
+    (aasms, n2, l2) = genStmt ([], n1, l1) [s]
+    aasm = [ACtrl $ Lbl (show $ l2+1),
+            ACtrl $ Ifz (ALoc (ATemp n)) (show $ l2+3),
+            ACtrl $ Goto (show $ l2+2),
+            ACtrl $ Lbl (show $ l2+2)]
+    aasm' = aasme ++ aasm ++ aasms ++
+            [ACtrl $ Goto (show $ l2+1), ACtrl $ Lbl (show $ l2+3)]
+  in genStmt (acc ++ aasm', n2, l2+3) xs
+    
 genExp :: (Int, Int) -> Expr -> ALoc -> ([AAsm], Int, Int)
 genExp (n,l) (ExpInt _ i _) loc = ([AAsm [loc] Nop [AImm $ fromIntegral i]], n, l)
 genExp (n,l) (TrueT _) loc = ([AAsm [loc] Nop [AImm 1]], n, l)
