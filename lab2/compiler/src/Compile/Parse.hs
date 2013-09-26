@@ -89,7 +89,9 @@ simp = try (do
                pos <- getPosition
                dest <- lvalue
                op <- postOp
-               return $ PostOp op (Ident dest pos) pos) <|>
+               case op of
+                 Just o -> return $ PostOp o (Ident dest pos) pos
+                 Nothing -> Text.ParserCombinators.Parsec.unexpected "asdfdsf") <|>
        try (do
                pos <- getPosition
                e <- expr
@@ -181,10 +183,13 @@ asnOp = do
                x     -> fail $ "Nonexistent assignment operator: " ++ x
    <?> "assignment operator"
 
-postOp :: C0Parser Op
+postOp :: C0Parser (Maybe Op)
 postOp = do
   op <- operator
-  return Add
+  return $ case op of
+    "++" -> Just Incr
+    "--" -> Just Decr
+    x -> fail $ "asdfas"
   <?> "postOp"
 
 ternOp :: C0Parser (Maybe (Expr, Expr))

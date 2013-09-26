@@ -89,7 +89,24 @@ genStmt (acc, n, l) ((Ctrl (While e s _) _) : xs) =
     aasm' = aasme ++ aasm ++ aasms ++
             [ACtrl $ Goto (show $ l2+1), ACtrl $ Lbl (show $ l2+3)]
   in genStmt (acc ++ aasm', n2, l2+3) xs
-    
+genStmt (acc, n, l) ((Ctrl (For ms1 e ms2 s3 p) _) : xs) =
+  let
+    (init, n1, l1) = case ms1 of
+      Nothing -> ([], n, l)
+      (Just s1) -> genStmt ([], n, l) [Simp s1 p]
+    (aasme, n2, l2) = genExp (n1+1, l1) e (ATemp n1)
+    (step, n3, l3) = case ms2 of
+      Nothing -> ([], n2, l2)
+      (Just s2) -> genStmt ([], n2, l2) [Simp s2 p]
+    (body, n4, l4) = genStmt ([], n3, l3) [s3]
+    aasm = init ++ [ACtrl $ Lbl (show $ l4+1)] ++ aasme ++
+           [ACtrl $ Ifz (ALoc (ATemp n1)) (show $ l4+3),
+            ACtrl $ Goto (show $ l4+2),
+            ACtrl $ Lbl (show $ l4+2)] ++ body ++ step ++
+           [ACtrl $ Goto (show $ l4+1),
+            ACtrl $ Lbl (show $ l4+3)]
+  in genStmt (acc ++ aasm, n4, l4+3) xs
+     
 genExp :: (Int, Int) -> Expr -> ALoc -> ([AAsm], Int, Int)
 genExp (n,l) (ExpInt _ i _) loc = ([AAsm [loc] Nop [AImm $ fromIntegral i]], n, l)
 genExp (n,l) (TrueT _) loc = ([AAsm [loc] Nop [AImm 1]], n, l)
@@ -100,25 +117,28 @@ genExp (n,l) (ExpBinOp op e1 e2 _) loc = let
   (i2, n'', l'') = genExp (n' + 1, l') e2 (ATemp n')
   aasm  = [AAsm [loc] op [ALoc $ ATemp n, ALoc $ ATemp $ n']]
   in (i1 ++ i2 ++ aasm, n'', l'')
+genExp (n,l) (ExpUnOp Incr (Ident i _) p) _ = let
+  e' = ExpBinOp Add (Ident i p) (ExpInt Dec 1 p) p
+  in genExp (n, l) e' (AVar i)
+genExp (n,l) (ExpUnOp Decr (Ident i _) p) _ = let
+  e' = ExpBinOp Sub (Ident i p) (ExpInt Dec 1 p) p
+  in genExp (n, l) e' (AVar i)
 genExp (n,l) (ExpUnOp op e _) loc = let
   (i1, n', l') = genExp (n + 1, l) e (ATemp n)
   aasm = [AAsm [loc] op [ALoc $ ATemp n]]
   in (i1 ++ aasm, n', l')
-     
-{-
 genExp (n, l) (ExpTernOp e1 e2 e3 _) loc = let
-  (i1, n', l') = genExp (acc, n+1, l) e1 (ATemp n)
-  aasm1 =  [Actrl $ ALoc (ATemp n) $ Ifz ("else" ++ (show l))]
-  i1' = Map.alter (update aasm1) l' i1
-  (i2, n'', l'') = genExp (i1', n'+1, l') e1 (ATemp n')
-  aasm2 = [AAsm [l] Nop [ALoc $ ATemp n'],
-           Goto (show $ l'''+1)]
-  i2' = Map.alter (update aasm2) l'' i2
-  (i3, n''', l''') = genExp (i2, n''+1, l'') e1 (ATemp n'')
-  aasm3 = [AAsm [l] Nop [ALoc $ ATemp n'']]
-  i3' = Map.alter (update aasm3) l''' i3
-  in (i3', n''', l'''+1 )
--}
+  (i1, n1, l1) = genExp (n+1, l) e1 (ATemp n)
+  (i2, n2, l2) = genExp (n1+1, l1) e2 loc
+  (i3, n3, l3) = genExp (n2+1, l2) e3 loc
+  aasm = i1 ++ [ACtrl $ Ifz (ALoc (ATemp n)) (show $ l3+2),
+                ACtrl $ Goto (show $ l3+1),
+                ACtrl $ Lbl (show $ l3+1)] ++
+         i2 ++ [ACtrl $ Goto (show $ l3+3),
+                ACtrl $ Lbl (show $ l3+2)] ++
+         i3 ++ [ACtrl $ Goto (show $ l3+3),
+                ACtrl $ Lbl (show $ l3+3)]
+  in (aasm, n3, l3+3)
 
      
 {-

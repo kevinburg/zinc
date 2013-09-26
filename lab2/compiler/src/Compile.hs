@@ -24,6 +24,7 @@ import Compile.CodeGen
 import Compile.Elaborate
 
 import LiftIOE
+import Debug.Trace
 
 writer file obj = liftIOE $ writeFile file $ show obj
 
@@ -35,7 +36,7 @@ compile :: Job -> IO ()
 compile job = do
   res <- runErrorT $ do
     ast <- parseAST $ jobSource job
-    elab <- liftEIO $ elaborate ast
+    elab <- liftEIO $ trace (show ast) (elaborate ast)
     liftEIO $ checkAST elab
     if jobOutFormat job == C0
       then writer (jobOut job) ast
