@@ -49,7 +49,8 @@ parameterize' (s : xs) live aasm b =
       in parameterize' xs live' (s : aasm) b
          
 -- Put the paramters back on the gotos in the second pass.
-paramGoto blocks = List.map (\(l, (live, aasm)) -> (l, (live, map f aasm))) blocks
+paramGoto :: Blocks -> Blocks
+paramGoto blocks = Map.map (\(live, aasm) -> (live, map f aasm)) blocks
   where f (ACtrl (Goto l)) = 
           let
             Just (vs, _) = List.lookup l blocks
@@ -104,3 +105,23 @@ updateGen ((ALoc (AVar i)) : xs) m = let
   gen = m Map.! i
   in (ALoc (AVarG i gen)) : (updateGen xs m)
 updateGen (x : xs) m = x : updateGen xs m
+
+--build blockX calls blockY with params Set.Set AVal
+-- builds Map of Block String of Label -> Block String of Code -> Params from Code
+--
+
+type Lblmap = Map.Map String (Map.Map String (Set.Set Aval)) 
+  
+mapBlocks :: Blocks -> Lblmap -> Lblmap
+mapBlocks blocks lblmap = map f blocks
+  where f(str,(Map.empty,aasm)) = lblmap 
+        f(str,
+
+                         
+-- Minimize the blocks 
+minimize :: Blocks -> Blocks
+minimize [] = []
+minimize blocks = let bmap = mapBlocks blocks Map.empty
+                      
+  --rules for minimizing SSA generated code
+  
