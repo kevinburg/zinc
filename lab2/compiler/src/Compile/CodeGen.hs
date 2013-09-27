@@ -21,9 +21,8 @@ codeGen (Program (Block stmts _)) =
     (aasm, _, _) = genStmt ([], 0, 0) stmts
     program = foldr (\x -> \acc -> (show x) ++ "\n" ++ acc) "" aasm
     s = ssa aasm
-    s1 = Map.toList s
-    s2 = foldr (\x -> \acc -> (show x) ++ "\n\n" ++ acc) "" s1
-  in trace s2 aasm
+    s1 = foldr (\x -> \acc -> (show x) ++ "\n\n" ++ acc) "" s
+  in trace s1 aasm
 
 -- updates the abstract assembly at a label
 update aasm Nothing = Just aasm
