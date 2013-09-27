@@ -92,10 +92,15 @@ gen2 (AAsm {aAssign = [AVar i], aOp = o, aArgs = srcs}) m = let
 gen2 (ACtrl (GotoP i s)) m = let
   res = ACtrl (GotoP i (Set.map (\(ALoc (AVar x)) -> (ALoc (AVarG x (m Map.! x)))) s))
   in (res, m)
+gen2 (ACtrl (IfzP v l s)) m = let
+  [v'] = updateGen [v] m
+  s' = Set.map (\(ALoc (AVar x)) -> ALoc (AVarG x (m Map.! x))) s
+  res = ACtrl (IfzP v' l s')
+  in (res, m)
 gen2 x m = (x,m)
 
 updateGen [] m = []
 updateGen ((ALoc (AVar i)) : xs) m = let
   gen = m Map.! i
   in (ALoc (AVarG i gen)) : (updateGen xs m)
-updateGen (x : xs) m = updateGen xs m
+updateGen (x : xs) m = x : updateGen xs m

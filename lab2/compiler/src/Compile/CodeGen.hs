@@ -87,7 +87,8 @@ genStmt (acc, n, l) ((Ctrl (While e s _) _) : xs) =
   let
     (aasme, n1, l1) = genExp (n+1, l) e (ATemp n)
     (aasms, n2, l2) = genStmt ([], n1, l1) [s]
-    aasm = [ACtrl $ Lbl (show $ l2+1),
+    aasm = [ACtrl $ Goto (show $ l2+1),
+            ACtrl $ Lbl (show $ l2+1),
             ACtrl $ Ifz (ALoc (ATemp n)) (show $ l2+3),
             ACtrl $ Goto (show $ l2+2),
             ACtrl $ Lbl (show $ l2+2)]
@@ -104,7 +105,7 @@ genStmt (acc, n, l) ((Ctrl (For ms1 e ms2 s3 p) _) : xs) =
       Nothing -> ([], n2, l2)
       (Just s2) -> genStmt ([], n2, l2) [Simp s2 p]
     (body, n4, l4) = genStmt ([], n3, l3) [s3]
-    aasm = init ++ [ACtrl $ Lbl (show $ l4+1)] ++ aasme ++
+    aasm = init ++ [ACtrl $ Goto (show $ l4+1), ACtrl $ Lbl (show $ l4+1)] ++ aasme ++
            [ACtrl $ Ifz (ALoc (ATemp n1)) (show $ l4+3),
             ACtrl $ Goto (show $ l4+2),
             ACtrl $ Lbl (show $ l4+2)] ++ body ++ step ++
