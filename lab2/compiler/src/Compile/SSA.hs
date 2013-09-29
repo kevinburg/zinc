@@ -110,18 +110,35 @@ updateGen (x : xs) m = x : updateGen xs m
 -- builds Map of Block String of Label -> Block String of Code -> Params from Code
 --
 
-type Lblmap = Map.Map String (Map.Map String (Set.Set Aval)) 
+type Lblmap = Map.Map String (Map.Map String (Set.Set AVal)) 
   
 mapBlocks :: Blocks -> Lblmap -> Lblmap
-mapBlocks blocks lblmap = map f blocks
-  where f(str,(Map.empty,aasm)) = lblmap 
-        f(str,
+mapBlocks blocks lblmap = let lbls = map (\x -> b lblmap x) blocks
+                          in lbls
+  where b lblmap lbl vals aasm = let lmap = map (\x -> f lblmap lbl vals x) aasm
+                                  in lmap
+          where f lblmap lbl vals (ACtrl(IfzP aval goto s)) = Map.insert lbl (Map.insert goto s (lblmap Map.! lbl)) lblmap
+                f lblmap lbl vals (ACtrl(GotoP goto s)) = Map.insert lbl (Map.insert goto s (lblmap Map.! lbl)) lblmap
+                f lblmap lbl vals (ACtrl(Ifz _ _)) = lblmap --error ("Bad representation of AAsm Ifz not IfzP")
+                f lblmap lbl vals (ACtrl(Goto _ _)) = lblmap --error ("Bad representation of AAsm Goto not GotoP")
+                f lblmap bl vals _ = lblmap
 
                          
 -- Minimize the blocks 
 minimize :: Blocks -> Blocks
 minimize [] = []
-minimize blocks = let bmap = mapBlocks blocks Map.empty
+minimize blocks = let bmap = Map.empty
+                      bmap' = mapBlocks blocks $ map (\x -> Map.insert (fst x) Map.empty bmap) blocks
+                      min = minimize' blocks bmap'
+                  in
+                   min
                       
   --rules for minimizing SSA generated code
-  
+minimize' :: Blocks -> Lblmap -> Blocks
+minimize' [] _ = []
+minimize' blocks bmap = let blcks = Map.map (\x -> if Set.size(x) == 1 then replace x else x) bmap
+                        in
+                         blcks
+  where replace lbl vals aasm = (lbl, (vals, aasm))
+
+--go thru map and see if size of where its called from = 1 then update aasm to change vals and change bmap
