@@ -15,16 +15,18 @@ import Debug.Trace
 
 import Compile.SSA
 
-codeGen :: Program -> [AAsm]
+codeGen :: Program -> [Asm]
 codeGen (Program (Block stmts _)) =
   let
     (aasm, _, _) = genStmt ([], 0, 0) stmts
     program = foldr (\x -> \acc -> (show x) ++ "\n" ++ acc) "" aasm
     s = ssa aasm
     s1 = foldr (\x -> \acc -> (show x) ++ "\n\n" ++ acc) "" s
-    regMap = liveVars aasm
-    -- code = map (translate regMap) s
-  in trace (program ++ "\n\n" ++ (show regMap)) aasm
+    regMap = allocateRegisters aasm -- TODO: this function needs to get the de-SSA aasm
+    code = concatMap (translate regMap) aasm
+    code' = [Push (Reg RBP),
+             Mov (Reg RSP) (Reg RBP)] ++ code
+  in trace (show regMap) code'
 
 -- updates the abstract assembly at a label
 update aasm Nothing = Just aasm
@@ -149,7 +151,6 @@ genExp (n, l) (ExpTernOp e1 e2 e3 _) loc = let
   in (aasm, n3, l3+3)
 
      
-{-
 -- begin 'temp -> register' translation
 translate regMap (AAsm {aAssign = [dest], aOp = Nop, aArgs = [src]}) =
   let
@@ -245,8 +246,16 @@ translate regMap (AAsm {aAssign = [dest], aOp = Neg, aArgs = [src]}) =
      _ ->
        [Movl (regFind regMap src) dest',
         Negl dest']
-translate regMap (ACtrl Ret (ALoc loc)) =
+translate regMap (ACtrl (Ret (ALoc loc))) =
   [Pop (Reg RBP), AsmRet]
+translate regMap (ACtrl (Lbl l)) = 
+  [AsmLbl l]
+translate regMap (ACtrl (Goto l)) = 
+  [Jmp l]
+translate regMap (ACtrl (Ifz v l)) =
+  let
+    v' = regFind regMap v
+  in [Testl v' v', Je l]
 
 regFind :: Map.Map AVal Arg -> AVal -> Arg
 regFind regMap (AImm i) = Val i
@@ -254,4 +263,3 @@ regFind regMap aloc =
   case Map.lookup aloc regMap of
     Just (reg) -> reg
     Nothing -> Reg EAX
--}

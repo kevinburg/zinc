@@ -20,6 +20,11 @@ data Asm = AsmRet
          | Movslq Arg Arg
          | Shrl Arg Arg
          | Cdq
+         | Jmp String
+         | Testl Arg Arg
+         | Cmpl Arg Arg
+         | Je String
+         | AsmLbl String
 
 data Arg = Reg Register
          | Stk Int -- Stack offset int
@@ -58,6 +63,11 @@ instance Show Asm where
   show (Push e) = "\tpush " ++ show e
   show (Pop e) = "\tpop " ++ show e
   show Cdq = "\tcdq"
+  show (Jmp s) = "\tjmp ." ++ s
+  show (Testl e1 e2) = "\ttest " ++ show e1 ++ ", " ++ show e2
+  show (Je s) = "\tje ." ++ s
+  show (Cmpl e1 e2) = "\tcmpl " ++ show e1 ++ ", " ++ show e2
+  show (AsmLbl s) = "." ++ s ++ ":"
   
 instance Show Arg where
   show (Reg reg) = "%" ++ show reg

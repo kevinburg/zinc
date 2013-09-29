@@ -7,13 +7,15 @@ import qualified Compile.Cgc as Cgc
 
 import Debug.Trace
 
--- Evaluates to a map of the form ALoc -> Register
+allocateRegisters :: [AAsm] -> Map.Map AVal Arg
 allocateRegisters aasm =
   let
     live = liveVars aasm
-    -- (res, vars) = genInter aasm
-    -- regMap = genRegMap res vars
-  in trace (show live) Map.empty
+    (res, vars) = genInter aasm live
+    graph = Cgc.buildGraph (Set.toList vars) (Set.toList res)
+    regMap = Cgc.coloring graph
+    program = foldr (\x -> \acc -> (show x) ++ "\n" ++ acc) "" aasm
+  in trace (program ++ "\n" ++ (show live) ++ "\n" ++ (show res)) regMap
 
 {- Evaluates to a mapping of line number to live variables at that line. The last line in the program
    is line 0 because that makes sense. 
@@ -99,49 +101,38 @@ addNewInter (AImm _) s =
 isTemp (ALoc _) = True
 isTemp _ = False
 
-genInter stmts = 
+genInter stmts live = 
   let
-    (inter, vars) = genInter' (reverse stmts) Set.empty Set.empty Set.empty
+    (inter, vars) = genInter' (reverse stmts) 0 live Set.empty Set.empty
   in
     (Set.filter (\(x,y) -> x /= y) inter, vars)
   
-genInter' [] _ inter vars = (inter, vars)
-genInter' (stmt : aasm) l inter vars =
+genInter' [] _ _ inter vars = (inter, vars)
+genInter' (stmt : aasm) i live inter vars =
   case stmt of
-    ACtrl (Ret loc) ->
-      let
-        l' = Set.insert loc l
-        newInter = Set.map (\x -> (loc, x)) l
-        inter' = Set.union inter newInter
-      in genInter' aasm l' inter' (Set.insert loc vars)
-    AAsm {aAssign = [dest], aOp = Div, aArgs = srcs} ->
-      let
-        l' = Set.insert (ALoc dest) l
-        newInter = Set.map (\x -> (ALoc dest, x)) l
-        inter' = Set.union inter newInter
-        live = Set.union (Set.fromList (filter isTemp srcs)) l'
-        inter'' = Set.union inter' 
-                  (Set.fromList [(a,b) | a <- Set.toList live, b <- [ALoc (AReg 0), ALoc (AReg 3)]])
-      in genInter' aasm live inter'' (Set.insert (ALoc dest) vars)
-    AAsm {aAssign = [dest], aOp = Mod, aArgs = srcs} ->
-      let
-        l' = Set.insert (ALoc dest) l
-        newInter = Set.map (\x -> (ALoc dest, x)) l
-        inter' = Set.union inter newInter
-        live = Set.union (Set.fromList (filter isTemp srcs)) l'
-        inter'' = Set.union inter' 
-                  (Set.fromList [(a,b) | a <- Set.toList live, b <- [ALoc (AReg 0), ALoc (AReg 3)]])
-      in genInter' aasm live inter'' (Set.insert (ALoc dest) vars)
-    AAsm {aAssign = [dest], aOp = _, aArgs = srcs} ->
-      let
-        l' = Set.delete (ALoc dest) l
-        newInter = Set.map (\x -> (ALoc dest, x)) l
-        inter' = Set.union inter newInter
-        live = Set.union (Set.fromList (filter isTemp srcs)) l'
-      in genInter' aasm live inter' (Set.insert (ALoc dest) vars)
-
-genRegMap graph vars = 
-  let
-    g = Cgc.buildGraph (Set.toList vars) (Set.toList graph)
-    m = Cgc.coloring g
-  in m
+    ACtrl (Ret loc) -> let
+      vars' = Set.insert loc vars
+      vs = case Map.lookup i live of
+        Nothing -> Set.empty
+        Just s -> s
+      newInter = Set.map (\x -> (loc, x)) vs
+      inter' = Set.union inter newInter
+      in genInter' aasm (i+1) live inter' vars'
+    ACtrl (Ifz v _) -> let
+      vars' = Set.insert v vars
+      vs = case Map.lookup i live of
+        Nothing -> Set.empty
+        Just s -> s
+      newInter = Set.map (\x -> (v, x)) vs
+      inter' = Set.union inter newInter
+      in genInter' aasm (i+1) live inter' vars'
+    ACtrl _ -> genInter' aasm (i+1) live inter vars
+    AAsm {aAssign = [dest], aOp = _, aArgs = srcs} -> let
+      srcs' = filter isTemp srcs
+      vars' = Set.insert (ALoc dest) vars
+      vs = case Map.lookup i live of
+        Nothing -> Set.empty
+        Just s -> s
+      newInter = Set.map (\x -> (ALoc dest, x)) (Set.difference vs (Set.fromList srcs'))
+      inter' = Set.union inter newInter
+      in genInter' aasm (i+1) live inter' vars'
