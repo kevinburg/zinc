@@ -22,7 +22,9 @@ codeGen (Program (Block stmts _)) =
     program = foldr (\x -> \acc -> (show x) ++ "\n" ++ acc) "" aasm
     s = ssa aasm
     s1 = foldr (\x -> \acc -> (show x) ++ "\n\n" ++ acc) "" s
-  in trace s1 aasm
+    regMap = liveVars aasm
+    -- code = map (translate regMap) s
+  in trace (program ++ "\n\n" ++ (show regMap)) aasm
 
 -- updates the abstract assembly at a label
 update aasm Nothing = Just aasm
