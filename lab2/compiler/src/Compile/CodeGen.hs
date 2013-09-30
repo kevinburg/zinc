@@ -22,11 +22,12 @@ codeGen (Program (Block stmts _)) =
     program = foldr (\x -> \acc -> (show x) ++ "\n" ++ acc) "" aasm
     s = ssa aasm
     s1 = foldr (\x -> \acc -> (show x) ++ "\n\n" ++ acc) "" s
-    regMap = allocateRegisters aasm -- TODO: this function needs to get the de-SSA aasm
-    code = concatMap (translate regMap) aasm
+    unssa = deSSA s
+    regMap = allocateRegisters unssa -- TODO: this function needs to get the de-SSA aasm
+    code = concatMap (translate regMap) unssa
     code' = [Push (Reg RBP),
              Mov (Reg RSP) (Reg RBP)] ++ code
-  in code'
+  in trace ((show s) ++ "\n\n" ++ (show unssa) ++ "\n\n" ++ (show aasm)) code'
 
 -- updates the abstract assembly at a label
 update aasm Nothing = Just aasm
