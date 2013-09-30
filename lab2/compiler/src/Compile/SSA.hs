@@ -50,7 +50,7 @@ parameterize' (s : xs) live aasm b =
          
 -- Put the paramters back on the gotos in the second pass.
 paramGoto :: Blocks -> Blocks
-paramGoto blocks = Map.map (\(live, aasm) -> (live, map f aasm)) blocks
+paramGoto blocks = List.map (\(l,(live, aasm)) -> (l,(live, map f aasm))) blocks
   where f (ACtrl (Goto l)) = 
           let
             Just (vs, _) = List.lookup l blocks
@@ -110,35 +110,76 @@ updateGen (x : xs) m = x : updateGen xs m
 -- builds Map of Block String of Label -> Block String of Code -> Params from Code
 --
 
-type Lblmap = Map.Map String (Map.Map String (Set.Set AVal)) 
+type Lblmap = Map.Map String [(String, Set.Set AVal)]
   
-mapBlocks :: Blocks -> Lblmap -> Lblmap
-mapBlocks blocks lblmap = let lbls = map (\x -> b lblmap x) blocks
+mapBlocks :: Blocks -> Lblmap
+mapBlocks blocks = Map.fromList $ zipmap $ grpby $ concat (map (\(lbl,(vals,aasm)) -> (map (\x -> f(lbl,x)) aasm)) blocks)
+  where grpby l = List.groupBy (\(x,y)-> \(a,b)-> x==a) $ List.filter (\(x,y)-> x=="") l
+        zipmap l = zip (map (\x -> fst (head x)) l) (map (\x -> map (snd) x) l)
+        f (lbl, (ACtrl(IfzP aval goto s))) = (lbl, (goto, s)) --possibly flip goto and lbl here
+        f (lbl, (ACtrl(GotoP goto s))) = (lbl, (goto, s))
+        f (lbl, x) = ("",("",Set.empty)) 
+ 
+{- 
+mapBlocks blocks lblmap = let bmap = map (\(lbl,(vals,aasm)) -> Map.insert lbl vals empty) blocks
+                              lbls = map (\x -> )blocks
+                                -- map (\(lbl, (vals, aasm))-> b lblmap lbl vals aasm) blocks
                           in lbls
   where b lblmap lbl vals aasm = let lmap = map (\x -> f lblmap lbl vals x) aasm
                                   in lmap
           where f lblmap lbl vals (ACtrl(IfzP aval goto s)) = Map.insert lbl (Map.insert goto s (lblmap Map.! lbl)) lblmap
                 f lblmap lbl vals (ACtrl(GotoP goto s)) = Map.insert lbl (Map.insert goto s (lblmap Map.! lbl)) lblmap
                 f lblmap lbl vals (ACtrl(Ifz _ _)) = lblmap --error ("Bad representation of AAsm Ifz not IfzP")
-                f lblmap lbl vals (ACtrl(Goto _ _)) = lblmap --error ("Bad representation of AAsm Goto not GotoP")
+                f lblmap lbl vals (ACtrl(Goto _)) = lblmap --error ("Bad representation of AAsm Goto not GotoP")
                 f lblmap bl vals _ = lblmap
-
+-}
                          
 -- Minimize the blocks 
 minimize :: Blocks -> Blocks
 minimize [] = []
-minimize blocks = let bmap = Map.empty
-                      bmap' = mapBlocks blocks $ map (\x -> Map.insert (fst x) Map.empty bmap) blocks
-                      min = minimize' blocks bmap'
+minimize blocks = let bmap = mapBlocks blocks
+                             -- $ Map.fromList $ map (\(lbl,(vals,aasm)) -> Map.insert lbl Set.empty bmap) blocks
+                      min = minimize' blocks bmap
                   in
                    min
                       
   --rules for minimizing SSA generated code
 minimize' :: Blocks -> Lblmap -> Blocks
 minimize' [] _ = []
-minimize' blocks bmap = let blcks = Map.map (\x -> if Set.size(x) == 1 then replace x else x) bmap
+minimize' blocks lblmap = let bmap = Map.fromList blocks
+                              blcks = map (\(lbl,(vals,aasm)) -> let l = (lblmap Map.! lbl)
+                                                                 in if length l == 1
+                                                                    then replace lbl aasm (snd $ head l)
+                                                                    else (lbl,(bmap Map.! lbl))) blocks
                         in
                          blcks
-  where replace lbl vals aasm = (lbl, (vals, aasm))
+        -- replaces the vals in the lbl aasm with the vals from the goto val set
+  where replace lbl aasm gvals = let gvalmap = Map.fromList(map (\(ALoc(AVarG i gen)) -> (i,gen)) $ Set.toList(gvals))
+                                 in (lbl, (Set.empty, (map (\x-> f gvalmap x) aasm)))
+                                        -- ^REPLACE^ --
+          where f gvalmap AAsm{aAssign=locs, aOp=o, aArgs=args} =
+                  AAsm{aAssign=(map (\x -> r gvalmap x) locs), aOp=o, aArgs=(map (\x -> r' gvalmap x) args)}
+                  where r gvalmap (AVarG i gen) = if Map.member i gvalmap
+                                                  then AVarG i (gvalmap Map.! i)
+                                                  else AVarG i gen
+                        r gvalmap loc = loc
+                        r' gvalmap (ALoc g) = ALoc (r gvalmap g)
+                        r' gvalmap (AImm i) = AImm i
+                  -- =ALoc(AVarG i2 (gvalmap Map.! i2))} 
+                f gvalmap (ACtrl(Ret(ALoc(AVarG i1 gen1)))) =
+                  if Map.member i1 gvalmap
+                  then ACtrl(Ret(ALoc(AVarG i1 (gvalmap Map.! i1))))
+                  else ACtrl(Ret(ALoc(AVarG i1 gen1)))
+                f gvalmap (ACtrl(GotoP s valset)) =
+                  if s == lbl
+                  then ACtrl(GotoP s Set.empty)
+                  else ACtrl(GotoP s valset)
+                f gvalmap (ACtrl(IfzP(ALoc(AVarG i gen)) s valset)) =
+                  if Map.member i gvalmap
+                  then ACtrl(IfzP(ALoc(AVarG i (gvalmap Map.! i))) s valset)
+                  else ACtrl(IfzP(ALoc(AVarG i gen)) s valset)
+                f g a = a
 
+                 
+                          
 --go thru map and see if size of where its called from = 1 then update aasm to change vals and change bmap
