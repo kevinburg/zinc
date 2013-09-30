@@ -9,6 +9,9 @@ import Compile.Types.AbstractAssembly
 data Asm = AsmRet
          | Movl Arg Arg 
          | Addl Arg Arg 
+         | Andl Arg Arg 
+         | Orl Arg Arg 
+         | Xorl Arg Arg 
          | Subl Arg Arg
          | Imull Arg Arg
          | Negl Arg
@@ -25,6 +28,11 @@ data Asm = AsmRet
          | Cmpl Arg Arg
          | Je String
          | AsmLbl String
+         | Movzbl Arg Arg
+         | Setl Arg
+         | Setle Arg
+         | Sete Arg
+         | Setne Arg
 
 data Arg = Reg Register
          | Stk Int -- Stack offset int
@@ -46,6 +54,7 @@ data Register = EAX
               | R13D
               | R14D
               | R15D 
+              | R15B
               | RDX deriving Eq
 
 instance Show Asm where
@@ -55,6 +64,9 @@ instance Show Asm where
   show (Movslq e1 e2) = "\tmovslq " ++ show e1 ++ ", " ++ show e2
   show (Mov e1 e2) = "\tmov " ++ show e1 ++ ", " ++ show e2
   show (Addl e1 e2) = "\taddl " ++ show e1 ++ ", " ++ show e2
+  show (Andl e1 e2) = "\tandl " ++ show e1 ++ ", " ++ show e2
+  show (Orl e1 e2) = "\torl " ++ show e1 ++ ", " ++ show e2
+  show (Xorl e1 e2) = "\txorl " ++ show e1 ++ ", " ++ show e2
   show (Subl e1 e2) = "\tsubl " ++ show e1 ++ ", " ++ show e2
   show (Subb e1 e2) = "\tsub " ++ show e1 ++ ", " ++ show e2
   show (Imull e1 e2) = "\timull " ++ show e1 ++ ", " ++ show e2
@@ -68,6 +80,11 @@ instance Show Asm where
   show (Je s) = "\tje ." ++ s
   show (Cmpl e1 e2) = "\tcmpl " ++ show e1 ++ ", " ++ show e2
   show (AsmLbl s) = "." ++ s ++ ":"
+  show (Setl e) = "\tsetl " ++ (show e)
+  show (Sete e) = "\tsete " ++ (show e)
+  show (Setne e) = "\tsetne " ++ (show e)
+  show (Setle e) = "\tsetle " ++ (show e)
+  show (Movzbl e1 e2) = "\tmovzbl " ++ (show e1) ++ ", " ++ (show e2)
   
 instance Show Arg where
   show (Reg reg) = "%" ++ show reg
@@ -95,3 +112,4 @@ instance Show Register where
   show RSP = "rsp"
   show RBP = "rbp"
   show RDX = "rdx"
+  show R15B = "r15b"

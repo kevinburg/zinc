@@ -246,6 +246,24 @@ translate regMap (AAsm {aAssign = [dest], aOp = Neg, aArgs = [src]}) =
      _ ->
        [Movl (regFind regMap src) dest',
         Negl dest']
+translate regMap (AAsm {aAssign = [dest], aOp = Lt, aArgs = [src1, src2]}) =
+  cmpOp (dest,src2,src1) Lt regMap
+translate regMap (AAsm {aAssign = [dest], aOp = Gt, aArgs = [src1, src2]}) =
+  cmpOp (dest,src1,src2) Gt regMap
+translate regMap (AAsm {aAssign = [dest], aOp = Leq, aArgs = [src1, src2]}) =
+  cmpOp (dest,src2,src1) Leq regMap
+translate regMap (AAsm {aAssign = [dest], aOp = Geq, aArgs = [src1, src2]}) =
+  cmpOp (dest,src1,src2) Geq regMap
+translate regMap (AAsm {aAssign = [dest], aOp = Eq, aArgs = [src1, src2]}) =
+  cmpOp (dest,src1,src2) Eq regMap
+translate regMap (AAsm {aAssign = [dest], aOp = Neq, aArgs = [src1, src2]}) =
+  cmpOp (dest,src1,src2) Neq regMap
+translate regMap (AAsm {aAssign = [dest], aOp = BAnd, aArgs = [src1, src2]}) =
+  binOp (dest,src1,src2) BAnd regMap
+translate regMap (AAsm {aAssign = [dest], aOp = BOr, aArgs = [src1, src2]}) =
+  binOp (dest,src1,src2) BOr regMap
+translate regMap (AAsm {aAssign = [dest], aOp = BXor, aArgs = [src1, src2]}) =
+  binOp (dest,src1,src2) BXor regMap
 translate regMap (ACtrl (Ret (ALoc loc))) =
   [Pop (Reg RBP), AsmRet]
 translate regMap (ACtrl (Lbl l)) = 
@@ -256,6 +274,51 @@ translate regMap (ACtrl (Ifz v l)) =
   let
     v' = regFind regMap v
   in [Testl v' v', Je l]
+
+cmpOp (dest,src1,src2) op regMap = 
+  let
+    asm = case op of
+      Lt -> Setl
+      Leq -> Setle
+      Gt -> Setl
+      Geq -> Setle
+      Eq -> Sete
+      Neq -> Setne
+    dest' = regFind  regMap (ALoc dest)
+    s1 = regFind regMap src1
+    s2 = regFind regMap src2
+  in
+   [Cmpl s1 s2,
+    asm (Reg R15B),
+    Movzbl (Reg R15B) dest']
+
+binOp (dest,src1,src2) op regMap =
+  let
+    asm = case op of
+      Add -> Addl
+      BAnd -> Andl
+      BOr -> Orl
+      BXor -> Xorl
+    dest' = regFind regMap (ALoc dest)
+    s = regFind regMap src1
+    s2 = regFind regMap src2
+  in
+   case (s, s2) of
+     (Stk _, _) ->
+       [Movl s (Reg R15D),
+        asm (regFind regMap src2) (Reg R15D),
+        Movl (Reg R15D) dest']
+     (_, Stk _) ->
+       [Movl s2 (Reg R15D),
+        asm s (Reg R15D),
+        Movl (Reg R15D) dest']
+     _ ->
+       if s == dest' then
+         [Movl s dest',
+          asm (regFind regMap src2) dest']
+       else
+         [Movl (regFind regMap src2) dest',
+          asm s dest']
 
 regFind :: Map.Map AVal Arg -> AVal -> Arg
 regFind regMap (AImm i) = Val i
