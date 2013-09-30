@@ -10,6 +10,7 @@ import Debug.Trace
 isTemp (ALoc _) = True
 isTemp _ = False
 
+ssa :: [AAsm] -> Blocks
 ssa aasm = let
   p = parameterize aasm
   in p
@@ -90,6 +91,9 @@ gen2 (AAsm {aAssign = [AVar i], aOp = o, aArgs = srcs}) m = let
     (Just g) -> Map.insert i (g+1) m
   dest' = [AVarG i (m' Map.! i)]
   in (AAsm {aAssign = dest', aOp = o, aArgs = srcs'}, m')
+gen2 (AAsm {aAssign = [dest], aOp = o, aArgs = srcs}) m = let
+  srcs' = updateGen srcs m
+  in (AAsm {aAssign = [dest], aOp = o, aArgs = srcs'}, m)
 gen2 (ACtrl (GotoP i s)) m = let
   res = ACtrl (GotoP i (Set.map (\(ALoc (AVar x)) -> (ALoc (AVarG x (m Map.! x)))) s))
   in (res, m)
@@ -186,16 +190,16 @@ minimize' blocks lblmap = let bmap = Map.fromList blocks
 
 -- Turn the SSA code back into non SSA code that gets rid of parameterized labels and gotos
 -- Basically, assign label vals with goto vals before goto
-deSSA :: Blocks -> Blocks
+deSSA :: Blocks -> [AAsm]
 deSSA blocks = let bmap = Map.fromList blocks
-               in map (\(lbl,(vals,aasm)) -> (lbl, (vals, concat $ map (\x -> f bmap x) aasm))) blocks
+               in concat $ map (\(lbl,(vals,aasm)) -> [ACtrl(Lbl lbl)] ++ (concat $ map (\x -> f bmap x) aasm)) blocks
   where f bmap (ACtrl(GotoP goto valset)) =
           let (gvals,_) = bmap Map.! goto
               gvals' = Set.toAscList gvals
               valset' = Set.toAscList valset
               valpairs = zip valset' gvals'
               valpairs' = map (\(ALoc(AVarG s1 i1),ALoc(AVarG s2 i2))->(ALoc(AVar(s1++(show i1))),ALoc(AVar(s2++(show i2))))) valpairs 
-              assigns = map (\(ALoc x,y) -> AAsm{aAssign=[x],aOp=Nop,aArgs=[y]}) valpairs'
+              assigns = map (\(x,ALoc y) -> AAsm{aAssign=[y],aOp=Nop,aArgs=[x]}) valpairs'
           in
            assigns ++ [ACtrl $ Goto goto]
         f bmap (ACtrl(IfzP val goto valset)) =
@@ -204,15 +208,23 @@ deSSA blocks = let bmap = Map.fromList blocks
               valset' = Set.toAscList valset
               valpairs = zip valset' gvals'
               valpairs' = map (\(ALoc(AVarG s1 i1),ALoc(AVarG s2 i2))->(ALoc(AVar(s1++(show i1))),ALoc(AVar(s2++(show i2))))) valpairs
-              assigns = map (\(ALoc x,y) -> AAsm{aAssign=[x],aOp=Nop,aArgs=[y]}) valpairs'
-              ALoc(AVarG s i) = val
-              stmt = ACtrl(Ifz(ALoc(AVar (s ++ (show i)))) goto)
+              assigns = map (\(x,ALoc y) -> AAsm{aAssign=[y],aOp=Nop,aArgs=[x]}) valpairs'
+              stmt = case val of
+                ALoc(AVarG s i) ->
+                  ACtrl(Ifz(ALoc(AVar (s ++ (show i)))) goto)
+                t -> ACtrl(Ifz t goto)
           in
            assigns ++ [stmt]
         f bmap (ACtrl(Ret(ALoc(AVarG s i)))) = [ACtrl(Ret(ALoc(AVar (s ++ (show i)))))]
         f bmap AAsm{aAssign=locs, aOp = o, aArgs = vals} =
-          let locs' = map (\(AVarG s i) -> AVar (s ++ (show i))) locs
-              vals' = map (\(ALoc(AVarG s i)) -> ALoc(AVar(s ++ (show i)))) vals
+          let locs' = map (\x -> case x of
+                              AVarG s i -> AVar (s ++ (show i))
+                              a -> a
+                          ) locs
+              vals' = map (\(x) -> case x of
+                              ALoc(AVarG s i) -> ALoc(AVar(s ++ (show i)))
+                              y -> y
+                          )vals
           in
            [AAsm {aAssign=locs', aOp = o, aArgs = vals'}]
         f bmap aasm = [aasm]

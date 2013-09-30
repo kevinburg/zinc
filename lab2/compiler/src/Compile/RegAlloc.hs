@@ -12,7 +12,7 @@ allocateRegisters aasm =
   let
     live = liveVars aasm
     (res, vars) = genInter aasm live
-    graph = Cgc.buildGraph (Set.toList vars) (Set.toList res)
+    graph = trace (show (res,vars)) $ Cgc.buildGraph (Set.toList vars) (Set.toList res)
     regMap = Cgc.coloring graph
     program = foldr (\x -> \acc -> (show x) ++ "\n" ++ acc) "" aasm
   in regMap
@@ -66,7 +66,10 @@ liveVars' (stmt : aasm) i labels live m saturate =
       in liveVars' aasm (i+1) labels live m' saturate
     ACtrl (Goto l) ->
       let
-        line = labels Map.! l
+        --line = labels Map.! l
+        line = case Map.lookup l labels of
+          Nothing -> trace ("\n" ++ l ++ "\n") 0
+          Just s -> s
         live' = case Map.lookup line m of
           Nothing -> Set.empty
           Just s -> Set.union s live
@@ -74,7 +77,10 @@ liveVars' (stmt : aasm) i labels live m saturate =
       in liveVars' aasm (i+1) labels live' m' (saturate && not(changed))
     ACtrl (Ifz v l) ->
       let
-        line = labels Map.! l
+        --line = labels Map.! l
+        line = case Map.lookup l labels of
+          Nothing -> trace ("\n" ++ l ++ "\n") 0
+          Just s -> s
         live' = case (Map.lookup line m, Map.lookup (i-1) m) of
           (Nothing, Nothing) -> Set.insert v live
           (Just s, Nothing) -> Set.union s (Set.insert v live)
