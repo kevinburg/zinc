@@ -26,7 +26,7 @@ codeGen (Program (Block stmts _)) =
     code = concatMap (translate regMap) aasm
     code' = [Push (Reg RBP),
              Mov (Reg RSP) (Reg RBP)] ++ code
-  in trace (show regMap) code'
+  in code'
 
 -- updates the abstract assembly at a label
 update aasm Nothing = Just aasm
