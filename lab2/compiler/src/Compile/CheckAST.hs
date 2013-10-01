@@ -108,7 +108,7 @@ checkE (ExpBinOp op e1 e2 _) ctx =
       (_, BadE s) -> BadE s
       (ValidE t1, ValidE t2) ->
         if (t1 == opT1) && (t2 == opT2) then ValidE ret
-        else BadE "binop expr mismatch"
+        else BadE ("binop expr mismatch " ++ (show e1) ++ (show e2) ++ (show op))
 checkE (ExpTernOp e1 e2 e3 _) ctx =
   case (checkE e1 ctx, checkE e2 ctx, checkE e3 ctx) of
     (BadE s, _, _) -> BadE s

@@ -310,14 +310,14 @@ opTable = [[prefix  "-"   (ExpUnOp Neg),
             binary  "<="  (ExpBinOp Leq)  AssocLeft,
             binary  ">"   (ExpBinOp Gt)   AssocLeft,
             binary  ">="  (ExpBinOp Geq)  AssocLeft],
+           [binary  "=="  (ExpBinOp Eq)   AssocLeft,
+            binary  "!="  (ExpBinOp Neq)  AssocLeft],
            [binary  "&"   (ExpBinOp BAnd) AssocLeft],
            [binary  "^"   (ExpBinOp BXor) AssocLeft],
            [binary  "|"   (ExpBinOp BOr)  AssocLeft],
            [binary  "&&"  (ExpBinOp LAnd) AssocLeft],
-           [binary  "||"  (ExpBinOp LOr)  AssocLeft],
-           [binary  "=="  (ExpBinOp Eq)   AssocLeft,
-            binary  "!="  (ExpBinOp Neq)  AssocLeft]]
-{-
+           [binary  "||"  (ExpBinOp LOr)  AssocLeft]]
+          {-
 We used a few helper functions which are in the Parsec documentation of Text.Parsec.Expr, located at \url{http://hackage.haskell.org/packages/archive/parsec/3.1.0/doc/html/Text-Parsec-Expr.html} The functions ``binary'', ``prefix'', and ``postfix'' were taken from there and are not my work, however they are used because rewriting them would look much the same, and they do not provide any core functionality, just make my code easier to read. Type signatures and location annotations were added by me.
 -}
 binary :: String -> (a -> a -> SourcePos -> a) -> Assoc -> Operator ByteString () Identity a

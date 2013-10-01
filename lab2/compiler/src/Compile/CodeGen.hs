@@ -19,15 +19,16 @@ codeGen :: Program -> [Asm]
 codeGen (Program (Block stmts _)) =
   let
     (aasm, _, _) = genStmt ([], 0, 0) stmts
-    program = foldr (\x -> \acc -> (show x) ++ "\n" ++ acc) "" aasm
     s = ssa aasm
     unssa = deSSA s
     regMap = allocateRegisters unssa -- TODO: this function needs to get the de-SSA aasm
     code = concatMap (translate regMap) unssa
     code' = [Push (Reg RBP),
              Mov (Reg RSP) (Reg RBP)] ++ code
-  in --trace ((show s) ++ "\n\n" ++ (show unssa) ++ "\n\n" ++ (show aasm)) code'
-   code'
+            
+    program = foldr (\x -> \acc -> (show x) ++ "\n" ++ acc) "" unssa
+  in trace (program) code'
+   --code'
    --trace (show s) code'
 
 -- updates the abstract assembly at a label
@@ -129,6 +130,14 @@ genExp (n,l) (ExpBinOp LAnd e1 e2 p) loc =
   genExp (n,l) (ExpTernOp e1 e2 (FalseT p) p) loc
 genExp (n,l) (ExpBinOp LOr e1 e2 p) loc =
   genExp (n,l) (ExpTernOp e1 (TrueT p) e2 p) loc
+genExp (n,l) (ExpBinOp op e1 e2 p) loc | op == Shl || op == Shr = let
+  div = ExpBinOp Div (ExpInt Dec 1 p) (ExpInt Dec 0 p) p
+  cond = ExpBinOp LOr (ExpBinOp Gt e2 (ExpInt Dec 31 p) p)
+         (ExpBinOp Lt e2 (ExpInt Dec 0 p) p) p
+  sop = case op of
+    Shl -> SShl
+    Shr -> SShr
+  in genExp (n,l) (ExpTernOp cond div (ExpBinOp sop e1 e2 p) p) loc
 genExp (n,l) (ExpBinOp op e1 e2 _) loc = let
   (i1, n', l') = genExp (n + 1, l) e1 (ATemp n)
   (i2, n'', l'') = genExp (n' + 1, l') e2 (ATemp n')
@@ -311,11 +320,11 @@ translate regMap (ACtrl (Ifz v l)) =
      (Stk _) -> [Movl v' (Reg R15D), Testl (Reg R15D) (Reg R15D), Je l]
      _ -> [Testl v' v', Je l]
 translate regMap (AAsm {aAssign = [dest], aOp = o, aArgs = [src1, src2]})
-  | o == Shl || o == Shr =
+  | o == SShl || o == SShr =
   let
     asm = case o of
-      Shl -> Sall
-      Shr -> Sarl
+      SShl -> Sall
+      SShr -> Sarl
     dest' = regFind regMap (ALoc dest)
     s1 = regFind regMap src1
     s2 = regFind regMap src2
@@ -323,13 +332,13 @@ translate regMap (AAsm {aAssign = [dest], aOp = o, aArgs = [src1, src2]})
    case (dest', s1) of
      (Stk _, Stk _) ->
        [Movl s2 (Reg ECX),
-        asm (Reg CL) s1,
         Movl s1 (Reg R15D),
-        Movl (Reg R15D) dest']
+        Movl (Reg R15D) dest',
+        asm (Reg CL) dest']
      _ ->
        [Movl s2 (Reg ECX),
-        asm (Reg CL) s1,
-        Movl s1 dest']
+        Movl s1 dest',
+        asm (Reg CL) dest']
 cmpOp (dest,src1,src2) op regMap = 
   let
     asm = case op of

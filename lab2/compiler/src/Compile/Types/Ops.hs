@@ -21,6 +21,8 @@ data Op = Mul
         | LOr
         | Shl
         | Shr
+        | SShl
+        | SShr
         | Nop
         | Eq
         | Neq
@@ -46,6 +48,8 @@ opType LAnd = ([Bool, Bool], Bool)
 opType LOr = ([Bool, Bool], Bool)
 opType Shl = ([Int, Int], Int)
 opType Shr = ([Int, Int], Int)
+opType SShl = ([Int, Int], Int)
+opType SShr = ([Int, Int], Int)
 opType BNot = ([Int], Int)
 opType LNot = ([Bool], Bool)
 opType Incr = ([Int], Int)
@@ -69,6 +73,8 @@ instance Show Op where
   show BOr = "|"
   show Shl = "<<"
   show Shr = ">>"
+  show SShl = "<<"
+  show SShr = ">>"
   show Eq = "=="
   show Neq = "!="
   show BNot = "~"

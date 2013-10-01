@@ -127,7 +127,7 @@ genInter' (stmt : aasm) i live inter vars =
       inter' = Set.union inter newInter
       in genInter' aasm (i+1) live inter' vars'
     ACtrl _ -> genInter' aasm (i+1) live inter vars
-    AAsm {aAssign = [dest], aOp = o, aArgs = srcs} | o == Shl || o == Shr -> let
+    AAsm {aAssign = [dest], aOp = o, aArgs = srcs} | o == SShl || o == SShr -> let
       srcs' = filter isTemp srcs
       vars' = Set.insert (ALoc dest) (Set.union vars (Set.fromList $ filter isTemp srcs))
       vs = case Map.lookup i live of

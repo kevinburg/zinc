@@ -5,9 +5,11 @@ int main() {
   while (!cond) {
     x <<= 1;
     if (x > 4000)
-      cond = cond || !cond;
+      //cond = cond || !cond;
+      cond = true;
     else
       cond = cond && !cond;
+    cond = true;
   }
   return x;
 }

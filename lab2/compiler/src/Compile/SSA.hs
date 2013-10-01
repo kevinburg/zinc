@@ -23,8 +23,9 @@ type Blocks = [(String, (Set.Set AVal, [AAsm]))]
 
 parameterize :: [AAsm] -> Blocks
 parameterize aasm = let
+  prgm = foldr (\x -> \y -> (show x) ++ "\n" ++ y) "" aasm
   p = parameterize' (reverse aasm) Set.empty [] []
-  p1 = paramGoto p
+  p1 = trace (prgm ++ "\n\n") $ paramGoto p
   p2 = varGeneration p1
   in p2
 
