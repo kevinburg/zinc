@@ -21,13 +21,14 @@ codeGen (Program (Block stmts _)) =
     (aasm, _, _) = genStmt ([], 0, 0) stmts
     program = foldr (\x -> \acc -> (show x) ++ "\n" ++ acc) "" aasm
     s = ssa aasm
-    s1 = foldr (\x -> \acc -> (show x) ++ "\n\n" ++ acc) "" s
     unssa = deSSA s
     regMap = allocateRegisters unssa -- TODO: this function needs to get the de-SSA aasm
     code = concatMap (translate regMap) unssa
     code' = [Push (Reg RBP),
              Mov (Reg RSP) (Reg RBP)] ++ code
-  in trace ((show s) ++ "\n\n" ++ (show unssa) ++ "\n\n" ++ (show aasm)) code'
+  in --trace ((show s) ++ "\n\n" ++ (show unssa) ++ "\n\n" ++ (show aasm)) code'
+   code'
+   --trace (show s) code'
 
 -- updates the abstract assembly at a label
 update aasm Nothing = Just aasm
@@ -61,7 +62,10 @@ genStmt (acc, n, l) ((Simp (Expr e _) _) : xs) =
   let
     (aasm, n', l') = genExp (n + 1, l) e (ATemp n)
   in genStmt (acc ++ aasm, n', l') xs
-genStmt acc ((BlockStmt (Block stmts _) _) : xs) = genStmt acc stmts
+genStmt (acc, n, l) ((BlockStmt (Block stmts _) _) : xs) = 
+  let
+    (aasm, n', l') = genStmt ([], n, l) stmts
+  in genStmt (acc ++ aasm, n', l') xs
 genStmt (acc, n, l) ((Ctrl (Return e _) _) : xs) =
   let
     (aasm, n', l') = genExp (n, l) e (AReg 0)
@@ -92,12 +96,10 @@ genStmt (acc, n, l) ((Ctrl (While e s _) _) : xs) =
   let
     (aasme, n1, l1) = genExp (n+1, l) e (ATemp n)
     (aasms, n2, l2) = genStmt ([], n1, l1) [s]
-    aasm = [ACtrl $ Goto (show $ l2+1),
-            ACtrl $ Lbl (show $ l2+1),
-            ACtrl $ Ifz (ALoc (ATemp n)) (show $ l2+3),
+    aasm = [ACtrl $ Ifz (ALoc (ATemp n)) (show $ l2+3),
             ACtrl $ Goto (show $ l2+2),
             ACtrl $ Lbl (show $ l2+2)]
-    aasm' = aasme ++ aasm ++ aasms ++
+    aasm' = [ACtrl $ Goto (show $ l2+1), ACtrl $ Lbl (show $ l2+1)] ++ aasme ++ aasm ++ aasms ++
             [ACtrl $ Goto (show $ l2+1), ACtrl $ Lbl (show $ l2+3)]
   in genStmt (acc ++ aasm', n2, l2+3) xs
 genStmt (acc, n, l) ((Ctrl (For ms1 e ms2 s3 p) _) : xs) =
@@ -274,7 +276,10 @@ translate regMap (ACtrl (Goto l)) =
 translate regMap (ACtrl (Ifz v l)) =
   let
     v' = regFind regMap v
-  in [Testl v' v', Je l]
+  in 
+   case v' of
+     (Stk _) -> [Movl v' (Reg R15D), Testl (Reg R15D) (Reg R15D), Je l]
+     _ -> [Testl v' v', Je l]
 
 cmpOp (dest,src1,src2) op regMap = 
   let
@@ -289,9 +294,27 @@ cmpOp (dest,src1,src2) op regMap =
     s1 = regFind regMap src1
     s2 = regFind regMap src2
   in
-   [Cmpl s1 s2,
-    asm (Reg R15B),
-    Movzbl (Reg R15B) dest']
+   case (dest', s1, s2) of
+     (Stk _, Stk _, Stk _) ->
+       [Movl s1 (Reg R15D),
+        Cmpl (Reg R15D) s2,
+        asm (Reg R15B),
+        Movzbl (Reg R15B) (Reg R15D),
+        Movl (Reg R15D) dest']
+     (Stk _, _, _) ->
+       [Cmpl s1 s2,
+        asm (Reg R15B),
+        Movzbl (Reg R15B) (Reg R15D),
+        Movl (Reg R15D) dest']
+     (_, Stk _, Stk _) ->
+       [Movl s1 (Reg R15D),
+        Cmpl (Reg R15D) s2,
+        asm (Reg R15B),
+        Movzbl (Reg R15B) dest']
+     _ ->
+       [Cmpl s1 s2,
+        asm (Reg R15B),
+        Movzbl (Reg R15B) dest']
 
 binOp (dest,src1,src2) op regMap =
   let

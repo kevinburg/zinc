@@ -30,7 +30,7 @@ parameterize aasm = let
 
 -- Perform first pass on code gropuping it into basic blocks.
 parameterize' :: [AAsm] -> Set.Set AVal -> [AAsm] -> Blocks -> Blocks
-parameterize' [] live aasm b = ("main", (live, aasm)) : b
+parameterize' [] live aasm b = ("top", (live, aasm)) : b
 parameterize' (s : xs) live aasm b = 
   case s of
     ACtrl (Lbl l) -> let
