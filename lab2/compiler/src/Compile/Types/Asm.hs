@@ -19,10 +19,10 @@ data Asm = AsmRet
          | Idivl Arg
          | Push Arg
          | Subb Arg Arg
-         | Mov Arg Arg
-         | Pop Arg
+         | Mov Arg Arg | Pop Arg
          | Movslq Arg Arg
-         | Shrl Arg Arg
+         | Sall Arg Arg
+         | Sarl Arg Arg
          | Cdq
          | Jmp String
          | Testl Arg Arg
@@ -56,12 +56,14 @@ data Register = EAX
               | R14D
               | R15D 
               | R15B
+              | CL
               | RDX deriving Eq
 
 instance Show Asm where
   show (AsmRet) = "\tret"
   show (Movl e1 e2) = "\tmovl " ++ show e1 ++ ", " ++ show e2
-  show (Shrl e1 e2) = "\tshrl " ++ show e1 ++ ", " ++ show e2
+  show (Sarl e1 e2) = "\tsarl " ++ show e1 ++ ", " ++ show e2
+  show (Sall e1 e2) = "\tsall " ++ show e1 ++ ", " ++ show e2
   show (Movslq e1 e2) = "\tmovslq " ++ show e1 ++ ", " ++ show e2
   show (Mov e1 e2) = "\tmov " ++ show e1 ++ ", " ++ show e2
   show (Addl e1 e2) = "\taddl " ++ show e1 ++ ", " ++ show e2
@@ -115,3 +117,4 @@ instance Show Register where
   show RBP = "rbp"
   show RDX = "rdx"
   show R15B = "r15b"
+  show CL = "cl"
