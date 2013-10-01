@@ -297,87 +297,26 @@ translate regMap (ACtrl (Ifz v l)) =
    case v' of
      (Stk _) -> [Movl v' (Reg R15D), Testl (Reg R15D) (Reg R15D), Je l]
      _ -> [Testl v' v', Je l]
-translate regMap (AAsm {aAssign = [dest], aOp = Shl, aArgs = [src1, src2]}) =
+translate regMap (AAsm {aAssign = [dest], aOp = o, aArgs = [src1, src2]})
+  | o == Shl || o == Shr =
   let
-    asm = Sall
+    asm = case o of
+      Shl -> Sall
+      Shr -> Sarl
     dest' = regFind regMap (ALoc dest)
-    s = regFind regMap src1
+    s1 = regFind regMap src1
     s2 = regFind regMap src2
   in
-   case (s, s2) of
-     (Stk _, Reg ECX) ->
-       [Movl s dest',
-        asm (Reg CL) dest']
-     (Stk _, _) ->
-       [Movl (Reg ECX) (Reg R15D),
-        Movl s2 (Reg ECX),
-        Movl s dest',
-        asm (Reg CL) dest',
-        Movl (Reg R15D) (Reg ECX)]
-     (_, Stk _) ->
-       [Movl (Reg ECX) (Reg R15D),
-        Movl s2 (Reg ECX),
-        Movl s dest',
-        asm (Reg CL) dest',
-        Movl (Reg R15D) (Reg ECX)]
-     (_, Reg ECX) ->
-       [Movl s dest',
-        asm s2 dest']
-     _ ->
-       [Movl s dest',
-        Movl (Reg ECX) (Reg R15D),
-        Movl s2 (Reg ECX),
-        asm (Reg CL) dest',
-        Movl (Reg R15D) (Reg ECX)]
-translate regMap (AAsm {aAssign = [dest], aOp = Shr, aArgs = [src1, src2]}) =
-  let
-    asm = Sarl
-    dest' = regFind regMap (ALoc dest)
-    s = regFind regMap src1
-    s2 = regFind regMap src2
-  in
-   case (s, s2) of
-     (Stk _, Reg ECX) ->
-       [Movl s dest',
-        asm (Reg CL) dest']
-     (Stk _, _) ->
-       [Movl (Reg ECX) (Reg R15D),
-        Movl s2 (Reg ECX),
-        Movl s dest',
-        asm (Reg CL) dest',
-        Movl (Reg R15D) (Reg ECX)]
-     (_, Stk _) ->
-       [Movl (Reg ECX) (Reg R15D),
-        Movl s2 (Reg ECX),
-        Movl s dest',
-        asm (Reg CL) dest',
-        Movl (Reg R15D) (Reg ECX)]
-     (_, Reg ECX) ->
-       [Movl s dest',
-        asm s2 dest']
-     _ ->
-       [Movl s dest',
-        Movl (Reg ECX) (Reg R15D),
-        Movl s2 (Reg ECX),
-        asm (Reg CL) dest',
-        Movl (Reg R15D) (Reg ECX)]
-{-     (Stk _, _) ->
-       [Movl s (Reg R15B),
-        asm (regFind regMap src2) (Reg R15B),
-        Movl (Reg R15B) dest']
-     (_, Stk _) ->
-       [Movl s2 (Reg R15D),
-        asm s (Reg R15D),
+   case (dest', s1) of
+     (Stk _, Stk _) ->
+       [Movl s2 (Reg ECX),
+        asm (Reg CL) s1,
+        Movl s1 (Reg R15D),
         Movl (Reg R15D) dest']
-     (_, Reg ECX) ->
-       [Movl s dest',
-        asm s2 dest']
      _ ->
-       [Movl s dest',
-        Movl (Reg ECX) (Reg R15D),
-        Movl s2 (Reg ECX),
-        asm (Reg CL) dest',
-        Movl (Reg R15D) (Reg ECX)]-}
+       [Movl s2 (Reg ECX),
+        asm (Reg CL) s1,
+        Movl s1 dest']
 cmpOp (dest,src1,src2) op regMap = 
   let
     asm = case op of

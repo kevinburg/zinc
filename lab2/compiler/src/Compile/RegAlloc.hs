@@ -127,6 +127,27 @@ genInter' (stmt : aasm) i live inter vars =
       inter' = Set.union inter newInter
       in genInter' aasm (i+1) live inter' vars'
     ACtrl _ -> genInter' aasm (i+1) live inter vars
+    AAsm {aAssign = [dest], aOp = o, aArgs = srcs} | o == Shl || o == Shr -> let
+      srcs' = filter isTemp srcs
+      vars' = Set.insert (ALoc dest) vars
+      vs = case Map.lookup i live of
+        Nothing -> Set.empty
+        Just s -> s
+      newInter = Set.map (\x -> (ALoc dest, x)) (Set.difference vs (Set.fromList srcs'))
+      inter' = Set.union inter newInter
+      inter'' = Set.union inter' (Set.fromList [(a, ALoc (AReg 2)) | a <- Set.toList vs])
+      in genInter' aasm (i+1) live inter'' vars'
+    AAsm {aAssign = [dest], aOp = o, aArgs = srcs} | o == Div || o == Mod -> let
+      srcs' = filter isTemp srcs
+      vars' = Set.insert (ALoc dest) vars
+      vs = case Map.lookup i live of
+        Nothing -> Set.empty
+        Just s -> s
+      newInter = Set.map (\x -> (ALoc dest, x)) (Set.difference vs (Set.fromList srcs'))
+      inter' = Set.union inter newInter
+      inter'' = Set.union inter' (Set.fromList [(a, b) | a <- Set.toList vs,
+                                                b <- [ALoc (AReg 0), ALoc (AReg 3)]])
+      in genInter' aasm (i+1) live inter'' vars'
     AAsm {aAssign = [dest], aOp = _, aArgs = srcs} -> let
       srcs' = filter isTemp srcs
       vars' = Set.insert (ALoc dest) vars

@@ -50,7 +50,8 @@ seo' g weights l =
 coloring :: Graph -> Map.Map Vertex Arg
 coloring g = let m = Map.map (\x-> -1) g
                  m' = Map.insert (ALoc $ AReg 0) 0
-                      (Map.insert (ALoc $ AReg 3) 3 m)
+                      (Map.insert (ALoc $ AReg 2) 2
+                       (Map.insert (ALoc $ AReg 3) 3 m))
                  s = List.filter (\r -> case r of
                                      ALoc (AReg _) -> False
                                      _ -> True) (seo g)
