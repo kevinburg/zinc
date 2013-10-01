@@ -266,6 +266,19 @@ translate regMap (AAsm {aAssign = [dest], aOp = BNot, aArgs = [src]}) =
      _ ->
        [Movl (regFind regMap src) dest',
         Notl dest']
+translate regMap (AAsm {aAssign = [dest], aOp = LNot, aArgs = [src]}) =
+  let
+    dest' = regFind regMap (ALoc dest)
+    s = regFind regMap src
+  in
+   case (s, dest') of
+     (Stk _, Stk _) ->
+       [Movl s (Reg R15D),
+        Movl (Reg R15D) dest',
+        Xorl (Val 1) dest']
+     _ ->
+       [Movl s dest',
+        Xorl (Val 1) dest']
 translate regMap (AAsm {aAssign = [dest], aOp = Lt, aArgs = [src1, src2]}) =
   cmpOp (dest,src2,src1) Lt regMap
 translate regMap (AAsm {aAssign = [dest], aOp = Gt, aArgs = [src1, src2]}) =
@@ -366,7 +379,7 @@ binOp (dest,src1,src2) op regMap =
    case (s, s2) of
      (Stk _, _) ->
        [Movl s (Reg R15D),
-        asm (regFind regMap src2) (Reg R15D),
+        asm s2 (Reg R15D),
         Movl (Reg R15D) dest']
      (_, Stk _) ->
        [Movl s2 (Reg R15D),
@@ -375,9 +388,9 @@ binOp (dest,src1,src2) op regMap =
      _ ->
        if s == dest' then
          [Movl s dest',
-          asm (regFind regMap src2) dest']
+          asm s2 dest']
        else
-         [Movl (regFind regMap src2) dest',
+         [Movl s2 dest',
           asm s dest']
 
 regFind :: Map.Map AVal Arg -> AVal -> Arg

@@ -78,29 +78,29 @@ gen1 (l, ((live, b), [])) m = ((l, ((live, b), [])), m)
 gen1 (l, ((live, False), aasm)) m = let
   live' = Set.filter isVar live
   m' = Set.fold (\(ALoc (AVar x)) -> \acc -> Map.adjust (+ 1) x acc) m live'
-  live'' = (Set.map (\(ALoc (AVar i)) -> (ALoc (AVarG i (m' Map.! i)))) live', True)
+  live'' = (Set.map (updateGen m') live', True)
   in gen1 (l, (live'', aasm)) m'
 gen1 (l, ((live, True), s : aasm)) m = let
   (res, m') = gen2 s m
   ((_, (_, aasm')), m'') = gen1 (l, ((live, True), aasm)) m'
   in ((l, ((live, True), res : aasm')), m'')
 gen2 (AAsm {aAssign = [AVar i], aOp = o, aArgs = srcs}) m = let
-  srcs' = updateGen srcs m
+  srcs' = map (updateGen m) srcs
   m' = case Map.lookup i m of
     Nothing -> Map.insert i 0 m
     (Just g) -> Map.insert i (g+1) m
   dest' = [AVarG i (m' Map.! i)]
   in (AAsm {aAssign = dest', aOp = o, aArgs = srcs'}, m')
 gen2 (AAsm {aAssign = [dest], aOp = o, aArgs = srcs}) m = let
-  srcs' = updateGen srcs m
+  srcs' = map (updateGen m) srcs
   in (AAsm {aAssign = [dest], aOp = o, aArgs = srcs'}, m)
 gen2 (ACtrl (GotoP i s)) m = let
   s' = Set.filter isVar s
-  res = ACtrl (GotoP i (Set.map (\(ALoc (AVar x)) -> (ALoc (AVarG x (m Map.! x)))) s'))
+  res = ACtrl (GotoP i (Set.map (updateGen m) s'))
   in (res, m)
 gen2 (ACtrl (IfzP v l s)) m = let
-  [v'] = updateGen [v] m
-  s' = Set.map (\(ALoc (AVar x)) -> ALoc (AVarG x (m Map.! x))) s
+  [v'] = map (updateGen m) [v]
+  s' = Set.map (updateGen m) s
   res = ACtrl (IfzP v' l s')
   in (res, m)
 gen2 x m = (x,m)
@@ -108,11 +108,12 @@ gen2 x m = (x,m)
 isVar (ALoc (AVar _)) = True
 isVar _ = False
 
-updateGen [] m = []
-updateGen ((ALoc (AVar i)) : xs) m = let
-  gen = m Map.! i
-  in (ALoc (AVarG i gen)) : (updateGen xs m)
-updateGen (x : xs) m = x : updateGen xs m
+updateGen m (ALoc (AVar i)) = let
+  gen = case Map.lookup i m of
+    Nothing -> 0
+    Just g -> g
+  in ALoc (AVarG i gen)
+updateGen _ x = x
 
 --build blockX calls blockY with params Set.Set AVal
 -- builds Map of Block String of Label -> Block String of Code -> Params from Code

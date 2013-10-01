@@ -70,7 +70,7 @@ coloring g = let m = Map.map (\x-> -1) g
 color :: Graph -> Map.Map Vertex Int -> [Vertex] -> Map.Map Vertex Int
 color g m [] = m
 color g m s = let n = nghbr g (List.head s)
-                  n' = List.map (\x -> m Map.! x) n
+                  n' = List.map (\x ->  m Map.! x) n
                   m' = Map.insert (List.head s) (mex n') m
               in
                color g m' (tail s)

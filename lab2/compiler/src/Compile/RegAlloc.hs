@@ -129,7 +129,7 @@ genInter' (stmt : aasm) i live inter vars =
     ACtrl _ -> genInter' aasm (i+1) live inter vars
     AAsm {aAssign = [dest], aOp = o, aArgs = srcs} | o == Shl || o == Shr -> let
       srcs' = filter isTemp srcs
-      vars' = Set.insert (ALoc dest) vars
+      vars' = Set.insert (ALoc dest) (Set.union vars (Set.fromList $ filter isTemp srcs))
       vs = case Map.lookup i live of
         Nothing -> Set.empty
         Just s -> s
@@ -139,7 +139,7 @@ genInter' (stmt : aasm) i live inter vars =
       in genInter' aasm (i+1) live inter'' vars'
     AAsm {aAssign = [dest], aOp = o, aArgs = srcs} | o == Div || o == Mod -> let
       srcs' = filter isTemp srcs
-      vars' = Set.insert (ALoc dest) vars
+      vars' = Set.insert (ALoc dest) (Set.union vars (Set.fromList $ filter isTemp srcs))
       vs = case Map.lookup i live of
         Nothing -> Set.empty
         Just s -> s
@@ -150,7 +150,7 @@ genInter' (stmt : aasm) i live inter vars =
       in genInter' aasm (i+1) live inter'' vars'
     AAsm {aAssign = [dest], aOp = _, aArgs = srcs} -> let
       srcs' = filter isTemp srcs
-      vars' = Set.insert (ALoc dest) vars
+      vars' = Set.insert (ALoc dest) (Set.union vars (Set.fromList $ filter isTemp srcs))
       vs = case Map.lookup i live of
         Nothing -> Set.empty
         Just s -> s
