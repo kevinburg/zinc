@@ -1,6 +1,5 @@
 *.s
 *.S
-tests0/
 tests1/
 tests2/
 tests3/
