@@ -92,7 +92,7 @@ checkE (ExpUnOp op e _) ctx =
   in case (checkE e ctx) of
     BadE s -> BadE s
     ValidE t -> if opT == t then ValidE ret
-                else BadE "op expr mismatch"
+                else BadE "unop expr mismatch"
 checkE (ExpBinOp op e1 e2 _) ctx =
   if (op == Eq) || (op == Neq) then
     case (checkE e1 ctx, checkE e2 ctx) of
@@ -108,7 +108,7 @@ checkE (ExpBinOp op e1 e2 _) ctx =
       (_, BadE s) -> BadE s
       (ValidE t1, ValidE t2) ->
         if (t1 == opT1) && (t2 == opT2) then ValidE ret
-        else BadE "op expr mismatch"
+        else BadE "binop expr mismatch"
 checkE (ExpTernOp e1 e2 e3 _) ctx =
   case (checkE e1 ctx, checkE e2 ctx, checkE e3 ctx) of
     (BadE s, _, _) -> BadE s
