@@ -125,6 +125,10 @@ genExp (n,l) (ExpInt _ i _) loc = ([AAsm [loc] Nop [AImm $ fromIntegral i]], n, 
 genExp (n,l) (TrueT _) loc = ([AAsm [loc] Nop [AImm 1]], n, l)
 genExp (n,l) (FalseT _) loc = ([AAsm [loc] Nop [AImm 0]], n, l)
 genExp (n,l) (Ident s _) loc = ([AAsm [loc] Nop [ALoc $ AVar s]], n, l)
+genExp (n,l) (ExpBinOp LAnd e1 e2 p) loc =
+  genExp (n,l) (ExpTernOp e1 e2 (FalseT p) p) loc
+genExp (n,l) (ExpBinOp LOr e1 e2 p) loc =
+  genExp (n,l) (ExpTernOp e1 (TrueT p) e2 p) loc
 genExp (n,l) (ExpBinOp op e1 e2 _) loc = let
   (i1, n', l') = genExp (n + 1, l) e1 (ATemp n)
   (i2, n'', l'') = genExp (n' + 1, l') e2 (ATemp n')
@@ -249,6 +253,19 @@ translate regMap (AAsm {aAssign = [dest], aOp = Neg, aArgs = [src]}) =
      _ ->
        [Movl (regFind regMap src) dest',
         Negl dest']
+translate regMap (AAsm {aAssign = [dest], aOp = BNot, aArgs = [src]}) =
+  let
+    dest' = regFind regMap (ALoc dest)
+    s = regFind regMap src
+  in
+   case (s, dest') of
+     (Stk _, Stk _) ->
+       [Movl s (Reg R15D),
+        Movl (Reg R15D) dest',
+        Notl dest']
+     _ ->
+       [Movl (regFind regMap src) dest',
+        Notl dest']
 translate regMap (AAsm {aAssign = [dest], aOp = Lt, aArgs = [src1, src2]}) =
   cmpOp (dest,src2,src1) Lt regMap
 translate regMap (AAsm {aAssign = [dest], aOp = Gt, aArgs = [src1, src2]}) =

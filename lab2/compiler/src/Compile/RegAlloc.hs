@@ -15,7 +15,7 @@ allocateRegisters aasm =
     graph = Cgc.buildGraph (Set.toList vars) (Set.toList res)
     regMap = Cgc.coloring graph
     program = foldr (\x -> \acc -> (show x) ++ "\n" ++ acc) "" aasm
-  in trace (program) regMap
+  in regMap
 
 {- Evaluates to a mapping of line number to live variables at that line. The last line in the program
    is line 0 because that makes sense. 

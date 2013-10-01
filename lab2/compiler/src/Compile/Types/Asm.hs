@@ -15,6 +15,7 @@ data Asm = AsmRet
          | Subl Arg Arg
          | Imull Arg Arg
          | Negl Arg
+         | Notl Arg
          | Idivl Arg
          | Push Arg
          | Subb Arg Arg
@@ -71,6 +72,7 @@ instance Show Asm where
   show (Subb e1 e2) = "\tsub " ++ show e1 ++ ", " ++ show e2
   show (Imull e1 e2) = "\timull " ++ show e1 ++ ", " ++ show e2
   show (Negl e) = "\tnegl " ++ show e
+  show (Notl e) = "\tnotl " ++ show e
   show (Idivl e) = "\tidivl " ++ show e
   show (Push e) = "\tpush " ++ show e
   show (Pop e) = "\tpop " ++ show e

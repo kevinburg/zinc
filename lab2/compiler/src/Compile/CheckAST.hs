@@ -126,7 +126,7 @@ checkInit ANup acc = Right acc
 checkInit (AReturn e) (live, defn) = 
   case checkLive (uses e) live of
     True -> Left "Return statement uses undefined variable(s)"
-    False -> Right (Set.empty, defn)
+    False -> Right (Set.empty, Set.union defn live)
 checkInit (AAssign i e) (live, defn) = 
   case checkLive (uses e) live of
     True -> Left $ "Undeclared variable on RHS of define for " ++ i
@@ -138,7 +138,7 @@ checkInit (AIf e s1 s2) (live, defn) =
       case (checkInit s1 (live, defn), checkInit s2 (live, defn)) of
         (Left s, _) -> Left s
         (_, Left s) -> Left s
-        (Right (_, defn1), Right (_, defn2)) ->
+        (Right (live1, defn1), Right (live2, defn2)) ->
           Right (Set.difference live $ Set.intersection defn1 defn2,
                  Set.union defn $ Set.intersection defn1 defn2)
 checkInit (AWhile e s) (live, defn) =
