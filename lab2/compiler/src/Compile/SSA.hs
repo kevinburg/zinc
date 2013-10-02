@@ -1,6 +1,7 @@
 module Compile.SSA where
 
 import Compile.Types
+import qualified Compile.RegAlloc as RA
 import qualified Data.Set as Set
 import qualified Data.Map as Map
 import qualified Data.List as List
@@ -23,33 +24,24 @@ type Blocks = [(String, (Set.Set AVal, [AAsm]))]
 
 parameterize :: [AAsm] -> Blocks
 parameterize aasm = let
-  prgm = foldr (\x -> \y -> (show x) ++ "\n" ++ y) "" aasm
-  p = parameterize' (reverse aasm) Set.empty [] []
-  p1 = trace (prgm ++ "\n\n") $ paramGoto p
+  live = RA.liveVars aasm
+  p = parameterize' (reverse aasm) live 0 [] []
+  program = foldr (\x -> \y -> (show x) ++ "\n" ++ y) "" aasm
+  p1 = paramGoto p
   p2 = varGeneration p1
   in p2
 
 -- Perform first pass on code gropuping it into basic blocks.
-parameterize' :: [AAsm] -> Set.Set AVal -> [AAsm] -> Blocks -> Blocks
-parameterize' [] live aasm b = ("top", (live, aasm)) : b
-parameterize' (s : xs) live aasm b = 
+parameterize' :: [AAsm] -> Map.Map Int (Set.Set AVal) -> Int -> [AAsm] -> Blocks -> Blocks
+parameterize' [] live i aasm b = ("top", (Set.empty, aasm)) : b
+parameterize' (s : xs) live i aasm b = 
   case s of
     ACtrl (Lbl l) -> let
-      b' = (l, (live, aasm)) : b
-      in parameterize' xs live [] b'
-    ACtrl (Goto _) ->
-      parameterize' xs live (s : aasm) b
-    ACtrl (Ifz v l) -> let
-      live' = Set.insert v live
-      in parameterize' xs live' (s : aasm) b
-    ACtrl (Ret v) -> let
-      live' = Set.insert v live
-      in parameterize' xs live' (s : aasm) b
-    AAsm {aAssign = [dest], aOp = _, aArgs = srcs} -> let
-      srcs' = filter isTemp srcs
-      live' = Set.union (Set.fromList srcs') (Set.delete (ALoc dest) live)
-      in parameterize' xs live' (s : aasm) b
-         
+      liveVars = live Map.! i
+      b' = (l, (liveVars, aasm)) : b
+      in parameterize' xs live (i+1) [] b'
+    _ -> parameterize' xs live (i+1) (s : aasm) b
+
 -- Put the paramters back on the gotos in the second pass.
 paramGoto :: Blocks -> Blocks
 paramGoto blocks = List.map (\(l,(live, aasm)) -> (l,(live, map f aasm))) blocks

@@ -55,9 +55,7 @@ liveVars' (stmt : aasm) i labels live m saturate =
   case stmt of
     ACtrl (Ret loc) ->
       let
-        live' = case Map.lookup (i-1) m of
-          Nothing -> Set.insert loc live
-          Just s -> Set.union s (Set.insert loc live)
+        live' = Set.insert loc live
         (m', changed) = update m i live'
       in liveVars' aasm (i+1) labels live' m' (saturate && not(changed))
     ACtrl (Lbl _) ->
@@ -69,28 +67,23 @@ liveVars' (stmt : aasm) i labels live m saturate =
         line = labels Map.! l
         live' = case Map.lookup line m of
           Nothing -> Set.empty
-          Just s -> Set.union s live
+          Just s -> s
         (m', changed) = update m i live'
       in liveVars' aasm (i+1) labels live' m' (saturate && not(changed))
     ACtrl (Ifz v l) ->
       let
         line = labels Map.! l
-        live' = case (Map.lookup line m, Map.lookup (i-1) m) of
-          (Nothing, Nothing) -> Set.insert v live
-          (Just s, Nothing) -> Set.union s (Set.insert v live)
-          (Nothing, Just s) -> Set.union s (Set.insert v live)
-          (Just s1, Just s2) -> Set.unions [s1, s2, (Set.insert v live)]
+        live' = case Map.lookup line m of
+          Nothing -> Set.insert v live
+          Just s -> Set.union (Set.insert v s) live
         (m', changed) = update m i live'
       in liveVars' aasm (i+1) labels live' m' (saturate && not(changed))
     AAsm {aAssign = [dest], aOp = _, aArgs = srcs} ->
       let
         srcs' = filter isTemp srcs
-        live' = Set.delete (ALoc dest) live
-        live'' = case Map.lookup (i-1) m of
-          Nothing -> Set.union live' (Set.fromList srcs')
-          Just s -> Set.unions [s, live', Set.fromList srcs']
-        (m', changed) = update m i live''
-      in liveVars' aasm (i+1) labels live'' m' (saturate && not(changed))
+        live' = Set.union (Set.delete (ALoc dest) live) (Set.fromList srcs')
+        (m', changed) = update m i live'
+      in liveVars' aasm (i+1) labels live' m' (saturate && not(changed))
 
 addNewInter :: AVal -> Set.Set AVal -> Set.Set (AVal, AVal)
 addNewInter (ALoc loc) s =

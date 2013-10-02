@@ -27,8 +27,8 @@ codeGen (Program (Block stmts _)) =
              Mov (Reg RSP) (Reg RBP)] ++ code
             
     program = foldr (\x -> \acc -> (show x) ++ "\n" ++ acc) "" unssa
-  in trace (program) code'
-   --code'
+  in --trace (program) code'
+   code'
    --trace (show s) code'
 
 -- updates the abstract assembly at a label
