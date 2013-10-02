@@ -194,9 +194,9 @@ postOp = do
 
 ternOp :: C0Parser (Maybe (Expr, Expr))
 ternOp = try (do
-                 reserved "?"
+                 reservedOp "?"
                  l <- expr
-                 reserved ":"
+                 reservedOp ":"
                  r <- expr
                  return $ Just (l,r)) <|> 
          do return Nothing
