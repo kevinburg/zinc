@@ -4,7 +4,7 @@ import Compile.Types
 import Debug.Trace
 import Control.Exception
 import Data.Typeable
-
+import Compile.CheckAST
 
 elaborate :: Program -> Either String S
 elaborate (Program (Block stmts _)) =
@@ -80,23 +80,29 @@ elaborate' ((Ctrl (While e st _) _) : xs) =
       Right s' -> Right $ ASeq (AWhile e s') s
   -- FOR --
 elaborate' ((Ctrl (For (Just (Decl t i e _)) exp s2 s3 _) p) : xs) =      
-  case (elaborate' xs, elaborate' (mList s2 p), elaborate' [s3]) of
-    (Left err, _, _) -> Left err
-    (_, Left err, _) -> Left err
-    (_, _, Left err) -> Left err
-    (Right s, Right step, Right body) ->
-      case e of
-        Nothing ->
-          Right $ ASeq (ADeclare i t (AWhile exp (ASeq body step))) s
-        (Just e') ->
-          Right $ ASeq (ADeclare i t (ASeq (AAssign i e') (AWhile exp (ASeq body step)))) s
+  case s2 of
+    Just (Decl _ _ _ _) -> Left (Error "step in for loop is decl")
+    _ ->
+      case (elaborate' xs, elaborate' (mList s2 p), elaborate' [s3]) of
+        (Left err, _, _) -> Left err
+        (_, Left err, _) -> Left err
+        (_, _, Left err) -> Left err
+        (Right s, Right step, Right body) ->
+          case e of
+            Nothing ->
+              Right $ ASeq (ADeclare i t (AWhile exp (ASeq body step))) s
+            (Just e') ->
+              Right $ ASeq (ADeclare i t (ASeq (AAssign i e') (AWhile exp (ASeq body step)))) s
 elaborate' ((Ctrl (For s1 exp s2 s3 _) p) : xs) =
-    case (elaborate' xs, elaborate' (mList s1 p), elaborate' (mList s2 p), elaborate' [s3]) of
-    (Left err, _, _, _) -> Left err
-    (_, Left err, _, _) -> Left err
-    (_, _, Left err, _) -> Left err
-    (Right s, Right init, Right step, Right body) ->
-      Right $ ASeq (ASeq init (AWhile exp (ASeq body step))) s
+  case s2 of
+    Just (Decl _ _ _ _) -> Left (Error "step in for loop is decl")
+    _ ->
+      case (elaborate' xs, elaborate' (mList s1 p), elaborate' (mList s2 p), elaborate' [s3]) of
+        (Left err, _, _, _) -> Left err
+        (_, Left err, _, _) -> Left err
+        (_, _, Left err, _) -> Left err
+        (Right s, Right init, Right step, Right body) ->
+          Right $ ASeq (ASeq init (AWhile exp (ASeq body step))) s
   -- RETURN --
 elaborate' ((Ctrl (Return e _) _) : xs) =
   case elaborate' xs of

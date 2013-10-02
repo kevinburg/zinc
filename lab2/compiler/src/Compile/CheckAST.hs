@@ -79,13 +79,18 @@ checkS (AIf e s1 s2) ctx =
   
 -- Performs static type checking on an expression under a typing context
 checkE :: Expr -> Context -> CheckE
-checkE (ExpInt _ _ _) _ = ValidE Int
+checkE (ExpInt Dec i _) _ = if i > (2^31) then BadE "const too large"
+                            else ValidE Int
+checkE (ExpInt Hex i _) _ = if i > (2^32 - 1) then BadE "const too large"
+                            else ValidE Int
 checkE (TrueT _) _ = ValidE Bool
 checkE (FalseT _) _ = ValidE Bool
 checkE (Ident i _) ctx = 
   case Map.lookup i ctx of
     Nothing -> BadE $ i ++ " used undeclared."
     Just t -> ValidE t    
+checkE (ExpUnOp op e _) _ | op == Incr || op == Decr =
+  BadE "incr or decr in expression"
 checkE (ExpUnOp op e _) ctx =
   let
     ([opT], ret) = opType op

@@ -71,7 +71,7 @@ genStmt (acc, n, l) ((Ctrl (Return e _) _) : xs) =
   let
     (aasm, n', l') = genExp (n, l) e (AReg 0)
   in (acc ++ aasm ++ [ACtrl $ Ret (ALoc $ AReg 0)], n', l')
-genStmt (acc, n, l) ((Ctrl (If e s Nothing _) _) : xs) =        
+genStmt (acc, n, l) ((Ctrl (If e s Nothing _) _) : xs) =
   let
     (aasme, n', l') = genExp (n + 1, l) e (ATemp n)
     (aasms, n'', l'') = genStmt ([], n', l') [s] 
@@ -82,27 +82,33 @@ genStmt (acc, n, l) ((Ctrl (If e s Nothing _) _) : xs) =
             [ACtrl $ Goto (show $ l''+2), ACtrl $ Lbl (show $ l''+2)]
   in genStmt (acc ++ aasm', n'', l''+2) xs
 genStmt (acc, n, l) ((Ctrl (If e s1 (Just s2) _) _) : xs) =
-   let
-    (aasme, n1, l1) = genExp (n+1, l) e (ATemp n)
-    (aasms1, n2, l2) = genStmt ([], n1, l1) [s1] 
-    (aasms2, n3, l3) = genStmt ([], n2, l2) [s2] 
-    aasm = [ACtrl $ Ifz (ALoc (ATemp n)) (show $ l3+2),
-            ACtrl $ Goto (show $ l3+1),
-            ACtrl $ Lbl (show $ l3+1)]
-    aasm' = aasme ++ aasm ++ aasms1 ++
-            [ACtrl $ Goto (show $ l3+3), ACtrl $ Lbl (show $ l3+2)] ++
-            aasms2 ++ [ACtrl $ Goto (show $ l3+3), ACtrl $ Lbl (show $ l3+3)]
-  in genStmt (acc ++ aasm', n3, l3+3) xs
+  case e of
+   (TrueT _) -> genStmt (acc, n, l) (s1 : xs) 
+   (FalseT _) -> genStmt (acc, n, l) (s2 : xs)
+   _ -> let
+     (aasme, n1, l1) = genExp (n+1, l) e (ATemp n)
+     (aasms1, n2, l2) = genStmt ([], n1, l1) [s1] 
+     (aasms2, n3, l3) = genStmt ([], n2, l2) [s2] 
+     aasm = [ACtrl $ Ifz (ALoc (ATemp n)) (show $ l3+2),
+             ACtrl $ Goto (show $ l3+1),
+             ACtrl $ Lbl (show $ l3+1)]
+     aasm' = aasme ++ aasm ++ aasms1 ++
+             [ACtrl $ Goto (show $ l3+3), ACtrl $ Lbl (show $ l3+2)] ++
+             aasms2 ++ [ACtrl $ Goto (show $ l3+3), ACtrl $ Lbl (show $ l3+3)]
+     in genStmt (acc ++ aasm', n3, l3+3) xs
 genStmt (acc, n, l) ((Ctrl (While e s _) _) : xs) =
-  let
-    (aasme, n1, l1) = genExp (n+1, l) e (ATemp n)
-    (aasms, n2, l2) = genStmt ([], n1, l1) [s]
-    aasm = [ACtrl $ Ifz (ALoc (ATemp n)) (show $ l2+3),
-            ACtrl $ Goto (show $ l2+2),
-            ACtrl $ Lbl (show $ l2+2)]
-    aasm' = [ACtrl $ Goto (show $ l2+1), ACtrl $ Lbl (show $ l2+1)] ++ aasme ++ aasm ++ aasms ++
-            [ACtrl $ Goto (show $ l2+1), ACtrl $ Lbl (show $ l2+3)]
-  in genStmt (acc ++ aasm', n2, l2+3) xs
+  case e of
+    (FalseT _) -> genStmt (acc, n, l) xs
+    _ ->
+      let
+        (aasme, n1, l1) = genExp (n+1, l) e (ATemp n)
+        (aasms, n2, l2) = genStmt ([], n1, l1) [s]
+        aasm = [ACtrl $ Ifz (ALoc (ATemp n)) (show $ l2+3),
+                ACtrl $ Goto (show $ l2+2),
+                ACtrl $ Lbl (show $ l2+2)]
+        aasm' = [ACtrl $ Goto (show $ l2+1), ACtrl $ Lbl (show $ l2+1)] ++ aasme ++ aasm ++ aasms ++
+                [ACtrl $ Goto (show $ l2+1), ACtrl $ Lbl (show $ l2+3)]
+      in genStmt (acc ++ aasm', n2, l2+3) xs
 genStmt (acc, n, l) ((Ctrl (For ms1 e ms2 s3 p) _) : xs) =
   let
     (init, n1, l1) = case ms1 of
@@ -153,19 +159,23 @@ genExp (n,l) (ExpUnOp op e _) loc = let
   (i1, n', l') = genExp (n + 1, l) e (ATemp n)
   aasm = [AAsm [loc] op [ALoc $ ATemp n]]
   in (i1 ++ aasm, n', l')
-genExp (n, l) (ExpTernOp e1 e2 e3 _) loc = let
-  (i1, n1, l1) = genExp (n+1, l) e1 (ATemp n)
-  (i2, n2, l2) = genExp (n1+1, l1) e2 loc
-  (i3, n3, l3) = genExp (n2+1, l2) e3 loc
-  aasm = i1 ++ [ACtrl $ Ifz (ALoc (ATemp n)) (show $ l3+2),
-                ACtrl $ Goto (show $ l3+1),
-                ACtrl $ Lbl (show $ l3+1)] ++
-         i2 ++ [ACtrl $ Goto (show $ l3+3),
-                ACtrl $ Lbl (show $ l3+2)] ++
-         i3 ++ [ACtrl $ Goto (show $ l3+3),
-                ACtrl $ Lbl (show $ l3+3)]
-  in (aasm, n3, l3+3)
-
+genExp (n, l) (ExpTernOp e1 e2 e3 _) loc = 
+  case e1 of
+    (TrueT _) -> genExp (n, l) e2 loc
+    (FalseT _) -> genExp (n, l) e3 loc
+    _ ->
+      let
+        (i1, n1, l1) = genExp (n+1, l) e1 (ATemp n)
+        (i2, n2, l2) = genExp (n1+1, l1) e2 loc
+        (i3, n3, l3) = genExp (n2+1, l2) e3 loc
+        aasm = i1 ++ [ACtrl $ Ifz (ALoc (ATemp n)) (show $ l3+2),
+                      ACtrl $ Goto (show $ l3+1),
+                      ACtrl $ Lbl (show $ l3+1)] ++
+               i2 ++ [ACtrl $ Goto (show $ l3+3),
+                      ACtrl $ Lbl (show $ l3+2)] ++
+               i3 ++ [ACtrl $ Goto (show $ l3+3),
+                      ACtrl $ Lbl (show $ l3+3)]
+      in (aasm, n3, l3+3)
      
 -- begin 'temp -> register' translation
 translate regMap (AAsm {aAssign = [dest], aOp = Nop, aArgs = [src]}) =
