@@ -70,7 +70,9 @@ simp = try (do
                dest <- lvalue
                op <- asnOp
                e <- expr
-               return $ Asgn dest op e pos) <|>
+               case op of
+                 Just Fail -> Text.ParserCombinators.Parsec.unexpected "Bad asnOp"
+                 _ -> return $ Asgn dest op e pos) <|>
        try (do
                pos <- getPosition
                t <- typeParse
@@ -180,7 +182,7 @@ asnOp = do
                "<<=" -> Just Shl
                ">>=" -> Just Shr
                "="   -> Nothing
-               x     -> fail $ "Nonexistent assignment operator: " ++ x
+               x     -> Just Fail -- fail $ "Nonexistent assignment operator: " ++ x
    <?> "assignment operator"
 
 postOp :: C0Parser (Maybe Op)
@@ -249,7 +251,7 @@ c0Def = LanguageDef
     commentStartStr = "/*",
     commentEnd      = string "*/",
     commentEndStr   = "*/",
-    commentLine     = string "#" <|> string "//",
+    commentLine     = string "//",
     nestedComments  = True,
     identStart      = letter <|> char '_',
     identLetter     = alphaNum <|> char '_',

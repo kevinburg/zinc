@@ -128,7 +128,7 @@ genInter' (stmt : aasm) i live inter vars =
         Just s -> s
       newInter = Set.map (\x -> (ALoc dest, x)) (Set.difference vs (Set.fromList srcs'))
       inter' = Set.union inter newInter
-      inter'' = Set.union inter' (Set.fromList [(a, ALoc (AReg 2)) | a <- Set.toList vs])
+      inter'' = Set.union inter' (Set.fromList [(a, ALoc (AReg 2)) | a <- (Set.toList vs) ++ [ALoc dest]])
       in genInter' aasm (i+1) live inter'' vars'
     AAsm {aAssign = [dest], aOp = o, aArgs = srcs} | o == Div || o == Mod -> let
       srcs' = filter isTemp srcs
