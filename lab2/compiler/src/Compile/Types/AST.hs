@@ -18,5 +18,7 @@ data S = AAssign String Expr
        | AReturn Expr
        | ANup
        | ASeq S S
+       | ABlock S S
+       | AExpr Expr S
        | ADeclare String Type S deriving Show
                                              

@@ -49,7 +49,15 @@ block = do
    <?> "block"
 
 stmt :: C0Parser Stmt
-stmt = try (do
+stmt = try (do 
+               pos <- getPosition
+               dest <- lvalue
+               op <- postOp
+               semi
+               case op of
+                 Just o -> return $ Simp (PostOp o (Ident dest pos) pos) pos
+                 Nothing -> Text.ParserCombinators.Parsec.unexpected "asdfdsf") <|>
+       try (do
                pos <- getPosition
                stmt <- simp
                semi
@@ -186,12 +194,11 @@ asnOp = do
    <?> "assignment operator"
 
 postOp :: C0Parser (Maybe Op)
-postOp = do
-  op <- operator
-  return $ case op of
-    "++" -> Just Incr
-    "--" -> Just Decr
-    x -> fail $ "asdfas"
+postOp = try (do
+  reservedOp "++"
+  return (Just Incr)) <|> do 
+    reservedOp "--"
+    return (Just Decr)
   <?> "postOp"
 
 ternOp :: C0Parser (Maybe (Expr, Expr))
@@ -261,7 +268,7 @@ c0Def = LanguageDef
                        "return", "break", "continue", "NULL", "alloc",
                        "alloc_array", "typedef", "struct", "else", "assert",
                        "true", "false", "bool"],
-    reservedOpNames = ["+",  "*",  "-",  "/",  "%", "?", ":", "->", ".", "--"],
+    reservedOpNames = ["+",  "*",  "-",  "/",  "%", "?", ":", "->", ".", "--", "++"],
     caseSensitive   = True}
 
 c0Tokens :: Tok.GenTokenParser ByteString () Identity
@@ -296,11 +303,10 @@ semiSep    = Tok.semiSep c0Tokens
 brackets   :: C0Parser a -> C0Parser a
 brackets   = Tok.brackets c0Tokens
 
-opTable = [[prefix  "-"   (ExpUnOp Neg),
+opTable = [[prefix "--" (ExpUnOp Fail),
+            prefix  "-"   (ExpUnOp Neg),
             prefix  "~"   (ExpUnOp BNot),
-            prefix  "!"   (ExpUnOp LNot),
-            postfix "++"  (ExpUnOp Incr), -- this is parsed in an expression now. I would like to be able
-            postfix "--"  (ExpUnOp Decr)],-- to seperate postfix terms from expressions.
+            prefix  "!"   (ExpUnOp LNot)],
            [binary  "*"   (ExpBinOp Mul)  AssocLeft,
             binary  "/"   (ExpBinOp Div)  AssocLeft,
             binary  "%"   (ExpBinOp Mod)  AssocLeft],

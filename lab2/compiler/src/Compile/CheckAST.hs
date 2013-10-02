@@ -28,7 +28,9 @@ checkReturns (AWhile _ _) = False
 checkReturns (AReturn _) = True
 checkReturns (AIf _ s1 s2) = (checkReturns s1) && (checkReturns s2)
 checkReturns (ASeq s1 s2) = (checkReturns s1) || (checkReturns s2)
+checkReturns (ABlock s1 s2) = (checkReturns s1) || (checkReturns s2)
 checkReturns (ADeclare _ _ s) = checkReturns s
+checkReturns (AExpr _ s) = checkReturns s
 
 data CheckS = ValidS
             | BadS String
@@ -42,6 +44,10 @@ type Context = Map.Map String Type
 checkS :: S -> Context -> CheckS
 checkS ANup ctx = ValidS
 checkS (ASeq s1 s2) ctx = 
+  case checkS s1 ctx of
+    BadS s -> BadS s
+    ValidS -> checkS s2 ctx
+checkS (ABlock s1 s2) ctx = 
   case checkS s1 ctx of
     BadS s -> BadS s
     ValidS -> checkS s2 ctx
@@ -76,6 +82,10 @@ checkS (AIf e s1 s2) ctx =
       case checkS s1 ctx of
         BadS s -> BadS s
         ValidS -> checkS s2 ctx
+checkS (AExpr e s) ctx =
+  case checkE e ctx of
+    BadE s -> BadS s
+    ValidE _ -> checkS s ctx
   
 -- Performs static type checking on an expression under a typing context
 checkE :: Expr -> Context -> CheckE
@@ -157,11 +167,19 @@ checkInit (ASeq s1 s2) acc =
   case checkInit s1 acc of
     Left s -> Left s
     Right acc' -> checkInit s2 acc'
+checkInit (ABlock s1 s2) (live, defn) =
+  case checkInit s1 (live, defn) of
+    Left s -> Left s
+    Right (_, defn') -> checkInit s2 (Set.difference live defn', defn')
 checkInit (ADeclare i _ s) (live, defn) =
   case checkInit s (Set.insert i live, defn) of
     Left s -> Left s
-    Right _ -> Right (live, defn)
-    
+    Right (live', defn') -> Right (Set.difference live defn', defn')
+checkInit (AExpr e s) (live, defn) =  
+  case checkLive (uses e) live of
+    True -> Left "Using live vars"
+    False -> checkInit s (live, defn)
+  
 checkLive s live =
   Set.fold (||) False $ Set.map (\x -> Set.member x live) s
     

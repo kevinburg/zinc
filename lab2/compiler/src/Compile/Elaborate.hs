@@ -45,17 +45,11 @@ elaborate' ((Simp (PostOp o e _)_) : xs) =
             Incr -> Right $ ASeq (AAssign i (ExpBinOp Add (Ident i p) (ExpInt Dec 1 p) p)) s
             Decr -> Right $ ASeq (AAssign i (ExpBinOp Sub (Ident i p) (ExpInt Dec 1 p) p)) s
         _ -> Left (Error ("Applying " ++ (show o) ++ " to non-identifier " ++ (show e)))
-elaborate' ((Simp (Expr (ExpUnOp Incr (Ident i p) _)_)_): xs) = 
+elaborate' ((Simp (Expr (ExpUnOp Fail _ _) _)_): xs) = Left $ Error "bad prefix op"
+elaborate' ((Simp (Expr e p)_): xs) = 
   case elaborate' xs of
     Left s -> Left s
-    Right s -> Right $ ASeq (AAssign i (ExpBinOp Add (Ident i p) (ExpInt Dec 1 p) p)) s
-elaborate' ((Simp (Expr (ExpUnOp Decr (Ident i p) _)_)_): xs) =
-  case elaborate' xs of
-    Left s -> Left s
-    Right s -> Right $ ASeq (AAssign i (ExpBinOp Sub (Ident i p) (ExpInt Dec 1 p) p)) s
-elaborate' ((Simp (Expr (ExpUnOp Incr _ _) _)_): xs) = Left $ Error "bad incr"
-elaborate' ((Simp (Expr (ExpUnOp Decr _ _) _)_): xs) = Left $ Error "bad decr"
-elaborate' ((Simp (Expr _ _)_): xs) = elaborate' xs
+    Right s -> Right $ AExpr e s
 -- CONTROL FLOW --
   -- IF --
 elaborate' ((Ctrl (If e st (Nothing) _) _) : xs) =
@@ -114,7 +108,7 @@ elaborate' ((BlockStmt (Block l _) _) : xs) =
     Left s -> Left s
     Right s -> case elaborate' l of
       Left s' -> Left s'
-      Right s' -> Right $ ASeq s' s
+      Right s' -> Right $ ABlock s' s
 
 -- extremely special case function
 mList Nothing _ = []
