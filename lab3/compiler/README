@@ -1,0 +1,56 @@
+Compiler Design - Lab 2
+
+Authors:
+	Kevin Burg - kburg@andrew.cmu.edu
+	John Cole - jhcole@andrew.cmu.edu
+
+Overall Flow of Compiler:
+  Parsing the source code and turning it into a Abstract Syntax Tree (or Parse
+  Syntax Tree) as we call it. Then we Elaborate this PST checking for errors in
+  the code, and turning it into a different form of AST. We then check this AST
+  for other errors like not returning from a control flow path, and static type
+  checking on statements and expressions. Then we turn the AST into abstact 
+  assembly, which we then make SSA, to apply minimization rules on it. We
+  de-SSA that code and then allocate registers for the variables. We finally
+  translate this the de-SSAed code into assembly code which we write to the .s
+  file for gcc to compile.
+
+What the Modules do (and data structures they use):
+
+Register Allocation:
+    -Allocation of registers. Can specify to block as register for certain
+      operations like EAX for division or ECX (CL) for shifting, etc.
+
+Graph Coloring (Cgc):
+    -Colors the vertices which translates into how variables are assigned
+      to Registers for turning abstract syntax into assembly.
+    -Use of Maps and Lists for Graph mapping a vertex to its neighbors
+    -Use of a MaxHeap for simplicial elimination ordering to keep track of 
+	    max weight assigned to a vertex
+
+Code Generating:
+    -Turns abstract syntax into assembly, which is written out to a file
+      for gcc compilation.
+    -Uses the SSA module to turn the code into SSA and then back after
+      applying minimization rules
+    -Use of Maps for finding the register a variable is assigned to when 
+        translating from temps to registers
+
+SSA:
+    -Turns normal 3 operand assembly into SSA 3 operand assembly
+    -Turn the variables into SSA and then parameterize the labels and goto's
+        in a second pass of the code
+    -Does minimization on this SSA code
+    -De-SSAs the SSA code to be turned into actual assembly
+    -Uses Lists, Maps, Sets for all sorts of things
+
+CheckAST:
+    -Checks the AST for errors in statements, expressions & control flow paths
+
+Parse:
+    -Parse source code and turn it into PST (a form of AST)
+
+Elaborate:
+    -Elaborates on the PST, checking for errors in the format of expressions
+    -Turns the PST into a different form of AST
+
