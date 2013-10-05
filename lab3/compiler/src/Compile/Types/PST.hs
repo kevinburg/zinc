@@ -12,7 +12,11 @@ import Text.ParserCombinators.Parsec.Pos (SourcePos)
 
 import Compile.Types.Ops
 
-data Program = Program Block
+data Program = Program [GDecl]
+data GDecl = TypeDef Type String SourcePos
+           | FDecl Type String [Param] SourcePos
+           | FDefn Type String [Param] Block SourcePos deriving Show
+data Param = Param Type String deriving Show
 data Block = Block [Stmt] SourcePos
 data Simp = Decl Type String (Maybe Expr) SourcePos
           | Asgn String (Maybe Op) Expr SourcePos
@@ -24,7 +28,8 @@ data Stmt = Simp Simp SourcePos
 data Ctrl = If Expr Stmt (Maybe Stmt) SourcePos
           | While Expr Stmt SourcePos
           | For (Maybe Simp) Expr (Maybe Simp) Stmt SourcePos
-          | Return Expr SourcePos
+          | Return (Maybe Expr) SourcePos
+          | Assert Expr SourcePos
 data Expr = ExpInt IntT Integer SourcePos            
           | TrueT SourcePos
           | FalseT SourcePos
@@ -32,6 +37,7 @@ data Expr = ExpInt IntT Integer SourcePos
           | ExpUnOp Op Expr SourcePos
           | ExpBinOp Op Expr Expr SourcePos
           | ExpTernOp Expr Expr Expr SourcePos
+          | App String [Expr] SourcePos
 data IntT = Hex | Dec deriving Show
 
 instance Show Program where

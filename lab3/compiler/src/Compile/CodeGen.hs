@@ -16,6 +16,8 @@ import Debug.Trace
 import Compile.SSA
 
 codeGen :: Program -> [Asm]
+codeGen _ = []
+{-
 codeGen (Program (Block stmts _)) =
   let
     (aasm, _, _) = genStmt ([], 0, 0) stmts
@@ -418,3 +420,4 @@ regFind regMap aloc =
   case Map.lookup aloc regMap of
     Just (reg) -> reg
     Nothing -> Reg EAX
+-}

@@ -7,11 +7,14 @@ import Data.Typeable
 import Compile.CheckAST
 
 elaborate :: Program -> Either String S
+elaborate p = trace (show p) $ Left "yo"
+{-
 elaborate (Program (Block stmts _)) =
   case elaborate' stmts of
     Left (Error s) -> Left s
     Right s -> Right s
-
+-}
+{-
 data Error = Error String
 
 elaborate' :: [Stmt] -> Either Error S
@@ -121,3 +124,4 @@ contained i (ExpUnOp _ e _) = contained i e
 contained i (ExpBinOp _ e1 e2 _) = contained i e1 || contained i e2
 contained i (ExpTernOp e1 e2 e3 _) = contained i e1 || contained i e2 || contained i e3
 contained _ _ = False
+-}

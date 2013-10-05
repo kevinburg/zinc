@@ -31,15 +31,53 @@ type C0Parser = Parsec ByteString ()
 
 programParser :: C0Parser Program
 programParser = do
-  whiteSpace
-  reserved "int"
-  reserved "main"
-  parens $ return ()
-  b <- block
-  eof
-  return $ Program b
+  gdecls <- gdecls
+  return $ Program gdecls
   <?> "program"
-  
+
+gdecls :: C0Parser [GDecl]
+gdecls = try (do
+                 eof
+                 return []) <|>
+         do
+           g <- gdecl
+           gs <- gdecls
+           return $ (g : gs)
+         <?> "gdecls"
+
+gdecl :: C0Parser GDecl
+gdecl = try (do
+                p <- getPosition
+                reserved "typedef"
+                t <- typeParse
+                i <- identifier
+                semi
+                return $ TypeDef t i p) <|>
+        try (do
+                p <- getPosition
+                t <- typeParse
+                i <- identifier
+                params <- parens $ commaSep param
+                semi
+                return $ FDecl t i params p) <|>
+        try (do
+                p <- getPosition
+                t <- typeParse
+                i <- identifier
+                params <- parens $ commaSep param
+                b <- block
+                return $ FDefn t i params b p)
+        <?> "gdecl"
+
+--commaSep p  = p `sepBy` (Tok.symbol ",")
+
+param :: C0Parser Param
+param = do
+  t <- typeParse
+  i <- identifier
+  return $ Param t i
+  <?> "param"
+
 block :: C0Parser Block
 block = do
   braces (do
@@ -127,7 +165,7 @@ ctrl = try (do
                reserved "return"
                e <- expr
                semi
-               return $ Return e pos) <|>
+               return $ Return (Just e) pos) <|>
        try (do
                pos <- getPosition
                reserved "for"
@@ -172,7 +210,15 @@ typeParse = try (do
             try (do
                     pos <- getPosition
                     reserved "bool"
-                    return Bool)
+                    return Bool) <|>
+            try (do
+                    pos <- getPosition
+                    reserved "void"
+                    return Void) <|>
+            try (do
+                    pos <- getPosition
+                    i <- identifier
+                    return $ Type i) 
             <?> "type"
 
 asnOp :: C0Parser (Maybe Op)
