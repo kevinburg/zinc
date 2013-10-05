@@ -2,3 +2,4 @@ bin/
 dist/
 *.out
 l2rt.c
+report.html
