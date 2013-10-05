@@ -10,7 +10,7 @@ Cabal-version:       >=1.2
 Executable c0c
   Main-Is:        c0c.hs
   Hs-Source-Dirs: src
-  Build-Depends:  base, filepath, mtl, process, bytestring, syb, containers
+  Build-Depends:  base, filepath, mtl, process, bytestring, syb, containers, deepseq
   Extensions:     DeriveDataTypeable, RankNTypes, FlexibleInstances,
                   MultiParamTypeClasses, FlexibleContexts
 
@@ -21,4 +21,14 @@ test-suite c0c-test
   build-depends:     base,
                      HUnit,
                      test-framework,
-                     test-framework-hunit
+                     test-framework-hunit, deepsesq
+
+benchmark c0c-bench
+  type:             exitcode-stdio-1.0
+  hs-source-dirs:   bench, src
+  main-is:          MainBenchmarkSuite.hs
+  build-depends:    base, filepath, mtl, process, bytestring, syb, containers,
+                    criterion, deepseq
+  Extensions:	    DeriveDataTypeable, RankNTypes, FlexibleInstances,
+                    MultiParamTypeClasses, FlexibleContexts
+  ghc-options: 	    -O

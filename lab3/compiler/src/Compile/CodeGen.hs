@@ -26,7 +26,7 @@ codeGen (Program (Block stmts _)) =
     code' = [Push (Reg RBP),
              Mov (Reg RSP) (Reg RBP)] ++ code
             
-    program = foldr (\x -> \acc -> (show x) ++ "\n" ++ acc) "" unssa
+    --program = foldr (\x -> \acc -> (show x) ++ "\n" ++ acc) "" unssa
   in --trace (program) code'
    code'
    --trace (show s) code'

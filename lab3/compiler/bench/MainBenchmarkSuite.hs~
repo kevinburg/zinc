@@ -1,0 +1,50 @@
+module Main (main) where
+
+import System.FilePath
+import System.Process
+import System.Exit
+
+import Control.Monad.Error
+
+import Criterion.Main
+import Criterion.Config
+
+import Compile
+import Args
+import System.Environment
+import System.IO
+
+import Compile.Types
+import Compile.Parse
+import Compile.CheckAST
+import Compile.CodeGen
+import Compile.Elaborate
+import Compile.SSA
+
+import LiftIOE
+import Debug.Trace
+
+
+getDefaults "c0c" = defaultJob
+getDefaults "l3c" = defaultJob {jobOutFormat = Asm}
+getDefaults _ = defaultJob
+
+main :: IO ()
+main = defaultMainWith benchConfig (return ()) (benchmarks job)
+ 
+getJob :: Job
+getJob = case parseArgs (getDefaults prog) args of
+ 
+benchmarks :: [Benchmark]
+benchmarks =
+  [
+    bgroup "Parse"
+    [
+      bench "ParseAST"  $ whnf parseAST 
+    ]
+  ]
+     
+benchConfig :: Config
+benchConfig = defaultConfig {
+  cfgPerformGC = ljust True
+  }

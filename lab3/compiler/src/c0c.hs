@@ -13,7 +13,7 @@ import System.Exit
 import Debug.Trace
 
 getDefaults "c0c" = defaultJob
-getDefaults "l2c" = defaultJob {jobOutFormat = Asm}
+getDefaults "l3c" = defaultJob {jobOutFormat = Asm}
 getDefaults _ = defaultJob
 
 main :: IO ()

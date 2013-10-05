@@ -6,6 +6,8 @@
 -}
 module Compile.Types.PST where
 
+import Control.DeepSeq
+
 import Text.ParserCombinators.Parsec.Pos (SourcePos)
 
 import Compile.Types.Ops
@@ -63,3 +65,13 @@ instance Show Ctrl where
   show (If e s1 s2 _) = "(If " ++ (show e) ++ " " ++ (show s1) ++ " " ++ (show s2) ++ ")"
   show (While e s _) = "(While " ++ (show e) ++ " " ++ (show s) ++ ")"
   show (For s1 e s2 s3 _) = "(For " ++ (show s1) ++ " " ++ (show e) ++ " " ++ (show s2) ++ " " ++ (show s3) ++ ")"
+
+
+instance NFData Expr where
+  rnf (ExpInt intt i sp) = intt `seq` i `seq` sp `seq` ()
+  rnf (TrueT sp) = sp `seq` ()
+  rnf (FalseT sp) = sp `seq` ()
+  rnf (Ident s sp) = s `seq` sp `seq` ()
+  rnf (ExpUnOp o e sp) = o `seq` e `seq` sp `seq` ()
+  rnf (ExpBinOp o e1 e2 sp) = o `seq` e1 `seq` e2 `seq` sp `seq` ()
+  rnf (ExpTernOp e1 e2 e3 sp) = e1 `seq` e2 `seq` e3 `seq` sp `seq` ()

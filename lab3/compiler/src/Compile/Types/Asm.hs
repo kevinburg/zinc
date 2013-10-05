@@ -4,6 +4,8 @@ import Text.ParserCombinators.Parsec.Pos (SourcePos)
 
 import qualified Numeric as Num
 
+import Control.DeepSeq
+  
 import Compile.Types.AbstractAssembly
 
 data Asm = AsmRet
@@ -118,3 +120,47 @@ instance Show Register where
   show RDX = "rdx"
   show R15B = "r15b"
   show CL = "cl"
+
+
+instance NFData Asm where
+  rnf _ = ()
+{-
+  rnf AsmRet = ()
+  rnf (Movl a1 a2) =  a1 `seq` a2 `seq` ()
+  rnf (Addl a1 a2) = a1 `seq` a2 `seq` ()
+  rnf (Andl a1 a2) = a1 `seq` a2 `seq` ()
+  rnf (Orl a1 a2) = a1 `seq` a2 `seq` ()
+  rnf (Xorl a1 a2) = a1 `seq` a2 `seq` ()
+  rnf (Subl a1 a2) = a1 `seq` a2 `seq` ()
+  rnf (Imull a1 a2) = a1 `seq` a2 `seq` ()
+  rnf (Negl a1) = a1 `seq` ()
+  rnf (Notl a1) = a1 `seq` ()
+  rnf (Idivl a1) = a1 `seq` ()
+  rnf (Push a1) = a1 `seq` ()
+  rnf (Subb a1 a2) = a1 `seq` a2 `seq` ()
+  rnf (Mov a1 a2) = a1 `seq` a2 `seq` ()
+  rnf (Pop a1) = a1 `seq` ()
+  rnf (Movslq a1 a2) = a1 `seq` a2 `seq` ()
+  rnf (Sall a1 a2) = a1 `seq` a2 `seq` ()
+  rnf (Sarl a1 a2) = a1 `seq` a2 `seq` ()
+  rnf (Cdq) = () 
+  rnf (Jmp str) = str `seq` ()
+  rnf (Testl a1 a2) = a1 `seq` a2 `seq` ()
+  rnf (Cmpl a1 a2) = a1 `seq` a2 `seq` ()
+  rnf (Je str) = str `seq` ()
+  rnf (AsmLbl str) = str `seq` ()
+  rnf (Movzbl a1 a2) = a1 `seq` a2 `seq` ()
+  rnf (Setl a1) = a1 `seq` ()
+  rnf (Setle a1) = a1 `seq` ()
+  rnf (Sete a1) = a1 `seq` ()
+  rnf (Setne a1) = a1 `seq` ()
+-}
+
+instance NFData Arg where
+  rnf (Reg r) = r `seq` () 
+  rnf (Stk i) = i `seq` ()
+  rnf (Val i) = i `seq` ()
+  
+instance NFData Register where
+  rnf r = ()
+  
