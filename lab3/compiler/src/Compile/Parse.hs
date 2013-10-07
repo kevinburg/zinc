@@ -31,6 +31,7 @@ type C0Parser = Parsec ByteString ()
 
 programParser :: C0Parser Program
 programParser = do
+  whiteSpace
   gdecls <- gdecls
   return $ Program gdecls
   <?> "program"
@@ -68,8 +69,6 @@ gdecl = try (do
                 b <- block
                 return $ FDefn t i params b p)
         <?> "gdecl"
-
---commaSep p  = p `sepBy` (Tok.symbol ",")
 
 param :: C0Parser Param
 param = do
@@ -171,7 +170,13 @@ ctrl = try (do
                reserved "for"
                (s1,e,s2) <- parens forBody
                s <- stmt
-               return $ For s1 e s2 s pos)
+               return $ For s1 e s2 s pos) <|>
+       try (do
+               pos <- getPosition
+               reserved "assert"
+               e <- parens expr
+               semi
+               return $ Assert e pos)
        <?> "ctrl"
        
 elseOpt :: C0Parser (Maybe Stmt)
@@ -271,6 +276,11 @@ expr' = buildExpressionParser opTable term  <?> "expr"
 term :: C0Parser Expr
 term = do
   parens expr <|>
+          try (do
+                  p <- getPosition
+                  i <- identifier
+                  args <- parens $ commaSep expr
+                  return $ App i args p) <|>
    (do p <- getPosition
        i <- identifier
        return $ Ident i p) <|>

@@ -65,13 +65,14 @@ instance Show Expr where
   show (ExpUnOp op e _) = "(ExpUnOp " ++ (show op) ++ " " ++ (show e) ++ ")"
   show (ExpBinOp op e1 e2 _) = "(ExpBinOp " ++ (show op) ++ " " ++ (show e1) ++ " " ++ (show e2) ++ ")"
   show (ExpTernOp e1 e2 e3 _) = "(ExpTernOp " ++ (show e1) ++ " " ++ (show e2) ++ " " ++ (show e3) ++ ")"
+  show (App f a _) = "(App " ++ f ++ " " ++ (show a) ++ ")"
   
 instance Show Ctrl where
   show (Return e _) = "(Return " ++ (show e) ++ ")"
   show (If e s1 s2 _) = "(If " ++ (show e) ++ " " ++ (show s1) ++ " " ++ (show s2) ++ ")"
   show (While e s _) = "(While " ++ (show e) ++ " " ++ (show s) ++ ")"
   show (For s1 e s2 s3 _) = "(For " ++ (show s1) ++ " " ++ (show e) ++ " " ++ (show s2) ++ " " ++ (show s3) ++ ")"
-
+  show (Assert e _) = "(Assert " ++ (show e) ++ ")"
 
 instance NFData Expr where
   rnf (ExpInt intt i sp) = intt `seq` i `seq` sp `seq` ()
