@@ -13,15 +13,15 @@ import Text.ParserCombinators.Parsec.Pos (SourcePos)
 import Compile.Types.Ops
 import Compile.Types.PST
 
--- TODO: add in sourcePos for errors
 data S = AAssign String Expr
        | AIf Expr S S
        | AWhile Expr S
-       | AReturn Expr
+       | AReturn (Maybe Expr)
        | ANup
        | ASeq S S
        | ABlock S S
        | AExpr Expr S
+       | AAssert Expr
        | ADeclare String Type S deriving Show
 
 instance NFData S where

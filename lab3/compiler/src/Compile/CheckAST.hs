@@ -6,20 +6,12 @@ import qualified Data.Set as Set
 import Debug.Trace
 
 -- Checks that the abstract syntax adheres to the static semantics
--- TODO: check variable initialization
-checkAST :: S -> Either String ()
-checkAST s =
-  case checkReturns s of
-    False -> Left "One or more control flow paths do not return"
-    True ->
-      case checkS s Map.empty of
-        BadS s -> Left s
-        ValidS -> 
-          case checkInit s (Set.empty, Set.empty) of
-            Left s -> Left s
-            Right _ -> Right ()
-          
-
+checkAST :: (Map.Map String Type, Map.Map String S) -> Either String ()
+checkAST (typedef, fdefns) =
+  case Map.lookup "main" fdefns of
+    Nothing -> Left "main undefined"
+    Just s -> Right ()
+    
 -- Verifies that all control flow paths end with a return statement
 checkReturns :: S -> Bool
 checkReturns ANup = False
@@ -55,7 +47,7 @@ checkS (ADeclare i t s) ctx =
   case Map.lookup i ctx of
     Just _ -> BadS $ "Redeclaring " ++ i
     Nothing -> checkS s $ Map.insert i t ctx
-checkS (AReturn e) ctx = 
+checkS (AReturn (Just e)) ctx = 
   case checkE e ctx of
     BadE s -> BadS s
     ValidE Bool -> BadS "Main returns type bool"
@@ -138,7 +130,7 @@ checkE (ExpTernOp e1 e2 e3 _) ctx =
 -- Checks that no variables are used before definition
 checkInit :: S -> (Set.Set String, Set.Set String) -> Either String (Set.Set String, Set.Set String)
 checkInit ANup acc = Right acc
-checkInit (AReturn e) (live, defn) = 
+checkInit (AReturn (Just e)) (live, defn) = 
   case checkLive (uses e) live of
     True -> Left "Return statement uses undefined variable(s)"
     False -> Right (Set.empty, Set.union defn live)
