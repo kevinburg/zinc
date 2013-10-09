@@ -162,6 +162,11 @@ ctrl = try (do
        try (do
                pos <- getPosition
                reserved "return"
+               semi
+               return $ Return Nothing pos) <|>
+       try (do
+               pos <- getPosition
+               reserved "return"
                e <- expr
                semi
                return $ Return (Just e) pos) <|>

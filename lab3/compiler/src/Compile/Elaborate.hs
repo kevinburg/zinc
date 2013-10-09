@@ -6,19 +6,19 @@ import qualified Data.Map as Map
 import Debug.Trace
 import Compile.CheckAST
 
-elaborate :: Program -> Either String (Map.Map String Type, Map.Map String S)
+elaborate :: Program -> Either String (Map.Map String Type, Map.Map String (Type, [Param], S))
 elaborate (Program gdecls) =
   case partProgram gdecls (Map.empty, Map.empty, Map.empty) of
     Left err -> Left err
     Right (typedef, _, fdefn) -> let
-      res = Map.map (\(_, _, Block b _) -> elaborate' b) fdefn
+      res = Map.map (\(t, p, Block b _) -> (t, p, elaborate' b)) fdefn
       in case Map.foldWithKey
               (\key -> \val -> \acc ->
                 case (acc, val) of
                   (Left s, _) -> Left s
-                  (_, Left s) -> Left s
-                  (Right m, Right val') ->
-                    Right $ Map.insert key val' m) (Right Map.empty) res of
+                  (_, (_, _, Left s)) -> Left s
+                  (Right m, (t, p, Right val')) ->
+                    Right $ Map.insert key (t, p, val') m) (Right Map.empty) res of
            Left s -> Left s
            Right m -> Right (typedef, m)
 
@@ -69,22 +69,6 @@ check (t, s, p) (typedef, fdecl, fdefn) =
         False -> Left "Function decl/defn conflicts with previous decl/defn"
         True -> Right ()
     Nothing -> Right ()
-
-typeEq m (e1,e2) = let
-  in case (e1, e2) of
-    (Type s1, Type s2) ->
-      case (Map.lookup s1 m, Map.lookup s2 m) of
-        (Just t1, Just t2) -> t1 == t2
-        _ -> False
-    (_, Type s) ->
-      case Map.lookup s m of
-        Just t2 -> e1 == t2
-        _ -> False
-    (Type s, _) ->
-      case Map.lookup s m of
-        Just t1 -> t1 == e2
-        _ -> False
-    (_, _) -> e1 == e2
 
 typeFromParams l = map (\(Param t _) -> t) l 
 

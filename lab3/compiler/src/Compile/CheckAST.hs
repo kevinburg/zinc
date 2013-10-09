@@ -6,23 +6,105 @@ import qualified Data.Set as Set
 import Debug.Trace
 
 -- Checks that the abstract syntax adheres to the static semantics
-checkAST :: (Map.Map String Type, Map.Map String S) -> Either String ()
+checkAST :: (Map.Map String Type, Map.Map String (Type, [Param], S)) -> Either String ()
 checkAST (typedef, fdefns) =
-  case Map.lookup "main" fdefns of
+  let
+    ctx = Map.foldWithKey (\fun -> \(t, p, _) -> \acc ->
+                            let
+                              (t', p', _) = fixTypes typedef (t, p, ANup)
+                              ts = map (\(Param ty i) -> ty) p'
+                            in Map.insert fun (Map ts t') acc) Map.empty fdefns
+  in case Map.lookup "main" fdefns of
     Nothing -> Left "main undefined"
-    Just s -> Right ()
+    (Just (t, p, s)) ->
+      if length(p) > 0 then Left "main should take no arguments" else
+        if not(typeEq typedef (Int, t)) then Left "main is not type int" else
+          let
+            m' = Map.map (checkFunction typedef ctx) fdefns
+          in trace (show m') $ Right ()
+             
+fixTypes m (t, p, s) = 
+  let
+    t' = findType m t
+    p' = map (\(Param t1 s) -> Param (findType m t1) s) p
+    s' = fixTypes' m s
+  in (t', p', s') where
+   
+fixTypes' m (ADeclare i t s) = ADeclare i (findType m t) (fixTypes' m s)
+fixTypes' m (AIf e s1 s2) = AIf e (fixTypes' m s1) (fixTypes' m s2)
+fixTypes' m (AWhile e s) = AWhile e (fixTypes' m s)
+fixTypes' m (ASeq s1 s2) = ASeq (fixTypes' m s1) (fixTypes' m s2)
+fixTypes' m (ABlock s1 s2) = ABlock (fixTypes' m s1) (fixTypes' m s2)
+fixTypes' m (AExpr e s) = AExpr e (fixTypes' m s)
+fixTypes' m x = x
+
+findType m (Type s) = m Map.! s
+findType _ x = x
+             
+checkFunction m ctx val =
+  let
+    -- replace all typedef types so we dont have to deal with them
+    (t', p', s') = fixTypes m val
+  in (let b = case t' of
+            Void -> checkNoReturns s'
+            _ -> checkReturns s'
+      in case b of
+        True -> Right ()
+        False -> Left "error in returns check") >>= \_ ->
+     (let
+         ctx' = foldr (\(Param t s) -> \acc -> Map.insert s t acc) ctx p'
+      in case checkS s' ctx' t' of
+        ValidS -> Right ()
+        BadS s -> Left s) >>= \_ ->
+     (let
+         vars = map (\(Param t i) -> i) p'
+         defn = Set.fromList vars
+      in if not(Set.size(defn) == length(p')) then Left "duplicate args" else
+           case checkInit s' (Set.empty, defn) of
+             Left s -> Left s
+             Right _ -> Right())
+                  
+typeEq m (e1,e2) = let
+  in case (e1, e2) of
+    (Type s1, Type s2) ->
+      case (Map.lookup s1 m, Map.lookup s2 m) of
+        (Just t1, Just t2) -> t1 == t2
+        _ -> False
+    (_, Type s) ->
+      case Map.lookup s m of
+        Just t2 -> e1 == t2
+        _ -> False
+    (Type s, _) ->
+      case Map.lookup s m of
+        Just t1 -> t1 == e2
+        _ -> False
+    (_, _) -> e1 == e2
     
 -- Verifies that all control flow paths end with a return statement
 checkReturns :: S -> Bool
 checkReturns ANup = False
 checkReturns (AAssign _ _) = False
 checkReturns (AWhile _ _) = False
-checkReturns (AReturn _) = True
+checkReturns (AReturn Nothing) = False
+checkReturns (AReturn (Just _)) = True
 checkReturns (AIf _ s1 s2) = (checkReturns s1) && (checkReturns s2)
 checkReturns (ASeq s1 s2) = (checkReturns s1) || (checkReturns s2)
 checkReturns (ABlock s1 s2) = (checkReturns s1) || (checkReturns s2)
 checkReturns (ADeclare _ _ s) = checkReturns s
 checkReturns (AExpr _ s) = checkReturns s
+    
+-- Verifies that no control flow paths end with a return statement
+checkNoReturns :: S -> Bool
+checkNoReturns ANup = True
+checkNoReturns (AAssign _ _) = True
+checkNoReturns (AWhile _ s) = checkNoReturns s
+checkNoReturns (AReturn Nothing) = True
+checkNoReturns (AReturn (Just _)) = False
+checkNoReturns (AIf _ s1 s2) = (checkNoReturns s1) && (checkNoReturns s2)
+checkNoReturns (ASeq s1 s2) = (checkNoReturns s1) && (checkNoReturns s2)
+checkNoReturns (ABlock s1 s2) = (checkNoReturns s1) && (checkNoReturns s2)
+checkNoReturns (ADeclare _ _ s) = checkNoReturns s
+checkNoReturns (AExpr _ s) = checkNoReturns s
 
 data CheckS = ValidS
             | BadS String
@@ -33,31 +115,37 @@ data CheckE = ValidE Type
 type Context = Map.Map String Type
 
 -- Performs static type checking on a statements  under a typing context
-checkS :: S -> Context -> CheckS
-checkS ANup ctx = ValidS
-checkS (ASeq s1 s2) ctx = 
-  case checkS s1 ctx of
+checkS :: S -> Context -> Type -> CheckS
+checkS ANup ctx _ = ValidS
+checkS (ASeq s1 s2) ctx t = 
+  case checkS s1 ctx t of
     BadS s -> BadS s
-    ValidS -> checkS s2 ctx
-checkS (ABlock s1 s2) ctx = 
-  case checkS s1 ctx of
+    ValidS -> checkS s2 ctx t
+checkS (ABlock s1 s2) ctx t = 
+  case checkS s1 ctx t of
     BadS s -> BadS s
-    ValidS -> checkS s2 ctx
-checkS (ADeclare i t s) ctx =
+    ValidS -> checkS s2 ctx t
+checkS (ADeclare i t' s) ctx t =
   case Map.lookup i ctx of
+    -- allow shadowing of variables over functions
+    Just (Map _ _) -> checkS s (Map.insert i t' ctx) t
     Just _ -> BadS $ "Redeclaring " ++ i
-    Nothing -> checkS s $ Map.insert i t ctx
-checkS (AReturn (Just e)) ctx = 
-  case checkE e ctx of
-    BadE s -> BadS s
-    ValidE Bool -> BadS "Main returns type bool"
-    ValidE Int -> ValidS
-checkS (AWhile e s) ctx = 
+    Nothing -> checkS s (Map.insert i t' ctx) t
+checkS (AReturn e) ctx t = 
+  case (e,t) of
+    (Nothing, Void) -> ValidS
+    (Nothing, _) -> BadS "empty return statement in non-void function"
+    (Just _, Void) -> BadS "non-empty return statement in void function"
+    (Just e', _) ->
+      case checkE e' ctx of
+        BadE s -> BadS s
+        ValidE t' -> if t==t' then ValidS else BadS "return type mismatch"
+checkS (AWhile e s) ctx t = 
   case checkE e ctx of
     BadE s -> BadS s
     ValidE Int -> BadS "While condition is not type bool"
-    ValidE Bool -> checkS s ctx
-checkS (AAssign i e) ctx =
+    ValidE Bool -> checkS s ctx t
+checkS (AAssign i e) ctx _ =
   case Map.lookup i ctx of
     Nothing -> BadS $ "Assigning " ++ i ++ " undeclared"
     Just t1 ->
@@ -66,18 +154,18 @@ checkS (AAssign i e) ctx =
         ValidE t2 -> if t1 == t2 then ValidS
                      else BadS $ i ++ " declared with type " ++ (show t1) ++ 
                           " assigned with type " ++ (show t2)
-checkS (AIf e s1 s2) ctx =
+checkS (AIf e s1 s2) ctx t =
   case checkE e ctx of
     BadE s -> BadS s
     ValidE Int -> BadS "If condition is not type bool"
     ValidE Bool ->
-      case checkS s1 ctx of
+      case checkS s1 ctx t of
         BadS s -> BadS s
-        ValidS -> checkS s2 ctx
-checkS (AExpr e s) ctx =
+        ValidS -> checkS s2 ctx t
+checkS (AExpr e s) ctx t =
   case checkE e ctx of
     BadE s -> BadS s
-    ValidE _ -> checkS s ctx
+    ValidE _ -> checkS s ctx t
   
 -- Performs static type checking on an expression under a typing context
 checkE :: Expr -> Context -> CheckE
@@ -126,10 +214,21 @@ checkE (ExpTernOp e1 e2 e3 _) ctx =
         Int -> BadE "cond in ternary op not type bool"
         Bool -> if t2 == t3 then ValidE t2
                 else BadE "ternary result type mismatch"
+checkE (App fun args _) ctx =
+  let
+    ts = map (\e -> checkE e ctx) args
+    -- TODO better error propagation here
+    ts' = map (\(ValidE t) -> t) ts
+  in case Map.lookup fun ctx of
+    (Just (Map input output)) -> if ts' == input then ValidE output
+                                 else BadE "function input type mismatch"
+    _ -> BadE "undefined function call"
                       
 -- Checks that no variables are used before definition
 checkInit :: S -> (Set.Set String, Set.Set String) -> Either String (Set.Set String, Set.Set String)
 checkInit ANup acc = Right acc
+checkInit (AReturn Nothing) (live, defn) =
+  Right (Set.empty, Set.union defn live)
 checkInit (AReturn (Just e)) (live, defn) = 
   case checkLive (uses e) live of
     True -> Left "Return statement uses undefined variable(s)"

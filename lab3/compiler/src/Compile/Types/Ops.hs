@@ -6,7 +6,11 @@
 -}
 module Compile.Types.Ops where
 
-data Type = Int | Bool | Void | Type String deriving (Eq, Show)
+data Type = Int 
+          | Bool 
+          | Void 
+          | Type String 
+          | Map [Type] Type deriving (Eq, Show)
 
 data Op = Mul
         | Add
