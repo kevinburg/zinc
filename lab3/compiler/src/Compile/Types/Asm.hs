@@ -5,8 +5,6 @@ import Text.ParserCombinators.Parsec.Pos (SourcePos)
 import qualified Numeric as Num
 
 import Control.DeepSeq
-  
-import Compile.Types.AbstractAssembly
 
 data Asm = AsmRet
          | Movl Arg Arg 
@@ -39,7 +37,7 @@ data Asm = AsmRet
 
 data Arg = Reg Register
          | Stk Int -- Stack offset int
-         | Val Int deriving Eq
+         | Val Int deriving (Eq, Ord)
 
 data Register = EAX
               | EBX
@@ -59,7 +57,7 @@ data Register = EAX
               | R15D 
               | R15B
               | CL
-              | RDX deriving Eq
+              | RDX deriving (Eq, Ord)
 
 instance Show Asm where
   show (AsmRet) = "\tret"

@@ -12,10 +12,11 @@ allocateRegisters aasm =
   let
     live = liveVars aasm
     (res, vars) = genInter aasm live
-    graph = Cgc.buildGraph (Set.toList vars) (Set.toList res)
-    regMap = Cgc.coloring graph
+    --graph = Cgc.buildGraph (Set.toList vars) (Set.toList res)
+    --regMap = Cgc.coloring graph
     --program = foldr (\x -> \acc -> (show x) ++ "\n" ++ acc) "" aasm
-  in regMap
+  in --regMap
+   Map.empty
 
 {- Evaluates to a mapping of line number to live variables at that line. The last line in the program
    is line 0 because that makes sense. 
@@ -128,7 +129,7 @@ genInter' (stmt : aasm) i live inter vars =
         Just s -> s
       newInter = Set.map (\x -> (ALoc dest, x)) (Set.difference vs (Set.fromList srcs'))
       inter' = Set.union inter newInter
-      inter'' = Set.union inter' (Set.fromList [(a, ALoc (AReg 2)) | a <- (Set.toList vs) ++ [ALoc dest]])
+      inter'' = Set.union inter' (Set.fromList [(a, ALoc (AReg ECX)) | a <- (Set.toList vs) ++ [ALoc dest]])
       in genInter' aasm (i+1) live inter'' vars'
     AAsm {aAssign = [dest], aOp = o, aArgs = srcs} | o == Div || o == Mod -> let
       srcs' = filter isTemp srcs
@@ -139,7 +140,7 @@ genInter' (stmt : aasm) i live inter vars =
       newInter = Set.map (\x -> (ALoc dest, x)) (Set.difference vs (Set.fromList srcs'))
       inter' = Set.union inter newInter
       inter'' = Set.union inter' (Set.fromList [(a, b) | a <- Set.toList vs,
-                                                b <- [ALoc (AReg 0), ALoc (AReg 3)]])
+                                                b <- [ALoc (AReg EAX), ALoc (AReg EDX)]])
       in genInter' aasm (i+1) live inter'' vars'
     AAsm {aAssign = [dest], aOp = _, aArgs = srcs} -> let
       srcs' = filter isTemp srcs

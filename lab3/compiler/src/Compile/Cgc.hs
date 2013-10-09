@@ -8,7 +8,7 @@ import Compile.Types
 
 import Debug.Trace
 
-type Vertex = AVal
+type Vertex = ALoc
 type Edge = (Vertex, Vertex)
 type Graph = Map.Map Vertex [Vertex]
 
@@ -49,16 +49,19 @@ seo' g weights l =
 -- Vertex paired with Int, which represents color
 coloring :: Graph -> Map.Map Vertex Arg
 coloring g = let m = Map.map (\x-> -1) g
-                 m' = Map.insert (ALoc $ AReg 0) 0
-                      (Map.insert (ALoc $ AReg 2) 2
-                       (Map.insert (ALoc $ AReg 3) 3 m))
+                 preColoring = [(ARes, 0)] ++
+                               [(AReg EAX, 0), (AReg ECX, 4), (AReg EDX, 3)] ++
+                               [(AArg i, i) | i <- [0..6]]
+                 m' = foldr (\(x,y) -> \acc -> Map.insert x y acc) m preColoring
                  s = List.filter (\r -> case r of
-                                     ALoc (AReg _) -> False
+                                     (AReg _) -> False
+                                     ARes -> False
+                                     (AArg _) -> False
                                      _ -> True) (seo g)
                  res = color g m' s
                  order = registerOrder ()
              in  (Map.map (\v -> 
-                            case (v < (Map.size(order)-1)) of
+                            case (v < (Map.size(order)-2)) of
                               True ->
                                 let Just reg = Map.lookup v order
                                 in Reg reg
@@ -79,13 +82,9 @@ color g m s = let n = nghbr g (List.head s)
 mex :: [ Int ] -> Int
 mex [] = 0
 mex l = let m = List.minimum([0..((List.maximum l)+2)] List.\\ l)
-        in
-         m
-         {-
-         if m < (Map.size(registerOrder())-1)
-         then m
-         else Map.size(registerOrder())-1
-          -}
+        in m
+
 -- Orders the registers in the order we want to use them (ESP, EBP for stack)
 registerOrder () =
-  Map.fromList (zip [0..] [EAX,EBX,ECX,EDX,ESI,EDI,R8D,R9D,R10D,R11D,R12D,R13D,R14D])
+  Map.fromList (zip [0..] [EAX,EDI,ESI,EDX,ECX,R8D,R9D,R10D,R11D,EBX,R12D,R13D,R14D])
+  -- preference toward caller save registers

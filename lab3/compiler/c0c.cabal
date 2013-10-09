@@ -21,7 +21,7 @@ test-suite c0c-test
   build-depends:     base,
                      HUnit,
                      test-framework,
-                     test-framework-hunit, deepsesq
+                     test-framework-hunit, deepseq
 
 benchmark c0c-bench
   type:             exitcode-stdio-1.0

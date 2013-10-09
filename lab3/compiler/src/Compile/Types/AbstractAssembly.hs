@@ -7,6 +7,7 @@
 module Compile.Types.AbstractAssembly where
 
 import Compile.Types.Ops
+import Compile.Types.Asm
 import qualified Data.Set as Set
 
 import Control.DeepSeq
@@ -29,7 +30,9 @@ data COp = Ret AVal
 data AVal = ALoc ALoc
           | AImm Int deriving (Show, Eq, Ord)
 
-data ALoc = AReg Int
+data ALoc = ARes
+          | AArg Int
+          | AReg Register
           | ATemp Int
           | AVar String
           | AVarG String Int
