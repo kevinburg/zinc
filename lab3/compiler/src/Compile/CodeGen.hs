@@ -16,22 +16,28 @@ import Debug.Trace
 import Compile.SSA
 
 codeGen :: Program -> [Asm]
-codeGen _ = []
-{-
-codeGen (Program (Block stmts _)) =
+codeGen (Program gdecls) =
   let
-    (aasm, _, _) = genStmt ([], 0, 0) stmts
+    fdefns = concatMap (\x -> case x of
+                           (FDefn _ s p (Block b _) _) -> [(s,p,b)]
+                           _ -> []) gdecls
+    res = map (\f -> genFunction f) fdefns
+{-
     s = ssa aasm
     unssa = deSSA s
     regMap = allocateRegisters unssa -- TODO: this function needs to get the de-SSA aasm
     code = concatMap (translate regMap) unssa
-    code' = [Push (Reg RBP),
-             Mov (Reg RSP) (Reg RBP)] ++ code
-            
-    --program = foldr (\x -> \acc -> (show x) ++ "\n" ++ acc) "" unssa
-  in --trace (program) code'
-   code'
-   --trace (show s) code'
+-}
+  in
+   trace (show res) []
+
+genFunction (s,p,b) =
+  let
+    (aasm, _, _) = genStmt ([], length(p), 0, -1) b
+    p' = zip (map (\(Param _ i) -> i) p) [0..]
+    prefix = map (\(i, n) ->
+                   AAsm {aAssign = [AVar i], aOp = Nop, aArgs = [ALoc $ AArg n]}) p'
+  in (s, prefix ++ aasm)
 
 -- updates the abstract assembly at a label
 update aasm Nothing = Just aasm
@@ -42,18 +48,18 @@ updatePre aasm (Just acc) = Just $ aasm ++ acc
      
 genStmt acc [] = acc
 genStmt acc ((Simp (Decl _ _ Nothing _) _) : xs) = genStmt acc xs
-genStmt (acc, n, l) ((Simp (Decl _ i (Just e) _) _) : xs) =
+genStmt (acc, n, l, ep) ((Simp (Decl _ i (Just e) _) _) : xs) =
   let
     (aasm, n', l') = genExp (n, l) e (AVar i)
-  in genStmt (acc ++ aasm, n', l') xs
-genStmt (acc, n, l) ((Simp (Asgn i o e s) _) : xs) = 
+  in genStmt (acc ++ aasm, n', l', ep) xs
+genStmt (acc, n, l, ep) ((Simp (Asgn i o e s) _) : xs) = 
   let
     e' = case o of
       Nothing -> e
       Just op -> ExpBinOp op (Ident i s) e s
     (aasm, n', l') = genExp (n, l) e' (AVar i)
-  in genStmt (acc ++ aasm, n', l') xs
-genStmt (acc, n, l) ((Simp (PostOp o (Ident i _) s) _) : xs) =
+  in genStmt (acc ++ aasm, n', l', ep) xs
+genStmt (acc, n, l, ep) ((Simp (PostOp o (Ident i _) s) _) : xs) =
   let
     op = case o of
       Incr -> Add
@@ -61,36 +67,37 @@ genStmt (acc, n, l) ((Simp (PostOp o (Ident i _) s) _) : xs) =
     e' = ExpBinOp op (Ident i s) (ExpInt Dec 1 s) s
     (aasm, n', l') = genExp (n, l) e' (AVar i)
   in genStmt (acc ++ aasm, n', l') xs
-genStmt (acc, n, l) ((Simp (Expr e _) _) : xs) = 
+genStmt (acc, n, l, ep) ((Simp (Expr e _) _) : xs) = 
   let
     (aasm, n', l') = genExp (n + 1, l) e (ATemp n)
-  in genStmt (acc ++ aasm, n', l') xs
-genStmt (acc, n, l) ((BlockStmt (Block stmts _) _) : xs) = 
+  in genStmt (acc ++ aasm, n', l', ep) xs
+genStmt (acc, n, l, ep) ((BlockStmt (Block stmts _) _) : xs) = 
   let
-    (aasm, n', l') = genStmt ([], n, l) stmts
-  in genStmt (acc ++ aasm, n', l') xs
-genStmt (acc, n, l) ((Ctrl (Return e _) _) : xs) =
+    (aasm, n', l', ep') = genStmt ([], n, l, ep) stmts
+  in genStmt (acc ++ aasm, n', l', ep') xs
+genStmt (acc, n, l, ep) ((Ctrl (Return (Just e) _) _) : xs) =
   let
-    (aasm, n', l') = genExp (n, l) e (AReg 0)
-  in (acc ++ aasm ++ [ACtrl $ Ret (ALoc $ AReg 0)], n', l')
-genStmt (acc, n, l) ((Ctrl (If e s Nothing _) _) : xs) =
+    (aasm, n', l') = genExp (n, l) e (ARes)
+    (epilogue, l'') = if ep > 0 then (ep, l') else (l'+1, l'+1)
+  in (acc ++ aasm ++ [ACtrl $ Goto (show epilogue)], n', l'', epilogue)
+genStmt (acc, n, l, ep) ((Ctrl (If e s Nothing _) _) : xs) =
   let
     (aasme, n', l') = genExp (n + 1, l) e (ATemp n)
-    (aasms, n'', l'') = genStmt ([], n', l') [s] 
+    (aasms, n'', l'', ep') = genStmt ([], n', l', ep) [s] 
     aasm = [ACtrl $ Ifz (ALoc (ATemp n)) (show $ l''+2),
             ACtrl $ Goto (show $ l''+1),
             ACtrl $ Lbl (show $ l''+1)]
     aasm' = aasme ++ aasm ++ aasms ++
             [ACtrl $ Goto (show $ l''+2), ACtrl $ Lbl (show $ l''+2)]
-  in genStmt (acc ++ aasm', n'', l''+2) xs
-genStmt (acc, n, l) ((Ctrl (If e s1 (Just s2) _) _) : xs) =
+  in genStmt (acc ++ aasm', n'', l''+2, ep') xs
+genStmt (acc, n, l, ep) ((Ctrl (If e s1 (Just s2) _) _) : xs) =
   case e of
    (TrueT _) -> genStmt (acc, n, l) (s1 : xs) 
    (FalseT _) -> genStmt (acc, n, l) (s2 : xs)
    _ -> let
      (aasme, n1, l1) = genExp (n+1, l) e (ATemp n)
-     (aasms1, n2, l2) = genStmt ([], n1, l1) [s1] 
-     (aasms2, n3, l3) = genStmt ([], n2, l2) [s2] 
+     (aasms1, n2, l2, ep2) = genStmt ([], n1, l1, ep) [s1] 
+     (aasms2, n3, l3, ep3) = genStmt ([], n2, l2) [s2] 
      aasm = [ACtrl $ Ifz (ALoc (ATemp n)) (show $ l3+2),
              ACtrl $ Goto (show $ l3+1),
              ACtrl $ Lbl (show $ l3+1)]
@@ -178,6 +185,19 @@ genExp (n, l) (ExpTernOp e1 e2 e3 _) loc =
                i3 ++ [ACtrl $ Goto (show $ l3+3),
                       ACtrl $ Lbl (show $ l3+3)]
       in (aasm, n3, l3+3)
+genExp (n, l) (App f es _) loc = let
+  (computeArgs, temps, n', l') =
+    foldr (\e -> \(aasm, temps, n1, l1) -> let
+              (code, n2, l2) = genExp (n1+1, l1) e (ATemp n1)
+              in (code ++ aasm, n1 : temps, n2, l2)) ([], [], n, l) es
+  --TODO: more than 6 args
+  moveArgs = map (\(i, t) ->
+                   AAsm {aAssign = [AArg i], aOp = Nop, aArgs = [ALoc $ ATemp t]})
+             $ zip [0..] temps
+  aasm = computeArgs ++ moveArgs ++ [ACtrl $ Goto f] ++
+         [AAsm {aAssign = [loc], aOp = Nop, aArgs = [ALoc $ ARes]}]
+  in (aasm, n', l')
+                  
      
 -- begin 'temp -> register' translation
 translate regMap (AAsm {aAssign = [dest], aOp = Nop, aArgs = [src]}) =
@@ -420,4 +440,3 @@ regFind regMap aloc =
   case Map.lookup aloc regMap of
     Just (reg) -> reg
     Nothing -> Reg EAX
--}
