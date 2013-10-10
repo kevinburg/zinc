@@ -27,9 +27,9 @@ partProgram ((TypeDef t s _) : xs) (typedef, fdecl, fdefn) =
   (case Map.lookup s typedef of
       (Just _) -> Left $ "Type names may be defined only once - " ++ s
       _ -> Right ()) >>= \_ ->
-  (case Map.lookup s fdecl of
-             (Just _) -> Left $ "Typedef " ++ s ++ " collides with function decl"
-             _ -> Right ()) >>= \_ ->
+  (case (Map.lookup s fdecl, Map.lookup s fdefn) of
+      (Nothing, Nothing) -> Right ()
+      _ -> Left $ "Typedef " ++ s ++ " collides with function decl") >>= \_ ->
   partProgram xs (Map.insert s t typedef, fdecl, fdefn)
 partProgram ((FDecl t s p _) : xs) (typedef, fdecl, fdefn) =
   case check (t, s, p) (typedef, fdecl, fdefn) of

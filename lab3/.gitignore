@@ -1,0 +1,5 @@
+tests/*.s
+tests0/*.s
+tests1/*.s
+tests2/*.s
+tests/*.c

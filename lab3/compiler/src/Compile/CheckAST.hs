@@ -21,7 +21,11 @@ checkAST (typedef, fdefns) =
         if not(typeEq typedef (Int, t)) then Left "main is not type int" else
           let
             m' = Map.map (checkFunction typedef ctx) fdefns
-          in Right ()
+          in Map.fold (\x -> \acc ->
+                        case (acc, x) of
+                          (Left s, _) -> Left s
+                          (_, Left s) -> Left s
+                          _ -> Right ()) (Right ()) m'
              
 fixTypes m (t, p, s) = 
   let
@@ -62,8 +66,20 @@ checkFunction m ctx val =
       in if not(Set.size(defn) == length(p')) then Left "duplicate args" else
            case checkInit s' (Set.empty, defn) of
              Left s -> Left s
-             Right _ -> Right())
-                  
+             Right _ -> Right()) >>= \_ ->
+     (if collides s' (Map.keysSet m) then
+        Left "var name collides with type name"
+      else Right())
+
+--scans all subepressions for var names colliding with type names
+collides (AIf _ s1 s2) m = (collides s1 m) || (collides s2 m)
+collides (AWhile _ s) m = collides s m
+collides (ASeq s1 s2) m = (collides s1 m) || (collides s2 m)
+collides (ABlock s1 s2) m = (collides s1 m) || (collides s2 m)
+collides (AExpr _ s) m = collides s m
+collides (ADeclare i _ s) m = (Set.member i m) || (collides s m)
+collides _ _ = False
+
 typeEq m (e1,e2) = let
   in case (e1, e2) of
     (Type s1, Type s2) ->
@@ -274,10 +290,11 @@ checkInit (AExpr e s) (live, defn) =
 checkLive s live =
   Set.fold (||) False $ Set.map (\x -> Set.member x live) s
     
--- Evaluates to a list of identifiers used in the expression
+-- Evaluates to a set of identifiers used in the expression
 uses :: Expr -> Set.Set String
 uses (Ident i _) = Set.singleton i
 uses (ExpUnOp _ e _) = uses e
 uses (ExpBinOp _ e1 e2 _) = Set.union (uses e1) (uses e2)
 uses (ExpTernOp e1 e2 e3 _) = Set.unions [uses e1, uses e2, uses e3]
+uses (App _ es _) = Set.unions (map uses es)
 uses _ = Set.empty
