@@ -34,6 +34,7 @@ data Asm = AsmRet
          | Setle Arg
          | Sete Arg
          | Setne Arg
+         | AsmCall String deriving (Eq, Ord)
 
 data Arg = Reg Register
          | Stk Int -- Stack offset int
@@ -84,6 +85,7 @@ instance Show Asm where
   show (Je s) = "\tje ." ++ s
   show (Cmpl e1 e2) = "\tcmpl " ++ show e1 ++ ", " ++ show e2
   show (AsmLbl s) = "." ++ s ++ ":"
+  show (AsmCall s) = "\tcall " ++ s
   show (Setl e) = "\tsetl " ++ (show e)
   show (Sete e) = "\tsete " ++ (show e)
   show (Setne e) = "\tsetne " ++ (show e)
@@ -94,7 +96,7 @@ instance Show Arg where
   show (Reg reg) = "%" ++ show reg
   show (Val i) = "$" ++ show i
   show (Stk i) = let neg = if i < 0 then "-0x" else "0x"
-                     offset = neg ++ Num.showHex (abs(i)) "(%rbp)"
+                     offset = neg ++ Num.showHex (abs(i)) "(%rsp)"
                  in
                   offset
   
