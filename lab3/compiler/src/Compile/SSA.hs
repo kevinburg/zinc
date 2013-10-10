@@ -20,7 +20,7 @@ ssa aasm = let
    are live at the time of entering the label and the code that follows. The set of live
    variables will be used to put paramters on the labels and gotos.
 -}
-type Blocks = [(String, (Set.Set AVal, [AAsm]))]
+type Blocks = [(String, (Set.Set ALoc, [AAsm]))]
 
 parameterize :: [AAsm] -> Blocks
 parameterize aasm = let
@@ -32,7 +32,7 @@ parameterize aasm = let
   in p2
 
 -- Perform first pass on code gropuping it into basic blocks.
-parameterize' :: [AAsm] -> Map.Map Int (Set.Set AVal) -> Int -> [AAsm] -> Blocks -> Blocks
+parameterize' :: [AAsm] -> Map.Map Int (Set.Set ALoc) -> Int -> [AAsm] -> Blocks -> Blocks
 parameterize' [] live i aasm b = ("top", (Set.empty, aasm)) : b
 parameterize' (s : xs) live i aasm b = 
   case s of
@@ -65,12 +65,12 @@ gen (x : xs) m = let
   (res, m') = gen1 x m
   in res : (gen xs m')
 
-gen1 :: (String, ((Set.Set AVal, Bool), [AAsm])) -> Map.Map String Int ->
-        ((String, ((Set.Set AVal, Bool), [AAsm])), Map.Map String Int)
+gen1 :: (String, ((Set.Set ALoc, Bool), [AAsm])) -> Map.Map String Int ->
+        ((String, ((Set.Set ALoc, Bool), [AAsm])), Map.Map String Int)
 gen1 (l, ((live, b), [])) m = ((l, ((live, b), [])), m)
 gen1 (l, ((live, False), aasm)) m = let
   live' = Set.filter isVar live
-  m' = Set.fold (\(ALoc (AVar x)) -> \acc -> Map.adjust (+ 1) x acc) m live'
+  m' = Set.fold (\(AVar x) -> \acc -> Map.adjust (+ 1) x acc) m live'
   live'' = (Set.map (updateGen m') live', True)
   in gen1 (l, (live'', aasm)) m'
 gen1 (l, ((live, True), s : aasm)) m = let
@@ -78,41 +78,49 @@ gen1 (l, ((live, True), s : aasm)) m = let
   ((_, (_, aasm')), m'') = gen1 (l, ((live, True), aasm)) m'
   in ((l, ((live, True), res : aasm')), m'')
 gen2 (AAsm {aAssign = [AVar i], aOp = o, aArgs = srcs}) m = let
-  srcs' = map (updateGen m) srcs
+  srcs' = map (updateGen' m) srcs
   m' = case Map.lookup i m of
     Nothing -> Map.insert i 0 m
     (Just g) -> Map.insert i (g+1) m
   dest' = [AVarG i (m' Map.! i)]
   in (AAsm {aAssign = dest', aOp = o, aArgs = srcs'}, m')
 gen2 (AAsm {aAssign = [dest], aOp = o, aArgs = srcs}) m = let
-  srcs' = map (updateGen m) srcs
+  srcs' = map (updateGen' m) srcs
   in (AAsm {aAssign = [dest], aOp = o, aArgs = srcs'}, m)
 gen2 (ACtrl (GotoP i s)) m = let
   s' = Set.filter isVar s
   res = ACtrl (GotoP i (Set.map (updateGen m) s'))
   in (res, m)
-gen2 (ACtrl (IfzP v l s)) m = let
+gen2 (ACtrl (IfzP (ALoc v) l s)) m = let
   [v'] = map (updateGen m) [v]
   s' = Set.map (updateGen m) s
-  res = ACtrl (IfzP v' l s')
+  res = ACtrl (IfzP (ALoc v') l s')
   in (res, m)
 gen2 x m = (x,m)
 
-isVar (ALoc (AVar _)) = True
+isVar (AVar _) = True
 isVar _ = False
 
-updateGen m (ALoc (AVar i)) = let
+updateGen m (AVar i) = let
+  gen = case Map.lookup i m of
+    Nothing -> 0
+    Just g -> g
+  in AVarG i gen
+updateGen _ x = x
+
+updateGen' m (ALoc (AVar i)) = let
   gen = case Map.lookup i m of
     Nothing -> 0
     Just g -> g
   in ALoc (AVarG i gen)
-updateGen _ x = x
+updateGen' _ x = x
+
 
 --build blockX calls blockY with params Set.Set AVal
 -- builds Map of Block String of Label -> Block String of Code -> Params from Code
 --
 
-type Lblmap = Map.Map String [(String, Set.Set AVal)]
+type Lblmap = Map.Map String [(String, Set.Set ALoc)]
   
 mapBlocks :: Blocks -> Lblmap
 mapBlocks blocks = Map.fromList $ zipmap $ grpby $ concat (map (\(lbl,(vals,aasm)) -> (map (\x -> f(lbl,x)) aasm)) blocks)
@@ -137,6 +145,7 @@ mapBlocks blocks lblmap = let bmap = map (\(lbl,(vals,aasm)) -> Map.insert lbl v
 -}
                          
 -- Minimize the blocks 
+        {-
 minimize :: Blocks -> Blocks
 minimize [] = []
 minimize blocks = let bmap = mapBlocks blocks
@@ -183,7 +192,7 @@ minimize' blocks lblmap = let bmap = Map.fromList blocks
                 f g a = a
 
 --go thru map and see if size of where its called from = 1 then update aasm to change vals and change bmap
-                 
+                 -}
 
 
 -- Turn the SSA code back into non SSA code that gets rid of parameterized labels and gotos
@@ -196,17 +205,17 @@ deSSA blocks = let bmap = Map.fromList blocks
               gvals' = Set.toAscList gvals
               valset' = Set.toAscList valset
               valpairs = zip valset' gvals'
-              valpairs' = map (\(ALoc(AVarG s1 i1),ALoc(AVarG s2 i2))->(ALoc(AVar(s1++(show i1))),ALoc(AVar(s2++(show i2))))) valpairs 
-              assigns = map (\(x,ALoc y) -> AAsm{aAssign=[y],aOp=Nop,aArgs=[x]}) valpairs'
+              valpairs' = map (\(AVarG s1 i1,AVarG s2 i2)->(AVar(s1++(show i1)),AVar(s2++(show i2)))) valpairs 
+              assigns = map (\(x,y) -> AAsm{aAssign=[y],aOp=Nop,aArgs=[ALoc x]}) valpairs'
           in
            assigns ++ [ACtrl $ Goto goto]
         f bmap (ACtrl(IfzP val goto valset)) =
           let (gvals,_) = bmap Map.! goto
-              gvals' = filter (\x -> case x of {ALoc(ATemp _) -> False; _-> True}) $ Set.toAscList gvals
-              valset' = filter (\x-> case x of {ALoc(ATemp _) -> False; _-> True}) $ Set.toAscList valset
+              gvals' = filter (\x -> case x of {(ATemp _) -> False; _-> True}) $ Set.toAscList gvals
+              valset' = filter (\x-> case x of {(ATemp _) -> False; _-> True}) $ Set.toAscList valset
               valpairs = zip valset' gvals'
-              valpairs' = map (\(ALoc(AVarG s1 i1),ALoc(AVarG s2 i2))->(ALoc(AVar(s1++(show i1))),ALoc(AVar(s2++(show i2))))) valpairs
-              assigns = map (\(x,ALoc y) -> AAsm{aAssign=[y],aOp=Nop,aArgs=[x]}) valpairs'
+              valpairs' = map (\(AVarG s1 i1,AVarG s2 i2)->(AVar(s1++(show i1)),AVar(s2++(show i2)))) valpairs
+              assigns = map (\(x,y) -> AAsm{aAssign=[y],aOp=Nop,aArgs=[ALoc x]}) valpairs'
               stmt = case val of
                 ALoc(AVarG s i) ->
                   ACtrl(Ifz(ALoc(AVar (s ++ (show i)))) goto)

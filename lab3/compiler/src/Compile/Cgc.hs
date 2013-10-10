@@ -47,7 +47,7 @@ seo' g weights l =
 
 -- Greedy coloring algorithm, takes a graph, outputs a list of tuples
 -- Vertex paired with Int, which represents color
-coloring :: Graph -> Map.Map Vertex Arg
+coloring :: Graph -> (Map.Map Vertex Arg, Int)
 coloring g = let m = Map.map (\x-> -1) g
                  preColoring = [(ARes, 0)] ++
                                [(AReg EAX, 0), (AReg ECX, 4), (AReg EDX, 3)] ++
@@ -59,6 +59,7 @@ coloring g = let m = Map.map (\x-> -1) g
                                      (AArg _) -> False
                                      _ -> True) (seo g)
                  res = color g m' s
+                 regsUsed = List.maximum (Map.elems res)
                  order = registerOrder ()
              in  (Map.map (\v -> 
                             case (v < (Map.size(order)-2)) of
@@ -68,7 +69,7 @@ coloring g = let m = Map.map (\x-> -1) g
                               False ->
                                 let offset = (v - Map.size(order) + 2)
                                 in Stk (-(offset*4))
-                          ) res)
+                          ) res, max 0 (regsUsed - 8))
 
 color :: Graph -> Map.Map Vertex Int -> [Vertex] -> Map.Map Vertex Int
 color g m [] = m
