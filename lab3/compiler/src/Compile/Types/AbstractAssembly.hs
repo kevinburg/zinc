@@ -17,15 +17,16 @@ data AAsm = AAsm {aAssign :: [ALoc]
                  ,aArgs   :: [AVal]
                  }
           | ACtrl COp
-          | AComment String deriving Show
+          | AComment String deriving (Ord, Eq, Show)
 
 data COp = Ret AVal
          | Ifz AVal String -- If (!AVal) goto lbl
          | Goto String
          | Lbl String
-         | GotoP String (Set.Set AVal)
-         | IfzP AVal String (Set.Set AVal)
-         deriving Show 
+         | GotoP String (Set.Set ALoc)
+         | IfzP AVal String (Set.Set ALoc)
+         | Call String
+         deriving (Show, Ord, Eq)
 
 data AVal = ALoc ALoc
           | AImm Int deriving (Show, Eq, Ord)

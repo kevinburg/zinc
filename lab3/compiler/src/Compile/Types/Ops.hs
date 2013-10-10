@@ -38,7 +38,7 @@ data Op = Mul
         | Leq
         | Gt
         | Geq 
-        | Fail deriving Eq
+        | Fail deriving (Ord, Eq)
 
 opType Mul = ([Int, Int], Int)
 opType Add = ([Int, Int], Int)

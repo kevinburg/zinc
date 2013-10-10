@@ -21,7 +21,7 @@ checkAST (typedef, fdefns) =
         if not(typeEq typedef (Int, t)) then Left "main is not type int" else
           let
             m' = Map.map (checkFunction typedef ctx) fdefns
-          in trace (show m') $ Right ()
+          in Right ()
              
 fixTypes m (t, p, s) = 
   let
