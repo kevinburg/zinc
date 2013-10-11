@@ -85,7 +85,8 @@ instance Show Asm where
   show (Je s) = "\tje ." ++ s
   show (Cmpl e1 e2) = "\tcmpl " ++ show e1 ++ ", " ++ show e2
   show (AsmLbl s) = "." ++ s ++ ":"
-  show (AsmCall s) = if s == "fadd" || s == "fsub" || s == "fmul" ||
+  show (AsmCall s) = "\tmov $0, %al\n" ++
+    if s == "fadd" || s == "fsub" || s == "fmul" ||
                         s == "fdiv" || s == "fless" || s == "itof" ||
                         s == "ftoi" || s == "print_fpt" ||
                         s == "print_int" || s == "print_hex" then "\tcall _" ++ s
