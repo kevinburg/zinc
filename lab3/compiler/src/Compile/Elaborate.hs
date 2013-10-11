@@ -8,7 +8,7 @@ import Compile.CheckAST
 
 elaborate :: Program -> Either String (Map.Map String Type, Map.Map String (Type, [Param], S))
 elaborate (Program gdecls) =
-  case partProgram gdecls (Map.empty, Map.empty, Map.empty) of
+  case partProgram gdecls (Map.singleton "fpt" Int, Map.empty, Map.empty) of
     Left err -> Left err
     Right (typedef, _, fdefn) -> let
       res = Map.map (\(t, p, Block b _) -> (t, p, elaborate' b)) fdefn
@@ -24,6 +24,7 @@ elaborate (Program gdecls) =
 
 partProgram [] acc = Right acc
 partProgram ((TypeDef t s _) : xs) (typedef, fdecl, fdefn) =
+  if t == Void then Left "loser" else
   (case Map.lookup s typedef of
       (Just _) -> Left $ "Type names may be defined only once - " ++ s
       _ -> Right ()) >>= \_ ->

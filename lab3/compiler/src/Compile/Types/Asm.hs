@@ -9,6 +9,7 @@ import Control.DeepSeq
 data Asm = AsmRet
          | Movl Arg Arg 
          | Addl Arg Arg 
+         | Addd Arg Arg 
          | Andl Arg Arg 
          | Orl Arg Arg 
          | Xorl Arg Arg 
@@ -66,6 +67,7 @@ instance Show Asm where
   show (Movslq e1 e2) = "\tmovslq " ++ show e1 ++ ", " ++ show e2
   show (Mov e1 e2) = "\tmov " ++ show e1 ++ ", " ++ show e2
   show (Addl e1 e2) = "\taddl " ++ show e1 ++ ", " ++ show e2
+  show (Addd e1 e2) = "\tadd " ++ show e1 ++ ", " ++ show e2
   show (Andl e1 e2) = "\tandl " ++ show e1 ++ ", " ++ show e2
   show (Orl e1 e2) = "\torl " ++ show e1 ++ ", " ++ show e2
   show (Xorl e1 e2) = "\txorl " ++ show e1 ++ ", " ++ show e2
@@ -129,6 +131,7 @@ instance Show Register where
   show R13D = "r13d"
   show R13 = "r13"
   show R14D = "r14d"
+  show R14 = "r14"
   show R15D = "r15d"
   show RSP = "rsp"
   show RBP = "rbp"

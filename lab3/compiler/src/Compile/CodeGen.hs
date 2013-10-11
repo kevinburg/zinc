@@ -48,10 +48,20 @@ genFunction (fun,p,b) l =
           setup ++ (concatMap (translate regMap) unssa)
         x | x < 5 -> let
           save = map (\(r, i) -> Push r) $ zip [Reg RBX, Reg R12, Reg R13, Reg R14] [0..(x-1)]
-          restore = map (\(Push r) -> Pop r) save
+          restore = map (\(Push r) -> Pop r) $ reverse save
           code' =  concatMap (translate regMap) unssa
           (front, back) = splitAt (length(code')-2) code'
           in setup ++ save ++ front ++ restore ++ back
+        x -> let
+          save = map (\(r, i) -> Push r) $ zip [Reg RBX, Reg R12, Reg R13, Reg R14] [0..(x-1)]
+          restore = map (\(Push r) -> Pop r) $ reverse save
+          code' =  concatMap (translate regMap) unssa
+          (front, back) = splitAt (length(code')-2) code'
+          n = x-3
+          sub = [Subb (Val (n*8)) (Reg RSP)]
+          add = [Addd (Val (n*8 )) (Reg RSP)]
+          in setup ++ save ++ sub ++ front ++ add ++ restore ++ back
+
         -- TODO: when x >= 5, we are storing local variables on stack.
              -- wat do here?!?!?
   in (fun, code, l')
@@ -161,7 +171,7 @@ genStmt (acc, n, l, ep) ((Ctrl (For ms1 e ms2 s3 p) _) : xs) =
             ACtrl $ Lbl (show $ l4+3)]
   in genStmt (acc ++ aasm, n4, l4+3, ep3) xs
 genStmt acc ((Ctrl (Assert e _) p) : xs) = let
-  s = Ctrl (If (ExpUnOp BNot e p) (Simp (Expr (App "abort" [] p) p) p) Nothing p) p
+  s = Ctrl (If (ExpUnOp LNot e p) (Simp (Expr (App "abort" [] p) p) p) Nothing p) p
   in genStmt acc (s : xs)
      
 genExp :: (Int, Int) -> Expr -> ALoc -> ([AAsm], Int, Int)

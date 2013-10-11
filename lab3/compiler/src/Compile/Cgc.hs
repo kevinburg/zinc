@@ -70,7 +70,7 @@ coloring g = let m = Map.map (\x-> -1) g
                                 in Reg reg
                               False ->
                                 let offset = (v - Map.size(order) + 1)
-                                in Stk (-(offset*4))
+                                in Stk (offset*8)
                           ) res, max 0 (regsUsed - 8))
 
 color :: Graph -> Map.Map Vertex Int -> [Vertex] -> Map.Map Vertex Int
