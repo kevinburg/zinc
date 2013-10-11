@@ -212,8 +212,10 @@ deSSA blocks = let bmap = Map.fromList blocks
            assigns ++ [ACtrl $ Goto goto]
         f bmap (ACtrl(IfzP val goto valset)) =
           let (gvals,_) = bmap Map.! goto
-              gvals' = filter (\x -> case x of {(ATemp _) -> False; _-> True}) $ Set.toAscList gvals
-              valset' = filter (\x-> case x of {(ATemp _) -> False; _-> True}) $ Set.toAscList valset
+              --gvals' = filter (\x -> case x of {(ATemp _) -> False; _-> True}) $ Set.toAscList gvals
+              gvals' = filter (\x -> case x of {(AVarG _ _) -> True; _-> False}) $ Set.toAscList gvals
+              --valset' = filter (\x-> case x of {(ATemp _) -> False; _-> True}) $ Set.toAscList valset
+              valset' = filter (\x-> case x of {(AVarG _ _) -> True; _-> False}) $ Set.toAscList valset
               valpairs = zip valset' gvals'
               valpairs' = map (\(AVarG s1 i1,AVarG s2 i2)->(AVar(s1++(show i1)),AVar(s2++(show i2)))) valpairs
               assigns = map (\(x,y) -> AAsm{aAssign=[y],aOp=Nop,aArgs=[ALoc x]}) valpairs'

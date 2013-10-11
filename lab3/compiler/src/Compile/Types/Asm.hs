@@ -40,25 +40,23 @@ data Arg = Reg Register
          | Stk Int -- Stack offset int
          | Val Int deriving (Eq, Ord)
 
-data Register = EAX
-              | EBX
-              | ECX
-              | EDX
-              | ESI
-              | EDI
-              | RSP
-              | RBP
-              | R8D
-              | R9D
-              | R10D
-              | R11D
-              | R12D
-              | R13D
-              | R14D
-              | R15D 
-              | R15B
-              | CL
-              | RDX deriving (Eq, Ord)
+data Register = EAX | RAX
+              | EBX | RBX
+              | ECX | RCX
+              | EDX | RDX
+              | ESI | RSI
+              | EDI | RDI
+              | RSP | ESP
+              | RBP | EBP
+              | R8D | R8
+              | R9D | R9
+              | R10D | R10
+              | R11D | R11
+              | R12D | R12
+              | R13D | R13
+              | R14D | R14
+              | R15D | R15 | R15B
+              | CL deriving (Eq, Ord)
 
 instance Show Asm where
   show (AsmRet) = "\tret"
@@ -87,10 +85,10 @@ instance Show Asm where
   show (AsmLbl s) = "." ++ s ++ ":"
   show (AsmCall s) = "\tmov $0, %al\n" ++
     if s == "fadd" || s == "fsub" || s == "fmul" ||
-                        s == "fdiv" || s == "fless" || s == "itof" ||
-                        s == "ftoi" || s == "print_fpt" ||
-                        s == "print_int" || s == "print_hex" then "\tcall _" ++ s
-                     else "\tcall _c0_" ++ s
+       s == "fdiv" || s == "fless" || s == "itof" ||
+       s == "ftoi" || s == "print_fpt" || s == "print_int" ||
+       s == "print_hex" || s == "abort" then "\tcall _" ++ s
+    else "\tcall _c0_" ++ s
   show (Setl e) = "\tsetl " ++ (show e)
   show (Sete e) = "\tsete " ++ (show e)
   show (Setne e) = "\tsetne " ++ (show e)
@@ -107,22 +105,33 @@ instance Show Arg where
   
 instance Show Register where
   show EAX = "eax"
+  show RAX = "rax"
   show EBX = "ebx"
+  show RBX = "rbx"
   show ECX = "ecx"
+  show RCX = "rcx"
   show EDX = "edx"
+  show RDX = "rdx"
   show ESI = "esi"
+  show RSI = "rsi"
   show EDI = "edi"
+  show RDI = "rdi"
   show R8D = "r8d"
+  show R8 = "r8"
   show R9D = "r9d"
+  show R9 = "r9"
   show R10D = "r10d"
+  show R10 = "r10"
   show R11D = "r11d"
+  show R11 = "r11"
   show R12D = "r12d"
+  show R12 = "r12"
   show R13D = "r13d"
+  show R13 = "r13"
   show R14D = "r14d"
   show R15D = "r15d"
   show RSP = "rsp"
   show RBP = "rbp"
-  show RDX = "rdx"
   show R15B = "r15b"
   show CL = "cl"
 

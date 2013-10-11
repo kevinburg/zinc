@@ -47,12 +47,13 @@ genFunction (fun,p,b) l =
         0 ->
           setup ++ (concatMap (translate regMap) unssa)
         x | x < 5 -> let
-          save = map (\(r, i) -> Push r) $ zip [Reg EBX, Reg R12D, Reg R13D, Reg R14D] [0..(x-1)]
+          save = map (\(r, i) -> Push r) $ zip [Reg RBX, Reg R12, Reg R13, Reg R14] [0..(x-1)]
           restore = map (\(Push r) -> Pop r) save
           code' =  concatMap (translate regMap) unssa
           (front, back) = splitAt (length(code')-2) code'
           in setup ++ save ++ front ++ restore ++ back
-        -- TODO: when x >= 5, we are storing local variables on stack. wat do here?!?!?
+        -- TODO: when x >= 5, we are storing local variables on stack.
+             -- wat do here?!?!?
   in (fun, code, l')
 
 -- updates the abstract assembly at a label
@@ -153,6 +154,9 @@ genStmt (acc, n, l, ep) ((Ctrl (For ms1 e ms2 s3 p) _) : xs) =
            [ACtrl $ Goto (show $ l4+1),
             ACtrl $ Lbl (show $ l4+3)]
   in genStmt (acc ++ aasm, n4, l4+3, ep3) xs
+genStmt acc ((Ctrl (Assert e _) p) : xs) = let
+  s = Ctrl (If (ExpUnOp BNot e p) (Simp (Expr (App "abort" [] p) p) p) Nothing p) p
+  in genStmt acc (s : xs)
      
 genExp :: (Int, Int) -> Expr -> ALoc -> ([AAsm], Int, Int)
 genExp (n,l) (ExpInt _ i _) loc = ([AAsm [loc] Nop [AImm $ fromIntegral i]], n, l)

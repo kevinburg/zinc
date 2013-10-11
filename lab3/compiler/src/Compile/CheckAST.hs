@@ -113,6 +113,7 @@ typeEq m (e1,e2) = let
 -- Verifies that all control flow paths end with a return statement
 checkReturns :: S -> Bool
 checkReturns ANup = False
+checkReturns (AAssert _) = False
 checkReturns (AAssign _ _) = False
 checkReturns (AWhile _ _) = False
 checkReturns (AReturn Nothing) = False
@@ -126,6 +127,7 @@ checkReturns (AExpr _ s) = checkReturns s
 -- Verifies that no control flow paths end with a return statement
 checkNoReturns :: S -> Bool
 checkNoReturns ANup = True
+checkNoReturns (AAssert _) = True
 checkNoReturns (AAssign _ _) = True
 checkNoReturns (AWhile _ s) = checkNoReturns s
 checkNoReturns (AReturn Nothing) = True
@@ -147,6 +149,11 @@ type Context = Map.Map String Type
 -- Performs static type checking on a statements  under a typing context
 checkS :: S -> Context -> Type -> CheckS
 checkS ANup ctx _ = ValidS
+checkS (AAssert e) ctx _ =
+  case checkE e ctx of
+    BadE s -> BadS s
+    ValidE Bool -> ValidS
+    ValidE _ -> BadS "Assert expression not type bool"
 checkS (ASeq s1 s2) ctx t = 
   case checkS s1 ctx t of
     BadS s -> BadS s
@@ -257,6 +264,7 @@ checkE (App fun args _) ctx =
 -- Checks that no variables are used before definition
 checkInit :: S -> (Set.Set String, Set.Set String) -> Either String (Set.Set String, Set.Set String)
 checkInit ANup acc = Right acc
+checkInit (AAssert _) acc = Right acc
 checkInit (AReturn Nothing) (live, defn) =
   Right (Set.empty, Set.union defn live)
 checkInit (AReturn (Just e)) (live, defn) = 
