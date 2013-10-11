@@ -56,7 +56,7 @@ fixTypes' m (ABlock s1 s2) = ABlock (fixTypes' m s1) (fixTypes' m s2)
 fixTypes' m (AExpr e s) = AExpr e (fixTypes' m s)
 fixTypes' m x = x
 
-findType m (Type s) = m Map.! s
+findType m (Type s) = findType m (m Map.! s)
 findType _ x = x
              
 checkFunction m ctx val =
@@ -98,7 +98,7 @@ typeEq m (e1,e2) = let
   in case (e1, e2) of
     (Type s1, Type s2) ->
       case (Map.lookup s1 m, Map.lookup s2 m) of
-        (Just t1, Just t2) -> t1 == t2
+        (Just t1, Just t2) -> typeEq m (t1,t2)
         _ -> False
     (_, Type s) ->
       case Map.lookup s m of

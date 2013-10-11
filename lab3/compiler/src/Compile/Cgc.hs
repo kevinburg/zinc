@@ -64,12 +64,12 @@ coloring g = let m = Map.map (\x-> -1) g
                  regsUsed = List.maximum (Map.elems res)
                  order = registerOrder ()
              in  (Map.map (\v -> 
-                            case (v < (Map.size(order)-2)) of
+                            case (v < (Map.size(order)-1)) of
                               True ->
                                 let Just reg = Map.lookup v order
                                 in Reg reg
                               False ->
-                                let offset = (v - Map.size(order) + 2)
+                                let offset = (v - Map.size(order) + 1)
                                 in Stk (-(offset*4))
                           ) res, max 0 (regsUsed - 8))
 

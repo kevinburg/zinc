@@ -99,6 +99,12 @@ genStmt (acc, n, l, ep) ((Ctrl (Return (Just e) _) _) : xs) =
       (Just ep') -> (ep', l') 
       Nothing -> (l'+1, l'+1)
   in (acc ++ aasm ++ [ACtrl $ Goto (show epilogue)], n', l'', Just epilogue)
+genStmt (acc, n, l, ep) ((Ctrl (Return Nothing _) _) : xs) =
+  let
+    (epilogue, l') = case ep of
+      (Just ep') -> (ep', l) 
+      Nothing -> (l+1, l+1)
+  in (acc ++ [ACtrl $ Goto (show epilogue)], n, l', Just epilogue)
 genStmt (acc, n, l, ep) ((Ctrl (If e s Nothing _) _) : xs) =
   let
     (aasme, n', l') = genExp (n + 1, l) e (ATemp n)
