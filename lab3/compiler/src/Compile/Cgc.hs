@@ -50,7 +50,9 @@ seo' g weights l =
 coloring :: Graph -> (Map.Map Vertex Arg, Int)
 coloring g = let m = Map.map (\x-> -1) g
                  preColoring = [(ARes, 0)] ++
-                               [(AReg EAX, 0), (AReg ECX, 4), (AReg EDX, 3)] ++
+                               [(AReg EAX, 0), (AReg EDI, 1), (AReg ESI, 2),
+                                (AReg EDX, 3), (AReg ECX, 4), (AReg R8D, 5),
+                                (AReg R9D, 6), (AReg R10D, 7), (AReg R11D, 8)] ++
                                [(AArg i, i) | i <- [0..6]]
                  m' = foldr (\(x,y) -> \acc -> Map.insert x y acc) m preColoring
                  s = List.filter (\r -> case r of
@@ -74,7 +76,7 @@ coloring g = let m = Map.map (\x-> -1) g
 color :: Graph -> Map.Map Vertex Int -> [Vertex] -> Map.Map Vertex Int
 color g m [] = m
 color g m s = let n = nghbr g (List.head s)
-                  n' = List.map (\x ->  m Map.! x) n
+                  n' = List.map (\x -> m Map.! x) n
                   m' = Map.insert (List.head s) (mex n') m
               in
                color g m' (tail s)

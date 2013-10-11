@@ -11,9 +11,9 @@ import Debug.Trace
 isTemp (ALoc _) = True
 isTemp _ = False
 
-ssa :: [AAsm] -> Blocks
-ssa aasm = let
-  p = parameterize aasm
+ssa :: [AAsm] -> String -> Blocks
+ssa aasm fun = let
+  p = parameterize aasm fun
   in p
   
 {- The abstract assembly is group by label. Each label contains the set of variables that
@@ -22,25 +22,26 @@ ssa aasm = let
 -}
 type Blocks = [(String, (Set.Set ALoc, [AAsm]))]
 
-parameterize :: [AAsm] -> Blocks
-parameterize aasm = let
+parameterize :: [AAsm] -> String -> Blocks
+parameterize aasm fun = let
   live = RA.liveVars aasm
-  p = parameterize' (reverse aasm) live 0 [] []
+  p = parameterize' (reverse aasm) live 0 [] [] fun
   program = foldr (\x -> \y -> (show x) ++ "\n" ++ y) "" aasm
   p1 = paramGoto p
   p2 = varGeneration p1
   in p2
 
 -- Perform first pass on code gropuping it into basic blocks.
-parameterize' :: [AAsm] -> Map.Map Int (Set.Set ALoc) -> Int -> [AAsm] -> Blocks -> Blocks
-parameterize' [] live i aasm b = ("top", (Set.empty, aasm)) : b
-parameterize' (s : xs) live i aasm b = 
+parameterize' :: [AAsm] -> Map.Map Int (Set.Set ALoc) -> Int -> [AAsm] -> Blocks ->
+                 String -> Blocks
+parameterize' [] live i aasm b fun = ("top_"++fun, (Set.empty, aasm)) : b
+parameterize' (s : xs) live i aasm b fun = 
   case s of
     ACtrl (Lbl l) -> let
       liveVars = live Map.! i
       b' = (l, (liveVars, aasm)) : b
-      in parameterize' xs live (i+1) [] b'
-    _ -> parameterize' xs live (i+1) (s : aasm) b
+      in parameterize' xs live (i+1) [] b' fun
+    _ -> parameterize' xs live (i+1) (s : aasm) b fun
 
 -- Put the paramters back on the gotos in the second pass.
 paramGoto :: Blocks -> Blocks

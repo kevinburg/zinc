@@ -10,12 +10,12 @@ data Job = Job
   { jobOut       :: FilePath
   , jobSource    :: FilePath
   , jobOutFormat :: OF
-  }
+  } deriving Show
 
 data OF = C0
         | Asm
         | Obj
-        | ELF deriving Eq
+        | ELF deriving (Show, Eq)
 
 defaultJob :: Job
 defaultJob = Job {jobOut       = "",

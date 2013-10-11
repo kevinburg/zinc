@@ -26,12 +26,17 @@ import Compile.SSA
 
 import LiftIOE
 import Debug.Trace
+import qualified Data.Map as Map
 
 writer file obj = liftIOE $ writeFile file $ show obj
 
-sourceWriter file obj = liftIOE $ writeFile file $ 
-                        "\t.globl  _c0_main\n" ++ "_c0_main:\n" ++
-                        foldr (\x -> \y -> (show x) ++ "\n" ++ y) "" obj
+sourceWriter file obj = let
+  funs = Map.foldWithKey (\fun -> \asm -> \acc ->
+                          let
+                            body = foldr (\x -> \y -> (show x) ++ "\n" ++ y) "" asm
+                          in "\t.globl _c0_" ++ fun ++ "\n_c0_" ++ fun ++ ":\n" ++
+                             body ++ "\n" ++ acc) "" obj
+  in liftIOE $ writeFile file $  funs
 
 compile :: Job -> IO ()
 compile job = do

@@ -9,23 +9,37 @@ import Debug.Trace
 checkAST :: (Map.Map String Type, Map.Map String (Type, [Param], S)) -> Either String ()
 checkAST (typedef, fdefns) =
   let
-    ctx = Map.foldWithKey (\fun -> \(t, p, _) -> \acc ->
+    (typedef', ctx) = addHeader typedef
+    ctx' = Map.foldWithKey (\fun -> \(t, p, _) -> \acc ->
                             let
-                              (t', p', _) = fixTypes typedef (t, p, ANup)
+                              (t', p', _) = fixTypes typedef' (t, p, ANup)
                               ts = map (\(Param ty i) -> ty) p'
-                            in Map.insert fun (Map ts t') acc) Map.empty fdefns
+                            in Map.insert fun (Map ts t') acc) ctx fdefns
   in case Map.lookup "main" fdefns of
     Nothing -> Left "main undefined"
     (Just (t, p, s)) ->
       if length(p) > 0 then Left "main should take no arguments" else
-        if not(typeEq typedef (Int, t)) then Left "main is not type int" else
+        if not(typeEq typedef' (Int, t)) then Left "main is not type int" else
           let
-            m' = Map.map (checkFunction typedef ctx) fdefns
+            m' = Map.map (checkFunction typedef' ctx') fdefns
           in Map.fold (\x -> \acc ->
                         case (acc, x) of
                           (Left s, _) -> Left s
                           (_, Left s) -> Left s
                           _ -> Right ()) (Right ()) m'
+
+addHeader typedef = let
+  funs = [("fadd", Map [Int, Int] Int),
+          ("fsub", Map [Int, Int] Int),
+          ("fmul", Map [Int, Int] Int),
+          ("fdiv", Map [Int, Int] Int),
+          ("fless", Map [Int, Int] Bool),
+          ("itof", Map [Int] Int),
+          ("ftoi", Map [Int] Int),
+          ("print_fpt", Map [Int] Void),
+          ("print_int", Map [Int] Void),
+          ("print_hex", Map [Int] Void)]
+  in (Map.insert "fpt" Int typedef, Map.fromList funs)
              
 fixTypes m (t, p, s) = 
   let

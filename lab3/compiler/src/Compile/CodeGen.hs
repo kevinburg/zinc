@@ -15,17 +15,16 @@ import Debug.Trace
 
 import Compile.SSA
 
-codeGen :: Program -> [Asm]
+codeGen :: Program -> Map.Map String [Asm]
 codeGen (Program gdecls) =
   let
     fdefns = concatMap (\x -> case x of
                            (FDefn _ s p (Block b _) _) -> [(s,p,b)]
                            _ -> []) gdecls
-    res = foldr (\f -> \(m, l) -> let
+    (res, _) = foldr (\f -> \(m, l) -> let
                     (s, aasm, l') = genFunction f l
                     in (Map.insert s aasm m, l')) (Map.empty,0) fdefns
-  in
-   trace (show res) []
+  in res
 
 genFunction (fun,p,b) l =
   let
@@ -40,21 +39,21 @@ genFunction (fun,p,b) l =
       Just ep' -> [ACtrl $ Lbl (show ep'),
                    ACtrl $ Ret $ ALoc ARes]
     aasm' = prefix ++ aasm ++ cleanup
-    s = ssa aasm'
+    s = ssa aasm' fun
     unssa = deSSA s
     (regMap, used) = allocateRegisters unssa
     code = 
       case used of
         0 ->
-          concatMap (translate regMap) unssa
+          setup ++ (concatMap (translate regMap) unssa)
         x | x < 5 -> let
           save = map (\(r, i) -> Push r) $ zip [Reg EBX, Reg R12D, Reg R13D, Reg R14D] [0..(x-1)]
           restore = map (\(Push r) -> Pop r) save
           code' =  concatMap (translate regMap) unssa
           (front, back) = splitAt (length(code')-2) code'
-          in save ++ front ++ restore ++ back
+          in setup ++ save ++ front ++ restore ++ back
         -- TODO: when x >= 5, we are storing local variables on stack. wat do here?!?!?
-  in trace (show regMap) $ (fun, code, l')
+  in (fun, code, l')
 
 -- updates the abstract assembly at a label
 update aasm Nothing = Just aasm
