@@ -18,7 +18,7 @@ checkAST (typedef, fdefns) =
         Nothing -> Left "main undefined"
         (Just (t, p, s, _, _)) ->
           if length(p) > 0 then Left "main should take no arguments" else
-            if not(typeEq typedef' (Int, t)) then Left "main is not type int" else
+            if not(typeEq typedef' (Int, (findType typedef') t)) then Left "main is not type int" else
               Right ()) >>= \_ ->
     case foldr
          (\(fun,(t, p, b, tdefs, fdecls)) -> \acc ->
@@ -82,24 +82,19 @@ checkFunction m ctx val =
         False -> Left "error in returns check") >>= \_ ->
      (let
          ctx' = foldr (\(Param t s) -> \acc -> Map.insert s t acc) ctx p'
-      in case checkS s' ctx' t' of
+      in case checkS s' ctx' m t' of
         ValidS -> Right ()
         BadS s -> Left s) >>= \_ ->
      (let
          paramT = map (\(Param t i) -> t) p'
          aVoid = foldl (\x -> \y -> case (x,y) of {(Void,_) -> Void; (_,Void) -> Void; (t1,_) -> t1}) Int paramT
          vars = map (\(Param t i) -> i) p'
-         ctx' = foldr (\(Param t s) -> \acc -> Map.insert s t acc) ctx p'
-         varNames = map (\x -> if Map.member x ctx then Left "Var name conflicts with Type" else Right()) vars
-         varNames' = foldl(\x-> \y->case (x,y) of {(Left s,_)->Left s; (_,Left s)->Left s;(_,_)->Right()}) (Right()) varNames
          defn = Set.fromList vars
       in if aVoid == Void then Left "Parameter with type void"
          else if not(Set.size(defn) == length(p')) then Left "duplicate args" else
            case checkInit s' (Set.empty, defn) of
              Left s -> Left s
-             Right _ -> case varNames' of
-                             Left s-> Left s
-                             Right _ -> Right()) >>= \_ ->
+             Right _ -> Right())>>= \_ ->
      (if collides s' (Map.keysSet m) then
         Left "var name collides with type name"
       else Right())
@@ -166,31 +161,32 @@ data CheckE = ValidE Type
 type Context = Map.Map String Type
 
 -- Performs static type checking on a statements  under a typing context
-checkS :: S -> Context -> Type -> CheckS
-checkS ANup ctx _ = ValidS
-checkS (AAssert e) ctx _ =
+checkS :: S -> Context -> Context -> Type -> CheckS
+checkS ANup ctx _ _ = ValidS
+checkS (AAssert e) ctx m _ =
   case checkE e ctx of
     BadE s -> BadS s
     ValidE Bool -> ValidS
     ValidE _ -> BadS "Assert expression not type bool"
-checkS (ASeq s1 s2) ctx t = 
-  case checkS s1 ctx t of
+checkS (ASeq s1 s2) ctx m t = 
+  case checkS s1 ctx m t of
     BadS s -> BadS s
-    ValidS -> checkS s2 ctx t
-checkS (ABlock s1 s2) ctx t = 
-  case checkS s1 ctx t of
+    ValidS -> checkS s2 ctx m t
+checkS (ABlock s1 s2) ctx m t = 
+  case checkS s1 ctx m t of
     BadS s -> BadS s
-    ValidS -> checkS s2 ctx t
-checkS (ADeclare i t' s) ctx t =
-  case t' of
+    ValidS -> checkS s2 ctx m t
+checkS (ADeclare i t' s) ctx m t =
+  if Map.member i m then BadS "Variable name conflicts with Type"
+  else case t' of
     Void -> BadS "Variables can't be of type void"
     _ ->
       case Map.lookup i ctx of
         -- allow shadowing of variables over functions
-        Just (Map _ _) -> checkS s (Map.insert i t' ctx) t
+        Just (Map _ _) -> checkS s (Map.insert i t' ctx) m t
         Just _ -> BadS $ "Redeclaring " ++ i
-        Nothing -> checkS s (Map.insert i t' ctx) t
-checkS (AReturn e) ctx t = 
+        Nothing -> checkS s (Map.insert i t' ctx) m t
+checkS (AReturn e) ctx m t = 
   case (e,t) of
     (Nothing, Void) -> ValidS
     (Nothing, _) -> BadS "empty return statement in non-void function"
@@ -199,12 +195,12 @@ checkS (AReturn e) ctx t =
       case checkE e' ctx of
         BadE s -> BadS s
         ValidE t' -> if t==t' then ValidS else BadS "return type mismatch"
-checkS (AWhile e s) ctx t = 
+checkS (AWhile e s) ctx m t = 
   case checkE e ctx of
     BadE s -> BadS s
     ValidE Int -> BadS "While condition is not type bool"
-    ValidE Bool -> checkS s ctx t
-checkS (AAssign i e) ctx _ =
+    ValidE Bool -> checkS s ctx m t
+checkS (AAssign i e) ctx m _ =
   case Map.lookup i ctx of
     Nothing -> BadS $ "Assigning " ++ i ++ " undeclared"
     Just t1 ->
@@ -213,18 +209,18 @@ checkS (AAssign i e) ctx _ =
         ValidE t2 -> if t1 == t2 then ValidS
                      else BadS $ i ++ " declared with type " ++ (show t1) ++ 
                           " assigned with type " ++ (show t2)
-checkS (AIf e s1 s2) ctx t =
+checkS (AIf e s1 s2) ctx m t =
   case checkE e ctx of
     BadE s -> BadS s
     ValidE Int -> BadS "If condition is not type bool"
     ValidE Bool ->
-      case checkS s1 ctx t of
+      case checkS s1 ctx m t of
         BadS s -> BadS s
-        ValidS -> checkS s2 ctx t
-checkS (AExpr e s) ctx t =
+        ValidS -> checkS s2 ctx m t
+checkS (AExpr e s) ctx m t =
   case checkE e ctx of
     BadE s -> BadS s
-    ValidE _ -> checkS s ctx t
+    ValidE _ -> checkS s ctx m t
   
 -- Performs static type checking on an expression under a typing context
 checkE :: Expr -> Context -> CheckE
@@ -271,7 +267,7 @@ checkE (ExpTernOp e1 e2 e3 _) ctx =
     (ValidE t1, ValidE t2, ValidE t3) ->
       case t1 of
         Int -> BadE "cond in ternary op not type bool"
-        Bool -> if t2 == t3 then ValidE t2
+        Bool -> if t2 == t3 && (t2 /= Void) then ValidE t2
                 else BadE "ternary result type mismatch"
 checkE (App fun args _) ctx =
   let
