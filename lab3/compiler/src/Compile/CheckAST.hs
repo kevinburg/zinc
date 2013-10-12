@@ -86,12 +86,20 @@ checkFunction m ctx val =
         ValidS -> Right ()
         BadS s -> Left s) >>= \_ ->
      (let
+         paramT = map (\(Param t i) -> t) p'
+         aVoid = foldl (\x -> \y -> case (x,y) of {(Void,_) -> Void; (_,Void) -> Void; (t1,_) -> t1}) Int paramT
          vars = map (\(Param t i) -> i) p'
+         ctx' = foldr (\(Param t s) -> \acc -> Map.insert s t acc) ctx p'
+         varNames = map (\x -> if Map.member x ctx then Left "Var name conflicts with Type" else Right()) vars
+         varNames' = foldl(\x-> \y->case (x,y) of {(Left s,_)->Left s; (_,Left s)->Left s;(_,_)->Right()}) (Right()) varNames
          defn = Set.fromList vars
-      in if not(Set.size(defn) == length(p')) then Left "duplicate args" else
+      in if aVoid == Void then Left "Parameter with type void"
+         else if not(Set.size(defn) == length(p')) then Left "duplicate args" else
            case checkInit s' (Set.empty, defn) of
              Left s -> Left s
-             Right _ -> Right()) >>= \_ ->
+             Right _ -> case varNames' of
+                             Left s-> Left s
+                             Right _ -> Right()) >>= \_ ->
      (if collides s' (Map.keysSet m) then
         Left "var name collides with type name"
       else Right())
@@ -174,11 +182,14 @@ checkS (ABlock s1 s2) ctx t =
     BadS s -> BadS s
     ValidS -> checkS s2 ctx t
 checkS (ADeclare i t' s) ctx t =
-  case Map.lookup i ctx of
-    -- allow shadowing of variables over functions
-    Just (Map _ _) -> checkS s (Map.insert i t' ctx) t
-    Just _ -> BadS $ "Redeclaring " ++ i
-    Nothing -> checkS s (Map.insert i t' ctx) t
+  case t' of
+    Void -> BadS "Variables can't be of type void"
+    _ ->
+      case Map.lookup i ctx of
+        -- allow shadowing of variables over functions
+        Just (Map _ _) -> checkS s (Map.insert i t' ctx) t
+        Just _ -> BadS $ "Redeclaring " ++ i
+        Nothing -> checkS s (Map.insert i t' ctx) t
 checkS (AReturn e) ctx t = 
   case (e,t) of
     (Nothing, Void) -> ValidS

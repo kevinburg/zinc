@@ -27,7 +27,7 @@ our $GCC            = "gcc -m64";     # gcc executable and default flags
 our $RUNTIME        = "15411.c $rt_stem.c";   # runtime system for linking against asm file
 
 my $c0_level = 6 - $LAB;
-our $REF_COMPILER = "/afs/cs.cmu.edu/academic/class/15411-f13/bin/cc0";
+our $REF_COMPILER = "cc0"; # "/afs/cs.cmu.edu/academic/class/15411-f13/bin/cc0";
 our $AUTOGRADE_REF_COMPILER = "../reference/bin/cc0";
 our $REF_COMPILER_ARGS = " -l 15411";
 
