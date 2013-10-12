@@ -12,13 +12,13 @@ checkAST :: (Map.Map String Type, [(String,
                                    Map.Map String (Type, [Type])))]) -> Either String ()
 checkAST (typedef, fdefns) =
   let
-    (typedef', ctx) = addHeader typedef
+    (_, ctx) = addHeader typedef
   in
     (case lookup "main" fdefns of
         Nothing -> Left "main undefined"
-        (Just (t, p, s, _, _)) ->
+        (Just (t, p, s, tdefs, _)) ->
           if length(p) > 0 then Left "main should take no arguments" else
-            if not(typeEq typedef' (Int, (findType typedef') t)) then Left "main is not type int" else
+            if not(typeEq tdefs (Int, (findType tdefs) t)) then Left "main is not type int" else
               Right ()) >>= \_ ->
     case foldr
          (\(fun,(t, p, b, tdefs, fdecls)) -> \acc ->
@@ -26,12 +26,12 @@ checkAST (typedef, fdefns) =
              Left s -> Left s
              Right ctx -> 
                let
-                 (output, args, _) = fixTypes typedef' (t,p,ANup)
+                 (output, args, _) = fixTypes tdefs (t,p,ANup)
                  ts = map (\(Param ty i) -> ty) args
                  ctx' = Map.unions [ctx, Map.map (\(t1,t2) -> Map t2 t1) fdecls,
                                     Map.singleton fun (Map ts output)]
-                 ctx'' = Map.map (findType typedef') ctx'
-               in case checkFunction typedef' ctx'' (t,p,b) of
+                 ctx'' = Map.map (findType tdefs) ctx'
+               in case checkFunction tdefs ctx'' (t,p,b) of
                  Left s -> Left s
                  Right () -> Right ctx'') (Right ctx) fdefns of
       Left s -> Left s

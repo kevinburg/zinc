@@ -2,6 +2,7 @@ module Compile.Elaborate where
 
 import Compile.Types
 import qualified Data.Map as Map
+import qualified Data.Set as Set
 
 import Debug.Trace
 import Compile.CheckAST
@@ -13,7 +14,7 @@ elaborate :: Program -> Either String
 elaborate (Program gdecls) =
   case partProgram gdecls (Map.singleton "fpt" Int, Map.empty, []) of
     Left err -> Left err
-    Right (typedef, _, fdefn) -> let
+    Right (typedef, fdecl, fdefn) -> let
       res = map (\(key,(t, p, Block b _, t1, t2)) -> (key,(t, p, elaborate' b, t1, t2))) fdefn
       in case foldr
               (\(key, val) -> \acc ->
@@ -23,7 +24,11 @@ elaborate (Program gdecls) =
                   (Right m, (t, p, Right val', a, b)) ->
                     Right $ (key,(t, p, val', a, b)) : m) (Right []) res of
            Left s -> Left s
-           Right m -> Right (typedef, m)
+           Right m ->
+             case Set.size (Set.difference (Map.keysSet fdecl)
+                            (Set.fromList (map (\(k,_) -> k) fdefn))) of
+               0 -> Right (typedef, m)
+               _ -> Left "asdf"
 
 partProgram [] acc = Right acc
 partProgram ((TypeDef t s _) : xs) (typedef, fdecl, fdefn) =
