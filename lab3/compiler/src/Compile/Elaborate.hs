@@ -36,10 +36,16 @@ partProgram ((TypeDef t s _) : xs) (typedef, fdecl, fdefn) =
       _ -> Left $ "Typedef " ++ s ++ " collides with function decl") >>= \_ ->
   partProgram xs (Map.insert s t typedef, fdecl, fdefn)
 partProgram ((FDecl t s p _) : xs) (typedef, fdecl, fdefn) =
+  (let
+      ps = map (\(Param _ name) -> name) p
+   in if any (\x -> Map.member x typedef) ps then Left "bleh" else Right ()) >>= \_ ->
   case check (t, s, p) (typedef, fdecl, fdefn) of
     Left err -> Left err
     Right () -> partProgram xs (typedef, Map.insert s (t, typeFromParams p) fdecl, fdefn)
 partProgram ((FDefn t s p b _) : xs) (typedef, fdecl, fdefn) =
+  (let
+      ps = map (\(Param _ name) -> name) p
+   in if any (\x -> Map.member x typedef) ps then Left "bleh" else Right ()) >>= \_ ->
   (case lookup s fdefn of
       (Just _) -> Left $ "Multiple definitions of function " ++ s
       Nothing -> Right ()) >>= \_ ->
