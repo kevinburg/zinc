@@ -6,27 +6,37 @@ import qualified Data.Set as Set
 import Debug.Trace
 
 -- Checks that the abstract syntax adheres to the static semantics
-checkAST :: (Map.Map String Type, Map.Map String (Type, [Param], S)) -> Either String ()
+checkAST :: (Map.Map String Type, [(String,
+                                  (Type, [Param], S,
+                                   Map.Map String Type,
+                                   Map.Map String (Type, [Type])))]) -> Either String ()
 checkAST (typedef, fdefns) =
   let
     (typedef', ctx) = addHeader typedef
-    ctx' = Map.foldWithKey (\fun -> \(t, p, _) -> \acc ->
-                            let
-                              (t', p', _) = fixTypes typedef' (t, p, ANup)
-                              ts = map (\(Param ty i) -> ty) p'
-                            in Map.insert fun (Map ts t') acc) ctx fdefns
-  in case Map.lookup "main" fdefns of
-    Nothing -> Left "main undefined"
-    (Just (t, p, s)) ->
-      if length(p) > 0 then Left "main should take no arguments" else
-        if not(typeEq typedef' (Int, t)) then Left "main is not type int" else
-          let
-            m' = Map.map (checkFunction typedef' ctx') fdefns
-          in Map.fold (\x -> \acc ->
-                        case (acc, x) of
-                          (Left s, _) -> Left s
-                          (_, Left s) -> Left s
-                          _ -> Right ()) (Right ()) m'
+  in
+    (case lookup "main" fdefns of
+        Nothing -> Left "main undefined"
+        (Just (t, p, s, _, _)) ->
+          if length(p) > 0 then Left "main should take no arguments" else
+            if not(typeEq typedef' (Int, t)) then Left "main is not type int" else
+              Right ()) >>= \_ ->
+    case foldr
+         (\(fun,(t, p, b, tdefs, fdecls)) -> \acc ->
+           case acc of
+             Left s -> Left s
+             Right ctx -> 
+               let
+                 (output, args, _) = fixTypes typedef' (t,p,ANup)
+                 ts = map (\(Param ty i) -> ty) args
+                 ctx' = Map.unions [ctx, Map.map (\(t1,t2) -> Map t2 t1) fdecls,
+                                    Map.singleton fun (Map ts output)]
+                 ctx'' = Map.map (findType typedef') ctx'
+               in case checkFunction typedef' ctx'' (t,p,b) of
+                 Left s -> Left s
+                 Right () -> Right ctx'') (Right ctx) fdefns of
+      Left s -> Left s
+      Right _ -> Right ()
+       
 
 addHeader typedef = let
   funs = [("fadd", Map [Int, Int] Int),
@@ -57,6 +67,7 @@ fixTypes' m (AExpr e s) = AExpr e (fixTypes' m s)
 fixTypes' m x = x
 
 findType m (Type s) = findType m (m Map.! s)
+findType m (Map t1 t2) = Map (map (findType m) t1) (findType m t2)
 findType _ x = x
              
 checkFunction m ctx val =
@@ -257,8 +268,9 @@ checkE (App fun args _) ctx =
     -- TODO better error propagation here
     ts' = map (\(ValidE t) -> t) ts
   in case Map.lookup fun ctx of
-    (Just (Map input output)) -> if ts' == input then ValidE output
-                                 else BadE "function input type mismatch"
+    (Just (Map input output)) ->
+      if ts' == input then ValidE output
+      else BadE "function input type mismatch"
     _ -> BadE "undefined function call"
                       
 -- Checks that no variables are used before definition

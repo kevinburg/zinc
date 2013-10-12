@@ -6,19 +6,22 @@ import qualified Data.Map as Map
 import Debug.Trace
 import Compile.CheckAST
 
-elaborate :: Program -> Either String (Map.Map String Type, Map.Map String (Type, [Param], S))
+elaborate :: Program -> Either String
+             (Map.Map String Type, [(String,
+                                   (Type, [Param], S, Map.Map String Type,
+                                    Map.Map String (Type, [Type])))])
 elaborate (Program gdecls) =
-  case partProgram gdecls (Map.singleton "fpt" Int, Map.empty, Map.empty) of
+  case partProgram gdecls (Map.singleton "fpt" Int, Map.empty, []) of
     Left err -> Left err
     Right (typedef, _, fdefn) -> let
-      res = Map.map (\(t, p, Block b _) -> (t, p, elaborate' b)) fdefn
-      in case Map.foldWithKey
-              (\key -> \val -> \acc ->
+      res = map (\(key,(t, p, Block b _, t1, t2)) -> (key,(t, p, elaborate' b, t1, t2))) fdefn
+      in case foldr
+              (\(key, val) -> \acc ->
                 case (acc, val) of
                   (Left s, _) -> Left s
-                  (_, (_, _, Left s)) -> Left s
-                  (Right m, (t, p, Right val')) ->
-                    Right $ Map.insert key (t, p, val') m) (Right Map.empty) res of
+                  (_, (_, _, Left s, _, _)) -> Left s
+                  (Right m, (t, p, Right val', a, b)) ->
+                    Right $ (key,(t, p, val', a, b)) : m) (Right []) res of
            Left s -> Left s
            Right m -> Right (typedef, m)
 
@@ -28,7 +31,7 @@ partProgram ((TypeDef t s _) : xs) (typedef, fdecl, fdefn) =
   (case Map.lookup s typedef of
       (Just _) -> Left $ "Type names may be defined only once - " ++ s
       _ -> Right ()) >>= \_ ->
-  (case (Map.lookup s fdecl, Map.lookup s fdefn) of
+  (case (Map.lookup s fdecl, lookup s fdefn) of
       (Nothing, Nothing) -> Right ()
       _ -> Left $ "Typedef " ++ s ++ " collides with function decl") >>= \_ ->
   partProgram xs (Map.insert s t typedef, fdecl, fdefn)
@@ -37,12 +40,12 @@ partProgram ((FDecl t s p _) : xs) (typedef, fdecl, fdefn) =
     Left err -> Left err
     Right () -> partProgram xs (typedef, Map.insert s (t, typeFromParams p) fdecl, fdefn)
 partProgram ((FDefn t s p b _) : xs) (typedef, fdecl, fdefn) =
-  (case Map.lookup s fdefn of
+  (case lookup s fdefn of
       (Just _) -> Left $ "Multiple definitions of function " ++ s
       Nothing -> Right ()) >>= \_ ->
   case check (t, s, p) (typedef, fdecl, fdefn) of
     Left err -> Left err
-    Right () -> partProgram xs (typedef, fdecl, Map.insert s (t,p,b) fdefn)
+    Right () -> partProgram xs (typedef, fdecl, (s, (t,p,b,typedef,fdecl)) : fdefn)
 
 check (t, s, p) (typedef, fdecl, fdefn) = 
   (case t of
@@ -62,8 +65,8 @@ check (t, s, p) (typedef, fdecl, fdefn) =
           False -> Left $ "Function decl/defn conflicts with previous decl/defn"
           True -> Right ()
       Nothing -> Right ()) >>= \_ ->
-  case Map.lookup s fdefn of
-    (Just (t', p', _)) ->
+  case lookup s fdefn of
+    (Just (t', p', _, _, _)) ->
       case (typeEq typedef (t, t')) &&
            length(p) == length(p') &&
            (all (typeEq typedef) $ zip (typeFromParams p') $ typeFromParams p) of
