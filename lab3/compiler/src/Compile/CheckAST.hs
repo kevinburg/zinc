@@ -248,8 +248,10 @@ checkE (ExpBinOp op e1 e2 _) ctx =
     case (checkE e1 ctx, checkE e2 ctx) of
       (BadE s, _) -> BadE s
       (_, BadE s) -> BadE s
-      (ValidE t1, ValidE t2) -> if t1 == t2 then ValidE Bool
-                                else BadE "eq type mismatch"
+      (ValidE t1, ValidE t2) -> case t1 of
+        Map l t -> BadE "Cannot compare Function Types"
+        _ -> if t1 == t2 then ValidE Bool
+             else BadE "eq type mismatch"
   else
     let
       ([opT1, opT2], ret) = opType op
