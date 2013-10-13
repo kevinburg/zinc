@@ -49,22 +49,28 @@ genFunction (fun,p,b) l =
         x | x < 5 -> let
           save = map (\(r, i) -> Push r) $ zip [Reg RBX, Reg R12, Reg R13, Reg R14] [0..(x-1)]
           restore = map (\(Push r) -> Pop r) $ reverse save
-          code' =  concatMap (translate regMap x) unssa
+          code' =  concatMap (translate regMap (x + (mod x 2))) unssa
           (front, back) = splitAt (length(code')-2) code'
-          in setup ++ save ++ front ++ restore ++ back
+          in if ((mod x 2) == 0) then setup ++ save ++ front ++ restore ++ back
+             else setup ++ save ++ [Push (Reg RBP)] ++ front ++ [Pop (Reg RBP)] ++ restore ++ back
         x -> let
           save = map (\(r, i) -> Push r) $ zip [Reg RBX, Reg R12, Reg R13, Reg R14] [0..(x-1)]
           restore = map (\(Push r) -> Pop r) $ reverse save
           n = x-3
-          code' =  concatMap (translate regMap n) unssa
+          code' =  concatMap (translate regMap (x+1)) unssa
           (front, back) = splitAt (length(code')-2) code'
           sub = [Subb (Val (n*8)) (Reg RSP)]
           add = [Addd (Val (n*8 )) (Reg RSP)]
           in setup ++ save ++ sub ++ front ++ add ++ restore ++ back
-
         -- TODO: when x >= 5, we are storing local variables on stack.
              -- wat do here?!?!?
-  in (fun, code, l')
+    code' = removeRedundant code
+  in (fun, code', l')
+
+removeRedundant code = 
+  filter (\inst -> case inst of
+             (Movl a1 a2) -> a1 /= a2
+             _ -> True) code
 
 -- updates the abstract assembly at a label
 update aasm Nothing = Just aasm
@@ -191,11 +197,15 @@ genExp (n,l) (ExpBinOp op e1 e2 p) loc | op == Shl || op == Shr = let
     Shl -> SShl
     Shr -> SShr
   in genExp (n,l) (ExpTernOp cond div (ExpBinOp sop e1 e2 p) p) loc
-genExp (n,l) (ExpBinOp op e1 e2 _) loc = let
-  (i1, n', l') = genExp (n + 1, l) e1 (ATemp n)
-  (i2, n'', l'') = genExp (n' + 1, l') e2 (ATemp n')
-  aasm  = [AAsm [loc] op [ALoc $ ATemp n, ALoc $ ATemp $ n']]
-  in (i1 ++ i2 ++ aasm, n'', l'')
+genExp (n,l) (ExpBinOp op e1 e2 _) loc = 
+  case (op, e1, e2) of
+    (Add, ExpInt _ i1 _, ExpInt _ i2 _) ->
+      ([AAsm [loc] Nop [AImm $ fromIntegral $ i1 + i2]], n, l)
+    _ -> let
+      (i1, n', l') = genExp (n + 1, l) e1 (ATemp n)
+      (i2, n'', l'') = genExp (n' + 1, l') e2 (ATemp n')
+      aasm  = [AAsm [loc] op [ALoc $ ATemp n, ALoc $ ATemp $ n']]
+      in (i1 ++ i2 ++ aasm, n'', l'')
 genExp (n,l) (ExpUnOp Incr (Ident i _) p) _ = let
   e' = ExpBinOp Add (Ident i p) (ExpInt Dec 1 p) p
   in genExp (n, l) e' (AVar i)
@@ -230,12 +240,12 @@ genExp (n, l) (App f es _) loc = let
               in (code ++ aasm, n1 : temps, n2, l2)) ([], [], n, l) es
   --TODO: more than 6 args
   (front,rest) = splitAt 6 temps
-  moveRestArgs = map (\t -> APush (ATemp t)) (reverse rest)
+  --moveRestArgs = map (\t -> APush (ATemp t)) (reverse rest)
   moveFrontArgs = map (\(i, t) ->
                    AAsm {aAssign = [AArg i], aOp = Nop, aArgs = [ALoc $ ATemp t]})
              $ zip [0..] front
-  restoreRestArgs = map (\t -> APop (ATemp t)) rest
-  aasm = computeArgs ++ moveRestArgs ++ moveFrontArgs ++ [ACtrl $ Call f] ++ restoreRestArgs ++
+  --restoreRestArgs = map (\t -> APop (ATemp t)) rest
+  aasm = computeArgs ++ moveFrontArgs ++ [ACtrl $ Call f rest] ++
          [AAsm {aAssign = [loc], aOp = Nop, aArgs = [ALoc $ ARes]}]
   in (aasm, n', l')
                   
@@ -382,12 +392,21 @@ translate regMap _ (AAsm {aAssign = [dest], aOp = BOr, aArgs = [src1, src2]}) =
   binOp (dest,src1,src2) BOr regMap
 translate regMap _ (AAsm {aAssign = [dest], aOp = BXor, aArgs = [src1, src2]}) =
   binOp (dest,src1,src2) BXor regMap
-translate regMap _ (APush loc) =
-  [Push $ fullReg (regFind regMap $ ALoc loc)]
-translate regMap _ (APop loc) =
-  [Pop $ fullReg (regFind regMap $ ALoc loc)]
-translate regMap _ (ACtrl (Call s)) = 
-  [AsmCall s]
+--translate regMap _ (APush loc) =
+--  [Push $ fullReg (regFind regMap $ ALoc loc)]
+--translate regMap _ (APop loc) =
+--  [Pop $ fullReg (regFind regMap $ ALoc loc)]
+translate regMap n (ACtrl (Call s ts)) = let
+  (l, _) = 
+    foldr (\t -> \(acc, i) -> 
+            case regFind regMap $ ALoc $ ATemp t of
+              (Stk j) -> ([Movl (Stk j) (Reg R15D),
+                           Movl (Reg R15D) (Stk (-i*8))] : acc, i+1)
+              s -> ([Movl s (Stk (-i*8))] : acc, i+1)) ([], 1) ts
+  saves = concat l
+  restores = map (\(Movl x y) -> Movl y x) saves
+  in saves ++ [Subb (Val $ (length ts)*8) (Reg RSP)] ++ [AsmCall s] ++ 
+     [Addd (Val $ (length ts)*8) (Reg RSP)] ++ restores
 translate regMap _ (ACtrl (Ret (ALoc loc))) =
   [Pop (Reg RBP), AsmRet]
 translate regMap _ (ACtrl (Lbl l)) = 

@@ -63,7 +63,7 @@ coloring g = let m = Map.map (\x-> -1) g
                  res = color g m' s
                  regsUsed = List.maximum (Map.elems res)
                  order = registerOrder ()
-             in  (Map.map (\v -> 
+             in (Map.map (\v -> 
                             case v < 0 of
                               True -> Reg (SpillArg (-v))
                               False ->

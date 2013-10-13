@@ -13,9 +13,35 @@ isTemp _ = False
 
 ssa :: [AAsm] -> String -> Blocks
 ssa aasm fun = let
-  p = parameterize aasm fun
-  in p
+  l = parameterize aasm fun
+  opt = map (\(fun, (s, aasm)) -> (fun, (s, optimize aasm))) l
+  in opt
   
+optimize p = p
+  {-
+  let
+    (copyProp, _) = 
+      foldl (\(aasm, m) -> \inst ->
+              case inst of
+                (AAsm {aAssign = [loc], aOp = Nop, aArgs = [ALoc l]}) | loc /= ARes -> let
+                  m' = Map.insert (ALoc loc) (ALoc l) m
+                  in (aasm, m')
+                (AAsm {aAssign = [loc], aOp = o, aArgs = srcs}) -> let
+                  srcs' = map (copy m) srcs
+                  in (aasm ++ [AAsm {aAssign = [loc], aOp = o, aArgs = srcs'}], m)
+                (ACtrl (GotoP l s)) -> let
+                  s' = Set.map (\x -> case copy m $ ALoc x of
+                                   ALoc loc -> loc) s
+                  in (aasm ++ [ACtrl (GotoP l s')], m)
+                x -> (aasm ++ [x], m)
+            ) ([], Map.empty) p
+  in copyProp
+     where copy m x =
+             case Map.lookup x m of
+               (Just c) -> c
+               _ -> x
+-}
+
 {- The abstract assembly is group by label. Each label contains the set of variables that
    are live at the time of entering the label and the code that follows. The set of live
    variables will be used to put paramters on the labels and gotos.
@@ -196,6 +222,9 @@ minimize' blocks lblmap = let bmap = Map.fromList blocks
                  -}
 
 
+unGen (AVarG s i) = AVar (s ++ (show i))
+unGen x = x
+
 -- Turn the SSA code back into non SSA code that gets rid of parameterized labels and gotos
 -- Basically, assign label vals with goto vals before goto
 deSSA :: Blocks -> [AAsm]
@@ -206,7 +235,8 @@ deSSA blocks = let bmap = Map.fromList blocks
               gvals' = Set.toAscList gvals
               valset' = Set.toAscList valset
               valpairs = zip valset' gvals'
-              valpairs' = map (\(AVarG s1 i1,AVarG s2 i2)->(AVar(s1++(show i1)),AVar(s2++(show i2)))) valpairs 
+              --valpairs' = map (\(AVarG s1 i1,AVarG s2 i2)->(AVar(s1++(show i1)),AVar(s2++(show i2)))) valpairs 
+              valpairs' = map (\(x,y) -> (unGen x, unGen y)) valpairs 
               assigns = map (\(x,y) -> AAsm{aAssign=[y],aOp=Nop,aArgs=[ALoc x]}) valpairs'
           in
            assigns ++ [ACtrl $ Goto goto]
@@ -217,7 +247,8 @@ deSSA blocks = let bmap = Map.fromList blocks
               --valset' = filter (\x-> case x of {(ATemp _) -> False; _-> True}) $ Set.toAscList valset
               valset' = filter (\x-> case x of {(AVarG _ _) -> True; _-> False}) $ Set.toAscList valset
               valpairs = zip valset' gvals'
-              valpairs' = map (\(AVarG s1 i1,AVarG s2 i2)->(AVar(s1++(show i1)),AVar(s2++(show i2)))) valpairs
+              --valpairs' = map (\(AVarG s1 i1,AVarG s2 i2)->(AVar(s1++(show i1)),AVar(s2++(show i2)))) valpairs
+              valpairs' = map (\(x,y) -> (unGen x, unGen y)) valpairs 
               assigns = map (\(x,y) -> AAsm{aAssign=[y],aOp=Nop,aArgs=[ALoc x]}) valpairs'
               stmt = case val of
                 ALoc(AVarG s i) ->

@@ -27,7 +27,7 @@ data COp = Ret AVal
          | Lbl String
          | GotoP String (Set.Set ALoc)
          | IfzP AVal String (Set.Set ALoc)
-         | Call String
+         | Call String [Int]
          deriving (Show, Ord, Eq)
 
 data AVal = ALoc ALoc

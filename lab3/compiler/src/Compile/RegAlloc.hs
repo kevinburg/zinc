@@ -71,10 +71,11 @@ liveVars' (stmt : aasm) i labels live m saturate =
       let
         m' = Map.insert i live m
       in liveVars' aasm (i+1) labels live m' saturate
-    ACtrl (Call _) ->
+    ACtrl (Call _ ts) ->
       let
-        m' = Map.insert i live m
-      in liveVars' aasm (i+1) labels live m' saturate
+        live' = Set.union live (Set.fromList $ map (\t -> ATemp t) ts)
+        (m', changed) = update m i live'
+      in liveVars' aasm (i+1) labels live' m' (saturate && not(changed))
     ACtrl (Goto l) ->
       let
         line = labels Map.! l
@@ -127,7 +128,7 @@ genInter' (stmt : aasm) i live inter vars =
       newInter = Set.map (\x -> (loc, x)) vs
       inter' = Set.union inter newInter
       in genInter' aasm (i+1) live inter' vars'
-    ACtrl (Call f) -> let
+    ACtrl (Call f ts) -> let
       ler = [AReg EAX, AReg EDI, AReg ESI, AReg EDX, AReg ECX,
              AReg R8D, AReg R9D, AReg R10D, AReg R11D]
       vs = case Map.lookup i live of
