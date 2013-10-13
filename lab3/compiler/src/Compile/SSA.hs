@@ -237,6 +237,16 @@ deSSA blocks = let bmap = Map.fromList blocks
                           )vals
           in
            [AAsm {aAssign=locs', aOp = o, aArgs = vals'}]
+        f bmap (APush loc) = let
+          loc' = case loc of
+            AVarG s i -> AVar (s ++ (show i))
+            a -> a
+          in [APush loc']
+        f bmap (APop loc) = let
+          loc' = case loc of
+            AVarG s i -> AVar (s ++ (show i))
+            a -> a
+          in [APop loc']
         f bmap aasm = [aasm]
           
           

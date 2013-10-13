@@ -57,7 +57,8 @@ data Register = EAX | RAX
               | R13D | R13
               | R14D | R14
               | R15D | R15 | R15B
-              | CL deriving (Eq, Ord)
+              | CL
+              | SpillArg Int deriving (Eq, Ord)
 
 instance Show Asm where
   show (AsmRet) = "\tret"

@@ -24,11 +24,7 @@ elaborate (Program gdecls) =
                   (Right m, (t, p, Right val', a, b)) ->
                     Right $ (key,(t, p, val', a, b)) : m) (Right []) res of
            Left s -> Left s
-           Right m ->
-             case Set.size (Set.difference (Map.keysSet fdecl)
-                            (Set.fromList (map (\(k,_) -> k) fdefn))) of
-               0 -> Right (typedef, m)
-               _ -> Left "asdf"
+           Right m -> Right (typedef, m)
 
 partProgram [] acc = Right acc
 partProgram ((TypeDef t s _) : xs) (typedef, fdecl, fdefn) =
@@ -54,6 +50,10 @@ partProgram ((FDefn t s p b _) : xs) (typedef, fdecl, fdefn) =
   (case lookup s fdefn of
       (Just _) -> Left $ "Multiple definitions of function " ++ s
       Nothing -> Right ()) >>= \_ ->
+  (case elem s ["fadd","fsub","fmul","fdiv","fless","itof","ftoi",
+                "print_fpt","print_int","print_hex"] of
+     True -> Left "defining external function"
+     False -> Right ()) >>= \_ ->
   case check (t, s, p) (typedef, fdecl, fdefn) of
     Left err -> Left err
     Right () -> partProgram xs (typedef, fdecl, (s, (t,p,b,typedef,fdecl)) : fdefn)

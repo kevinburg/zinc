@@ -45,19 +45,19 @@ genFunction (fun,p,b) l =
     code = 
       case used of
         0 ->
-          setup ++ (concatMap (translate regMap) unssa)
+          setup ++ (concatMap (translate regMap 0) unssa)
         x | x < 5 -> let
           save = map (\(r, i) -> Push r) $ zip [Reg RBX, Reg R12, Reg R13, Reg R14] [0..(x-1)]
           restore = map (\(Push r) -> Pop r) $ reverse save
-          code' =  concatMap (translate regMap) unssa
+          code' =  concatMap (translate regMap x) unssa
           (front, back) = splitAt (length(code')-2) code'
           in setup ++ save ++ front ++ restore ++ back
         x -> let
           save = map (\(r, i) -> Push r) $ zip [Reg RBX, Reg R12, Reg R13, Reg R14] [0..(x-1)]
           restore = map (\(Push r) -> Pop r) $ reverse save
-          code' =  concatMap (translate regMap) unssa
-          (front, back) = splitAt (length(code')-2) code'
           n = x-3
+          code' =  concatMap (translate regMap n) unssa
+          (front, back) = splitAt (length(code')-2) code'
           sub = [Subb (Val (n*8)) (Reg RSP)]
           add = [Addd (Val (n*8 )) (Reg RSP)]
           in setup ++ save ++ sub ++ front ++ add ++ restore ++ back
@@ -229,16 +229,19 @@ genExp (n, l) (App f es _) loc = let
               (code, n2, l2) = genExp (n1+1, l1) e (ATemp n1)
               in (code ++ aasm, n1 : temps, n2, l2)) ([], [], n, l) es
   --TODO: more than 6 args
-  moveArgs = map (\(i, t) ->
+  (front,rest) = splitAt 6 temps
+  moveRestArgs = map (\t -> APush (ATemp t)) (reverse rest)
+  moveFrontArgs = map (\(i, t) ->
                    AAsm {aAssign = [AArg i], aOp = Nop, aArgs = [ALoc $ ATemp t]})
-             $ zip [0..] temps
-  aasm = computeArgs ++ moveArgs ++ [ACtrl $ Call f] ++
+             $ zip [0..] front
+  restoreRestArgs = map (\t -> APop (ATemp t)) rest
+  aasm = computeArgs ++ moveRestArgs ++ moveFrontArgs ++ [ACtrl $ Call f] ++ restoreRestArgs ++
          [AAsm {aAssign = [loc], aOp = Nop, aArgs = [ALoc $ ARes]}]
   in (aasm, n', l')
                   
      
 -- begin 'temp -> register' translation
-translate regMap (AAsm {aAssign = [dest], aOp = Nop, aArgs = [src]}) =
+translate regMap n (AAsm {aAssign = [dest], aOp = Nop, aArgs = [src]}) =
   let
     s = regFind regMap src
   in
@@ -246,9 +249,12 @@ translate regMap (AAsm {aAssign = [dest], aOp = Nop, aArgs = [src]}) =
      (Stk _) ->
        [Movl s (Reg R15D),
         Movl (Reg R15D) (regFind regMap (ALoc dest))]
+     (Reg (SpillArg i)) ->
+       [Movl (Stk ((i+n+1)*8)) (Reg R15D),
+        Movl (Reg R15D) (regFind regMap (ALoc dest))]
      _ ->
        [Movl (regFind regMap src) (regFind regMap (ALoc dest))]
-translate regMap (AAsm {aAssign = [dest], aOp = Add, aArgs = [src1, src2]}) =
+translate regMap _ (AAsm {aAssign = [dest], aOp = Add, aArgs = [src1, src2]}) =
   let
     dest' = regFind regMap (ALoc dest)
     s = regFind regMap src1
@@ -270,7 +276,7 @@ translate regMap (AAsm {aAssign = [dest], aOp = Add, aArgs = [src1, src2]}) =
        else
          [Movl (regFind regMap src2) dest',
           Addl s dest']
-translate regMap (AAsm {aAssign = [dest], aOp = Sub, aArgs = [src1, src2]}) =
+translate regMap _ (AAsm {aAssign = [dest], aOp = Sub, aArgs = [src1, src2]}) =
   let
     dest' = regFind regMap (ALoc dest)
     s = regFind regMap src1
@@ -287,7 +293,7 @@ translate regMap (AAsm {aAssign = [dest], aOp = Sub, aArgs = [src1, src2]}) =
           Movl (Reg R15D) dest',
           Movl s2 (Reg R15D),
           Subl (Reg R15D) dest']
-translate regMap (AAsm {aAssign = [dest], aOp = Mul, aArgs = [src1, src2]}) =
+translate regMap _ (AAsm {aAssign = [dest], aOp = Mul, aArgs = [src1, src2]}) =
   let
     dest' = regFind regMap (ALoc dest)
     s = regFind regMap src1
@@ -309,17 +315,17 @@ translate regMap (AAsm {aAssign = [dest], aOp = Mul, aArgs = [src1, src2]}) =
        else
          [Movl (regFind regMap src2) dest',
           Imull s dest']
-translate regMap (AAsm {aAssign = [dest], aOp = Div, aArgs = [src1, src2]}) =
+translate regMap _ (AAsm {aAssign = [dest], aOp = Div, aArgs = [src1, src2]}) =
   [Movl (regFind regMap src1) (Reg EAX),
    Cdq,
    Idivl (regFind regMap src2),
    Movl (Reg EAX) (regFind regMap (ALoc dest))]
-translate regMap (AAsm {aAssign = [dest], aOp = Mod, aArgs = [src1, src2]}) =
+translate regMap _ (AAsm {aAssign = [dest], aOp = Mod, aArgs = [src1, src2]}) =
   [Movl (regFind regMap src1) (Reg EAX),
    Cdq,
    Idivl (regFind regMap src2),
    Movl (Reg EDX) (regFind regMap (ALoc dest))]
-translate regMap (AAsm {aAssign = [dest], aOp = Neg, aArgs = [src]}) =
+translate regMap _ (AAsm {aAssign = [dest], aOp = Neg, aArgs = [src]}) =
   let
     dest' = regFind regMap (ALoc dest)
     s = regFind regMap src
@@ -332,7 +338,7 @@ translate regMap (AAsm {aAssign = [dest], aOp = Neg, aArgs = [src]}) =
      _ ->
        [Movl (regFind regMap src) dest',
         Negl dest']
-translate regMap (AAsm {aAssign = [dest], aOp = BNot, aArgs = [src]}) =
+translate regMap _ (AAsm {aAssign = [dest], aOp = BNot, aArgs = [src]}) =
   let
     dest' = regFind regMap (ALoc dest)
     s = regFind regMap src
@@ -345,7 +351,7 @@ translate regMap (AAsm {aAssign = [dest], aOp = BNot, aArgs = [src]}) =
      _ ->
        [Movl (regFind regMap src) dest',
         Notl dest']
-translate regMap (AAsm {aAssign = [dest], aOp = LNot, aArgs = [src]}) =
+translate regMap _ (AAsm {aAssign = [dest], aOp = LNot, aArgs = [src]}) =
   let
     dest' = regFind regMap (ALoc dest)
     s = regFind regMap src
@@ -358,40 +364,44 @@ translate regMap (AAsm {aAssign = [dest], aOp = LNot, aArgs = [src]}) =
      _ ->
        [Movl s dest',
         Xorl (Val 1) dest']
-translate regMap (AAsm {aAssign = [dest], aOp = Lt, aArgs = [src1, src2]}) =
+translate regMap _ (AAsm {aAssign = [dest], aOp = Lt, aArgs = [src1, src2]}) =
   cmpOp (dest,src2,src1) Lt regMap
-translate regMap (AAsm {aAssign = [dest], aOp = Gt, aArgs = [src1, src2]}) =
+translate regMap _ (AAsm {aAssign = [dest], aOp = Gt, aArgs = [src1, src2]}) =
   cmpOp (dest,src1,src2) Gt regMap
-translate regMap (AAsm {aAssign = [dest], aOp = Leq, aArgs = [src1, src2]}) =
+translate regMap _ (AAsm {aAssign = [dest], aOp = Leq, aArgs = [src1, src2]}) =
   cmpOp (dest,src2,src1) Leq regMap
-translate regMap (AAsm {aAssign = [dest], aOp = Geq, aArgs = [src1, src2]}) =
+translate regMap _(AAsm {aAssign = [dest], aOp = Geq, aArgs = [src1, src2]}) =
   cmpOp (dest,src1,src2) Geq regMap
-translate regMap (AAsm {aAssign = [dest], aOp = Eq, aArgs = [src1, src2]}) =
+translate regMap _ (AAsm {aAssign = [dest], aOp = Eq, aArgs = [src1, src2]}) =
   cmpOp (dest,src1,src2) Eq regMap
-translate regMap (AAsm {aAssign = [dest], aOp = Neq, aArgs = [src1, src2]}) =
+translate regMap _ (AAsm {aAssign = [dest], aOp = Neq, aArgs = [src1, src2]}) =
   cmpOp (dest,src1,src2) Neq regMap
-translate regMap (AAsm {aAssign = [dest], aOp = BAnd, aArgs = [src1, src2]}) =
+translate regMap _ (AAsm {aAssign = [dest], aOp = BAnd, aArgs = [src1, src2]}) =
   binOp (dest,src1,src2) BAnd regMap
-translate regMap (AAsm {aAssign = [dest], aOp = BOr, aArgs = [src1, src2]}) =
+translate regMap _ (AAsm {aAssign = [dest], aOp = BOr, aArgs = [src1, src2]}) =
   binOp (dest,src1,src2) BOr regMap
-translate regMap (AAsm {aAssign = [dest], aOp = BXor, aArgs = [src1, src2]}) =
+translate regMap _ (AAsm {aAssign = [dest], aOp = BXor, aArgs = [src1, src2]}) =
   binOp (dest,src1,src2) BXor regMap
-translate regMap (ACtrl (Call s)) = 
+translate regMap _ (APush loc) =
+  [Push $ fullReg (regFind regMap $ ALoc loc)]
+translate regMap _ (APop loc) =
+  [Pop $ fullReg (regFind regMap $ ALoc loc)]
+translate regMap _ (ACtrl (Call s)) = 
   [AsmCall s]
-translate regMap (ACtrl (Ret (ALoc loc))) =
+translate regMap _ (ACtrl (Ret (ALoc loc))) =
   [Pop (Reg RBP), AsmRet]
-translate regMap (ACtrl (Lbl l)) = 
+translate regMap _ (ACtrl (Lbl l)) = 
   [AsmLbl l]
-translate regMap (ACtrl (Goto l)) = 
+translate regMap _ (ACtrl (Goto l)) = 
   [Jmp l]
-translate regMap (ACtrl (Ifz v l)) =
+translate regMap _ (ACtrl (Ifz v l)) =
   let
     v' = regFind regMap v
   in 
    case v' of
      (Stk _) -> [Movl v' (Reg R15D), Testl (Reg R15D) (Reg R15D), Je l]
      _ -> [Testl v' v', Je l]
-translate regMap (AAsm {aAssign = [dest], aOp = o, aArgs = [src1, src2]})
+translate regMap _ (AAsm {aAssign = [dest], aOp = o, aArgs = [src1, src2]})
   | o == SShl || o == SShr =
   let
     asm = case o of
@@ -480,3 +490,18 @@ regFind regMap (ALoc loc) =
   case Map.lookup loc regMap of
     Just (reg) -> reg
     Nothing -> Reg EAX
+
+fullReg (Reg EAX) = Reg RAX
+fullReg (Reg EBX) = Reg RBX
+fullReg (Reg ECX) = Reg RCX
+fullReg (Reg EDX) = Reg RDX
+fullReg (Reg ESI) = Reg RSI
+fullReg (Reg EDI) = Reg RDI
+fullReg (Reg R8D) = Reg R8
+fullReg (Reg R9D) = Reg R9
+fullReg (Reg R10D) = Reg R10
+fullReg (Reg R11D) = Reg R11
+fullReg (Reg R12D) = Reg R12
+fullReg (Reg R13D) = Reg R13
+fullReg (Reg R14D) = Reg R14
+fullReg x = x

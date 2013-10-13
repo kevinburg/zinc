@@ -52,6 +52,16 @@ liveVars' :: [AAsm] -> Int -> Map.Map String Int -> Set.Set ALoc ->
 liveVars' [] _ _ _ m saturate = (m, saturate)
 liveVars' (stmt : aasm) i labels live m saturate =
   case stmt of
+    APush loc ->
+      let
+        live' = Set.insert loc live
+        (m', changed) = update m i live'
+      in liveVars' aasm (i+1) labels live' m' (saturate && not(changed))
+    APop loc ->
+      let
+        live' = Set.delete loc live
+        (m', changed) = update m i live'
+      in liveVars' aasm (i+1) labels live' m' (saturate && not(changed))
     ACtrl (Ret (ALoc loc)) ->
       let
         live' = Set.insert loc live
@@ -101,6 +111,22 @@ genInter stmts live =
 genInter' [] _ _ inter vars = (inter, vars)
 genInter' (stmt : aasm) i live inter vars =
   case stmt of
+    APush loc -> let
+      vars' = Set.insert loc vars
+      vs = case Map.lookup i live of
+        Nothing -> Set.empty
+        Just s -> s
+      newInter = Set.map (\x -> (loc, x)) vs
+      inter' = Set.union inter newInter
+      in genInter' aasm (i+1) live inter' vars'
+    APop loc -> let
+      vars' = Set.insert loc vars
+      vs = case Map.lookup i live of
+        Nothing -> Set.empty
+        Just s -> s
+      newInter = Set.map (\x -> (loc, x)) vs
+      inter' = Set.union inter newInter
+      in genInter' aasm (i+1) live inter' vars'
     ACtrl (Call f) -> let
       ler = [AReg EAX, AReg EDI, AReg ESI, AReg EDX, AReg ECX,
              AReg R8D, AReg R9D, AReg R10D, AReg R11D]

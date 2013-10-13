@@ -17,6 +17,8 @@ data AAsm = AAsm {aAssign :: [ALoc]
                  ,aArgs   :: [AVal]
                  }
           | ACtrl COp
+          | APush ALoc
+          | APop ALoc
           | AComment String deriving (Ord, Eq, Show)
 
 data COp = Ret AVal

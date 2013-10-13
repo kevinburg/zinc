@@ -31,7 +31,7 @@ checkAST (typedef, fdefns) =
                  ctx' = Map.unions [ctx, Map.map (\(t1,t2) -> Map t2 t1) fdecls,
                                     Map.singleton fun (Map ts output)]
                  ctx'' = Map.map (findType tdefs) ctx'
-               in case checkFunction tdefs ctx'' (t,p,b) of
+               in case checkFunction tdefs ctx'' (t,p,b) fdefns of
                  Left s -> Left s
                  Right () -> Right ctx'') (Right ctx) fdefns of
       Left s -> Left s
@@ -70,10 +70,14 @@ findType m (Type s) = findType m (m Map.! s)
 findType m (Map t1 t2) = Map (map (findType m) t1) (findType m t2)
 findType _ x = x
              
-checkFunction m ctx val =
+checkFunction m ctx val defined =
   let
     -- replace all typedef types so we dont have to deal with them
     (t', p', s') = fixTypes m val
+    defined' = Set.union (Set.fromList $ map (\(k,_) -> k) defined) 
+               (Set.fromList ["fadd","fsub","fmul","fdiv","fless",
+                              "itof","ftoi","print_fpt",
+                              "print_int","print_hex"])
   in (let b = case t' of
             Void -> checkNoReturns s'
             _ -> checkReturns s'
@@ -82,7 +86,7 @@ checkFunction m ctx val =
         False -> Left "error in returns check") >>= \_ ->
      (let
          ctx' = foldr (\(Param t s) -> \acc -> Map.insert s t acc) ctx p'
-      in case checkS s' ctx' m t' of
+      in case checkS s' ctx' m defined' t' of
         ValidS -> Right ()
         BadS s -> Left s) >>= \_ ->
      (let
@@ -161,91 +165,91 @@ data CheckE = ValidE Type
 type Context = Map.Map String Type
 
 -- Performs static type checking on a statements  under a typing context
-checkS :: S -> Context -> Context -> Type -> CheckS
-checkS ANup ctx _ _ = ValidS
-checkS (AAssert e) ctx m _ =
-  case checkE e ctx of
+checkS :: S -> Context -> Context -> Set.Set String -> Type -> CheckS
+checkS ANup ctx _ _ _ = ValidS
+checkS (AAssert e) ctx m d _ =
+  case checkE e ctx d of
     BadE s -> BadS s
     ValidE Bool -> ValidS
     ValidE _ -> BadS "Assert expression not type bool"
-checkS (ASeq s1 s2) ctx m t = 
-  case checkS s1 ctx m t of
+checkS (ASeq s1 s2) ctx m d t = 
+  case checkS s1 ctx m d t of
     BadS s -> BadS s
-    ValidS -> checkS s2 ctx m t
-checkS (ABlock s1 s2) ctx m t = 
-  case checkS s1 ctx m t of
+    ValidS -> checkS s2 ctx m d t
+checkS (ABlock s1 s2) ctx m d t = 
+  case checkS s1 ctx m d t of
     BadS s -> BadS s
-    ValidS -> checkS s2 ctx m t
-checkS (ADeclare i t' s) ctx m t =
+    ValidS -> checkS s2 ctx m d t
+checkS (ADeclare i t' s) ctx m d t =
   if Map.member i m then BadS "Variable name conflicts with Type"
   else case t' of
     Void -> BadS "Variables can't be of type void"
     _ ->
       case Map.lookup i ctx of
         -- allow shadowing of variables over functions
-        Just (Map _ _) -> checkS s (Map.insert i t' ctx) m t
+        Just (Map _ _) -> checkS s (Map.insert i t' ctx) m d t
         Just _ -> BadS $ "Redeclaring " ++ i
-        Nothing -> checkS s (Map.insert i t' ctx) m t
-checkS (AReturn e) ctx m t = 
+        Nothing -> checkS s (Map.insert i t' ctx) m d t
+checkS (AReturn e) ctx m d t = 
   case (e,t) of
     (Nothing, Void) -> ValidS
     (Nothing, _) -> BadS "empty return statement in non-void function"
     (Just _, Void) -> BadS "non-empty return statement in void function"
     (Just e', _) ->
-      case checkE e' ctx of
+      case checkE e' ctx d of
         BadE s -> BadS s
         ValidE t' -> if t==t' then ValidS else BadS "return type mismatch"
-checkS (AWhile e s) ctx m t = 
-  case checkE e ctx of
+checkS (AWhile e s) ctx m d t = 
+  case checkE e ctx d of
     BadE s -> BadS s
     ValidE Int -> BadS "While condition is not type bool"
-    ValidE Bool -> checkS s ctx m t
-checkS (AAssign i e) ctx m _ =
+    ValidE Bool -> checkS s ctx m d t
+checkS (AAssign i e) ctx m d _ =
   case Map.lookup i ctx of
     Nothing -> BadS $ "Assigning " ++ i ++ " undeclared"
     Just t1 ->
-      case checkE e ctx of
+      case checkE e ctx d of
         BadE s -> BadS s
         ValidE t2 -> if t1 == t2 then ValidS
                      else BadS $ i ++ " declared with type " ++ (show t1) ++ 
                           " assigned with type " ++ (show t2)
-checkS (AIf e s1 s2) ctx m t =
-  case checkE e ctx of
+checkS (AIf e s1 s2) ctx m d t =
+  case checkE e ctx d of
     BadE s -> BadS s
     ValidE Int -> BadS "If condition is not type bool"
     ValidE Bool ->
-      case checkS s1 ctx m t of
+      case checkS s1 ctx m d t of
         BadS s -> BadS s
-        ValidS -> checkS s2 ctx m t
-checkS (AExpr e s) ctx m t =
-  case checkE e ctx of
+        ValidS -> checkS s2 ctx m d t
+checkS (AExpr e s) ctx m d t =
+  case checkE e ctx d of
     BadE s -> BadS s
-    ValidE _ -> checkS s ctx m t
+    ValidE _ -> checkS s ctx m d t
   
 -- Performs static type checking on an expression under a typing context
-checkE :: Expr -> Context -> CheckE
-checkE (ExpInt Dec i _) _ = if i > (2^31) then BadE "const too large"
-                            else ValidE Int
-checkE (ExpInt Hex i _) _ = if i > (2^32 - 1) then BadE "const too large"
-                            else ValidE Int
-checkE (TrueT _) _ = ValidE Bool
-checkE (FalseT _) _ = ValidE Bool
-checkE (Ident i _) ctx = 
+checkE :: Expr -> Context -> Set.Set String -> CheckE
+checkE (ExpInt Dec i _) _ _ = if i > (2^31) then BadE "const too large"
+                              else ValidE Int
+checkE (ExpInt Hex i _) _ _ = if i > (2^32 - 1) then BadE "const too large"
+                              else ValidE Int
+checkE (TrueT _) _ _ = ValidE Bool
+checkE (FalseT _) _ _ = ValidE Bool
+checkE (Ident i _) ctx _ = 
   case Map.lookup i ctx of
     Nothing -> BadE $ i ++ " used undeclared."
     Just t -> ValidE t    
-checkE (ExpUnOp op e _) _ | op == Incr || op == Decr =
+checkE (ExpUnOp op e _) _ _ | op == Incr || op == Decr =
   BadE "incr or decr in expression"
-checkE (ExpUnOp op e _) ctx =
+checkE (ExpUnOp op e _) ctx d =
   let
     ([opT], ret) = opType op
-  in case (checkE e ctx) of
+  in case (checkE e ctx d) of
     BadE s -> BadE s
     ValidE t -> if opT == t then ValidE ret
                 else BadE "unop expr mismatch"
-checkE (ExpBinOp op e1 e2 _) ctx =
+checkE (ExpBinOp op e1 e2 _) ctx d =
   if (op == Eq) || (op == Neq) then
-    case (checkE e1 ctx, checkE e2 ctx) of
+    case (checkE e1 ctx d, checkE e2 ctx d) of
       (BadE s, _) -> BadE s
       (_, BadE s) -> BadE s
       (ValidE t1, ValidE t2) -> case t1 of
@@ -255,14 +259,14 @@ checkE (ExpBinOp op e1 e2 _) ctx =
   else
     let
       ([opT1, opT2], ret) = opType op
-    in case (checkE e1 ctx, checkE e2 ctx) of
+    in case (checkE e1 ctx d, checkE e2 ctx d) of
       (BadE s, _) -> BadE s
       (_, BadE s) -> BadE s
       (ValidE t1, ValidE t2) ->
         if (t1 == opT1) && (t2 == opT2) then ValidE ret
         else BadE ("binop expr mismatch " ++ (show e1) ++ (show e2) ++ (show op))
-checkE (ExpTernOp e1 e2 e3 _) ctx =
-  case (checkE e1 ctx, checkE e2 ctx, checkE e3 ctx) of
+checkE (ExpTernOp e1 e2 e3 _) ctx d =
+  case (checkE e1 ctx d, checkE e2 ctx d, checkE e3 ctx d) of
     (BadE s, _, _) -> BadE s
     (_, BadE s, _) -> BadE s
     (_, _, BadE s) -> BadE s
@@ -271,16 +275,17 @@ checkE (ExpTernOp e1 e2 e3 _) ctx =
         Int -> BadE "cond in ternary op not type bool"
         Bool -> if t2 == t3 && (t2 /= Void) then ValidE t2
                 else BadE "ternary result type mismatch"
-checkE (App fun args _) ctx =
-  let
-    ts = map (\e -> checkE e ctx) args
-    -- TODO better error propagation here
-    ts' = map (\(ValidE t) -> t) ts
-  in case Map.lookup fun ctx of
-    (Just (Map input output)) ->
-      if ts' == input then ValidE output
-      else BadE "function input type mismatch"
-    _ -> BadE "undefined function call"
+checkE (App fun args _) ctx d =
+  if Set.notMember fun d then BadE "undefined fun" else
+    let
+      ts = map (\e -> checkE e ctx d) args
+      -- TODO better error propagation here
+      ts' = map (\(ValidE t) -> t) ts
+    in case Map.lookup fun ctx of
+      (Just (Map input output)) ->
+        if ts' == input then ValidE output
+        else BadE "function input type mismatch"
+      _ -> BadE "undefined function call"
                       
 -- Checks that no variables are used before definition
 checkInit :: S -> (Set.Set String, Set.Set String) -> Either String (Set.Set String, Set.Set String)

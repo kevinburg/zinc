@@ -53,33 +53,47 @@ coloring g = let m = Map.map (\x-> -1) g
                                [(AReg EAX, 0), (AReg EDI, 1), (AReg ESI, 2),
                                 (AReg EDX, 3), (AReg ECX, 4), (AReg R8D, 5),
                                 (AReg R9D, 6), (AReg R10D, 7), (AReg R11D, 8)] ++
-                               [(AArg i, i+1) | i <- [0..6]]
+                               [(AArg i, i+1) | i <- [0..5]]
                  m' = foldr (\(x,y) -> \acc -> Map.insert x y acc) m preColoring
                  s = List.filter (\r -> case r of
                                      (AReg _) -> False
                                      ARes -> False
-                                     (AArg _) -> False
+                                     (AArg _) -> True
                                      _ -> True) (seo g)
                  res = color g m' s
                  regsUsed = List.maximum (Map.elems res)
                  order = registerOrder ()
              in  (Map.map (\v -> 
-                            case (v < (Map.size(order)-1)) of
-                              True ->
-                                let Just reg = Map.lookup v order
-                                in Reg reg
+                            case v < 0 of
+                              True -> Reg (SpillArg (-v))
                               False ->
-                                let offset = (v - Map.size(order) + 1)
-                                in Stk (offset*8)
+                                case (v < (length(order)-1)) of
+                                  True ->
+                                    let Just reg = lookup v order
+                                    in Reg reg
+                                  False ->
+                                    let offset = (v - length(order) + 1)
+                                    in Stk (offset*8)
                           ) res, max 0 (regsUsed - 8))
 
 color :: Graph -> Map.Map Vertex Int -> [Vertex] -> Map.Map Vertex Int
 color g m [] = m
-color g m s = let n = nghbr g (List.head s)
-                  n' = List.map (\x -> m Map.! x) n
-                  m' = Map.insert (List.head s) (mex n') m
-              in
-               color g m' (tail s)
+color g m s =  let
+  v = List.head s in
+  case v of
+    AArg i | i > 5 -> let
+      n' = (-(i-5))
+      m' = Map.insert v n' m
+      in color g m' (tail s)
+    AArg i -> let
+      n' = i+1
+      m' = Map.insert v n' m
+      in color g m' (tail s)
+    _ -> let
+      n = nghbr g v
+      n' = List.map (\x -> m Map.! x) n
+      m' = Map.insert v (mex n') m
+      in color g m' (tail s)
     
 --Finds the Minimally Excluded Element of a list
 mex :: [ Int ] -> Int
@@ -89,5 +103,5 @@ mex l = let m = List.minimum([0..((List.maximum l)+2)] List.\\ l)
 
 -- Orders the registers in the order we want to use them (ESP, EBP for stack)
 registerOrder () =
-  Map.fromList (zip [0..] [EAX,EDI,ESI,EDX,ECX,R8D,R9D,R10D,R11D,EBX,R12D,R13D,R14D])
+  zip [0..] $ [EAX,EDI,ESI,EDX,ECX,R8D,R9D,R10D,R11D,EBX,R12D,R13D,R14D]
   -- preference toward caller save registers
