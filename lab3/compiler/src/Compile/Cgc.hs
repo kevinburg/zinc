@@ -48,19 +48,32 @@ seo' g weights l =
 -- Greedy coloring algorithm, takes a graph, outputs a list of tuples
 -- Vertex paired with Int, which represents color
 coloring :: Graph -> (Map.Map Vertex Arg, Int)
-coloring g = let m = Map.map (\x-> -1) g
+coloring g = let size = Map.size g
+                 bound = 50
+                 m = Map.map (\x-> -1) g
                  preColoring = [(ARes, 0)] ++
                                [(AReg EAX, 0), (AReg EDI, 1), (AReg ESI, 2),
                                 (AReg EDX, 3), (AReg ECX, 4), (AReg R8D, 5),
                                 (AReg R9D, 6), (AReg R10D, 7), (AReg R11D, 8)] ++
                                [(AArg i, i+1) | i <- [0..5]]
-                 m' = foldr (\(x,y) -> \acc -> Map.insert x y acc) m preColoring
+                 m' = case size > bound of
+                   False -> foldr (\(x,y) -> \acc -> Map.insert x y acc) m preColoring
+                   True -> foldr (\(x,y) -> \acc -> Map.insert x y acc) (Map.empty) preColoring
                  s = List.filter (\r -> case r of
                                      (AReg _) -> False
                                      ARes -> False
                                      (AArg _) -> True
                                      _ -> True) (seo g)
-                 res = color g m' s
+                 res = case size > bound of
+                   False -> color g m' s
+                   True -> let
+                     (m'',_) = Map.foldWithKey (\key -> \_ -> \(m,i) ->
+                                                 case key of
+                                                   AArg i | i > 5 ->
+                                                     (Map.insert key (-(i-5)) m, i+1)
+                                                   _ ->
+                                                     (Map.insert key i m, i+1)) (Map.empty, 12) g
+                     in Map.union m' m''
                  regsUsed = List.maximum (Map.elems res)
                  order = registerOrder ()
              in (Map.map (\v -> 

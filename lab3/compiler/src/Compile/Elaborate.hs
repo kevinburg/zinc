@@ -73,7 +73,8 @@ check (t, s, p) (typedef, fdecl, fdefn) =
         case (typeEq typedef (t,t')) &&
              length(p) == length(p') &&
              (all (typeEq typedef) $ zip p' $ typeFromParams p) of
-          False -> Left $ "Function decl/defn conflicts with previous decl/defn"
+          False -> trace ((show t) ++ " " ++ (show t'))
+            Left $ "Function decl/defn conflicts with previous decl/defn"
           True -> Right ()
       Nothing -> Right ()) >>= \_ ->
   case lookup s fdefn of

@@ -77,7 +77,7 @@ checkFunction m ctx val defined =
     defined' = Set.union (Set.fromList $ map (\(k,_) -> k) defined) 
                (Set.fromList ["fadd","fsub","fmul","fdiv","fless",
                               "itof","ftoi","print_fpt",
-                              "print_int","print_hex"])
+                              "print_int","print_hex", "main"])
   in (let b = case t' of
             Void -> checkNoReturns s'
             _ -> checkReturns s'
@@ -86,7 +86,7 @@ checkFunction m ctx val defined =
         False -> Left "error in returns check") >>= \_ ->
      (let
          ctx' = foldr (\(Param t s) -> \acc -> Map.insert s t acc) ctx p'
-      in case checkS s' ctx' m defined' t' of
+      in case checkS s' (Map.insert "main" (Map [] Int) ctx') m defined' t' of
         ValidS -> Right ()
         BadS s -> Left s) >>= \_ ->
      (let
@@ -120,14 +120,14 @@ typeEq m (e1,e2) = let
         _ -> False
     (_, Type s) ->
       case Map.lookup s m of
-        Just t2 -> e1 == t2
+        Just t2 -> typeEq m (e1,t2)
         _ -> False
     (Type s, _) ->
       case Map.lookup s m of
-        Just t1 -> t1 == e2
+        Just t1 -> typeEq m (t1,e2)
         _ -> False
     (_, _) -> e1 == e2
-    
+
 -- Verifies that all control flow paths end with a return statement
 checkReturns :: S -> Bool
 checkReturns ANup = False
@@ -187,7 +187,14 @@ checkS (ADeclare i t' s) ctx m d t =
     _ ->
       case Map.lookup i ctx of
         -- allow shadowing of variables over functions
-        Just (Map _ _) -> checkS s (Map.insert i t' ctx) m d t
+        Just (Map _ _) -> case s of
+          (ASeq (AAssign i' e) s2) ->
+            case checkE e ctx d of
+              BadE s -> BadS s
+              ValidE t2 -> if t' == t2 then checkS s2 (Map.insert i t' ctx) m d t
+                           else BadS $ i ++ " declared with type " ++ (show t') ++ 
+                                " assigned with type " ++ (show t2)
+          _ -> checkS s (Map.insert i t' ctx) m d t
         Just _ -> BadS $ "Redeclaring " ++ i
         Nothing -> checkS s (Map.insert i t' ctx) m d t
 checkS (AReturn e) ctx m d t = 
