@@ -404,7 +404,7 @@ translate regMap n (ACtrl (Call s ts)) = let
                            Movl (Reg R15D) (Stk (-i*8))] : acc, i+1)
               s -> ([Movl s (Stk (-i*8))] : acc, i+1)) ([], 1) ts
   saves = concat l
-  restores = map (\(Movl x y) -> Movl y x) saves
+  restores = map (\(Movl x y) -> Movl y x) (reverse saves)
   in saves ++ [Subb (Val $ (length ts)*8) (Reg RSP)] ++ [AsmCall s] ++ 
      [Addd (Val $ (length ts)*8) (Reg RSP)] ++ restores
 translate regMap _ (ACtrl (Ret (ALoc loc))) =
