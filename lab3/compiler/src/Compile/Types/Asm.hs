@@ -90,7 +90,7 @@ instance Show Asm where
     if s == "fadd" || s == "fsub" || s == "fmul" ||
        s == "fdiv" || s == "fless" || s == "itof" ||
        s == "ftoi" || s == "print_fpt" || s == "print_int" ||
-       s == "print_hex" || s == "abort" then "\tcall " ++ s
+       s == "print_hex" || s == "abort" then "\tcall _" ++ s
     else "\tcall _c0_" ++ s
   show (Setl e) = "\tsetl " ++ (show e)
   show (Sete e) = "\tsete " ++ (show e)
