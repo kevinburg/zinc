@@ -420,8 +420,11 @@ translate regMap _ (ACtrl (Ifz v l)) =
     v' = regFind regMap v
   in 
    case v' of
-     (Stk _) -> [Movl v' (Reg R15D), Testl (Reg R15D) (Reg R15D), Je l]
-     _ -> [Testl v' v', Je l]
+     (Stk _) -> [Movl v' (Reg R15D), 
+                 Movzbl (Reg R15B) (Reg R15D),
+                 Testl (Reg R15D) (Reg R15D), 
+                 Je l]
+     _ -> [Movzbl (lowerReg v') v', Testl v' v', Je l]
 translate regMap _ (AAsm {aAssign = [dest], aOp = o, aArgs = [src1, src2]})
   | o == SShl || o == SShr =
   let
@@ -526,3 +529,18 @@ fullReg (Reg R12D) = Reg R12
 fullReg (Reg R13D) = Reg R13
 fullReg (Reg R14D) = Reg R14
 fullReg x = x
+
+lowerReg (Reg EAX) = Reg AL
+lowerReg (Reg EBX) = Reg BL
+lowerReg (Reg ECX) = Reg CL
+lowerReg (Reg EDX) = Reg DL
+lowerReg (Reg ESI) = Reg SIL
+lowerReg (Reg EDI) = Reg DIL
+lowerReg (Reg R8D) = Reg R8B
+lowerReg (Reg R9D) = Reg R9B
+lowerReg (Reg R10D) = Reg R10B
+lowerReg (Reg R11D) = Reg R11B
+lowerReg (Reg R12D) = Reg R12B
+lowerReg (Reg R13D) = Reg R13B
+lowerReg (Reg R14D) = Reg R14B
+lowerReg x = x

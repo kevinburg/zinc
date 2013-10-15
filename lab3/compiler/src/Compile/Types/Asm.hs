@@ -41,23 +41,22 @@ data Arg = Reg Register
          | Stk Int -- Stack offset int
          | Val Int deriving (Eq, Ord)
 
-data Register = EAX | RAX
-              | EBX | RBX
-              | ECX | RCX
-              | EDX | RDX
-              | ESI | RSI
-              | EDI | RDI
+data Register = EAX | RAX | AL
+              | EBX | RBX | BL
+              | ECX | RCX | CL
+              | EDX | RDX | DL
+              | ESI | RSI | SIL
+              | EDI | RDI | DIL
               | RSP | ESP
               | RBP | EBP
-              | R8D | R8
-              | R9D | R9
-              | R10D | R10
-              | R11D | R11
-              | R12D | R12
-              | R13D | R13
-              | R14D | R14
+              | R8D | R8 | R8B
+              | R9D | R9 | R9B
+              | R10D | R10 | R10B
+              | R11D | R11 | R11B
+              | R12D | R12 | R12B
+              | R13D | R13 | R13B
+              | R14D | R14 | R14B
               | R15D | R15 | R15B
-              | CL
               | SpillArg Int deriving (Eq, Ord)
 
 instance Show Asm where
@@ -110,22 +109,31 @@ instance Show Arg where
 instance Show Register where
   show EAX = "eax"
   show RAX = "rax"
+  show AL = "al"
   show EBX = "ebx"
   show RBX = "rbx"
+  show BL = "bl"
   show ECX = "ecx"
   show RCX = "rcx"
+  show CL = "cl"
   show EDX = "edx"
   show RDX = "rdx"
+  show DL = "dl"
   show ESI = "esi"
   show RSI = "rsi"
+  show SIL = "sil"
   show EDI = "edi"
   show RDI = "rdi"
+  show DIL = "dil"
   show R8D = "r8d"
   show R8 = "r8"
+  show R8B = "r8b"
   show R9D = "r9d"
   show R9 = "r9"
+  show R9B = "r9b"
   show R10D = "r10d"
   show R10 = "r10"
+  show R10B = "r10b"
   show R11D = "r11d"
   show R11 = "r11"
   show R12D = "r12d"
@@ -135,10 +143,9 @@ instance Show Register where
   show R14D = "r14d"
   show R14 = "r14"
   show R15D = "r15d"
+  show R15B = "r15b"
   show RSP = "rsp"
   show RBP = "rbp"
-  show R15B = "r15b"
-  show CL = "cl"
 
 
 instance NFData Asm where

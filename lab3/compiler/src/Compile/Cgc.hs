@@ -111,8 +111,10 @@ color g m s =  let
 --Finds the Minimally Excluded Element of a list
 mex :: [ Int ] -> Int
 mex [] = 0
-mex l = let m = List.minimum([0..((List.maximum l)+2)] List.\\ l)
-        in m
+mex l = let 
+  l' = [0..((List.maximum l)+2)] 
+  m = List.minimum(l' List.\\ l)
+  in m
 
 -- Orders the registers in the order we want to use them (ESP, EBP for stack)
 registerOrder () =
