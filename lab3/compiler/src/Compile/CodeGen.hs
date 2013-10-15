@@ -21,14 +21,15 @@ codeGen (Program gdecls) =
     fdefns = concatMap (\x -> case x of
                            (FDefn _ s p (Block b _) _) -> [(s,p,b)]
                            _ -> []) gdecls
+    lengths = map (\(s,_,b) -> (s, length b)) fdefns
     (res, _) = foldr (\f -> \(m, l) -> let
-                    (s, aasm, l') = genFunction f l
+                    (s, aasm, l') = genFunction f l lengths
                     in (Map.insert s aasm m, l')) (Map.empty,0) fdefns
   in res
 
-genFunction (fun,p,b) l =
+genFunction (fun,p,b) l lengths =
   let
-    (aasm, _, l', ep) = genStmt ([], length(p), l, Nothing) b
+    (aasm, _, l', ep) = genStmt ([], length(p), l, Nothing) b lengths
     p' = zip (map (\(Param _ i) -> i) p) [0..]
     prefix = map (\(i, n) ->
                    AAsm {aAssign = [AVar i], aOp = Nop, aArgs = [ALoc $ AArg n]}) p'
@@ -79,152 +80,152 @@ update aasm (Just acc) = Just $ acc ++ aasm
 updatePre aasm Nothing = Just aasm
 updatePre aasm (Just acc) = Just $ aasm ++ acc
      
-genStmt acc [] = acc
-genStmt acc ((Simp (Decl _ _ Nothing _) _) : xs) = genStmt acc xs
-genStmt (acc, n, l, ep) ((Simp (Decl _ i (Just e) _) _) : xs) =
+genStmt acc [] _ = acc
+genStmt acc ((Simp (Decl _ _ Nothing _) _) : xs) lens = genStmt acc xs lens
+genStmt (acc, n, l, ep) ((Simp (Decl _ i (Just e) _) _) : xs) lens =
   let
-    (aasm, n', l') = genExp (n, l) e (AVar i)
-  in genStmt (acc ++ aasm, n', l', ep) xs
-genStmt (acc, n, l, ep) ((Simp (Asgn i o e s) _) : xs) = 
+    (aasm, n', l') = genExp (n, l) e (AVar i) lens
+  in genStmt (acc ++ aasm, n', l', ep) xs lens
+genStmt (acc, n, l, ep) ((Simp (Asgn i o e s) _) : xs) lens = 
   let
     e' = case o of
       Nothing -> e
       Just op -> ExpBinOp op (Ident i s) e s
-    (aasm, n', l') = genExp (n, l) e' (AVar i)
-  in genStmt (acc ++ aasm, n', l', ep) xs
-genStmt (acc, n, l, ep) ((Simp (PostOp o (Ident i _) s) _) : xs) =
+    (aasm, n', l') = genExp (n, l) e' (AVar i) lens
+  in genStmt (acc ++ aasm, n', l', ep) xs lens
+genStmt (acc, n, l, ep) ((Simp (PostOp o (Ident i _) s) _) : xs) lens =
   let
     op = case o of
       Incr -> Add
       Decr -> Sub
     e' = ExpBinOp op (Ident i s) (ExpInt Dec 1 s) s
-    (aasm, n', l') = genExp (n, l) e' (AVar i)
-  in genStmt (acc ++ aasm, n', l', ep) xs
-genStmt (acc, n, l, ep) ((Simp (Expr e _) _) : xs) = 
+    (aasm, n', l') = genExp (n, l) e' (AVar i) lens
+  in genStmt (acc ++ aasm, n', l', ep) xs lens
+genStmt (acc, n, l, ep) ((Simp (Expr e _) _) : xs) lens = 
   let
-    (aasm, n', l') = genExp (n + 1, l) e (ATemp n)
-  in genStmt (acc ++ aasm, n', l', ep) xs
-genStmt (acc, n, l, ep) ((BlockStmt (Block stmts _) _) : xs) = 
+    (aasm, n', l') = genExp (n + 1, l) e (ATemp n) lens
+  in genStmt (acc ++ aasm, n', l', ep) xs lens
+genStmt (acc, n, l, ep) ((BlockStmt (Block stmts _) _) : xs) lens = 
   let
-    (aasm, n', l', ep') = genStmt ([], n, l, ep) stmts
-  in genStmt (acc ++ aasm, n', l', ep') xs
-genStmt (acc, n, l, ep) ((Ctrl (Return (Just e) _) _) : xs) =
+    (aasm, n', l', ep') = genStmt ([], n, l, ep) stmts lens
+  in genStmt (acc ++ aasm, n', l', ep') xs lens
+genStmt (acc, n, l, ep) ((Ctrl (Return (Just e) _) _) : xs) lens =
   let
-    (aasm, n', l') = genExp (n, l) e (ARes)
+    (aasm, n', l') = genExp (n, l) e (ARes) lens
     (epilogue, l'') = case ep of
       (Just ep') -> (ep', l') 
       Nothing -> (l'+1, l'+1)
   in (acc ++ aasm ++ [ACtrl $ Goto (show epilogue)], n', l'', Just epilogue)
-genStmt (acc, n, l, ep) ((Ctrl (Return Nothing _) _) : xs) =
+genStmt (acc, n, l, ep) ((Ctrl (Return Nothing _) _) : xs) _ =
   let
     (epilogue, l') = case ep of
       (Just ep') -> (ep', l) 
       Nothing -> (l+1, l+1)
   in (acc ++ [ACtrl $ Goto (show epilogue)], n, l', Just epilogue)
-genStmt (acc, n, l, ep) ((Ctrl (If e s Nothing _) _) : xs) =
+genStmt (acc, n, l, ep) ((Ctrl (If e s Nothing _) _) : xs) lens =
   let
-    (aasme, n', l') = genExp (n + 1, l) e (ATemp n)
-    (aasms, n'', l'', ep') = genStmt ([], n', l', ep) [s] 
+    (aasme, n', l') = genExp (n + 1, l) e (ATemp n) lens
+    (aasms, n'', l'', ep') = genStmt ([], n', l', ep) [s] lens
     aasm = [ACtrl $ Ifz (ALoc (ATemp n)) (show $ l''+2),
             ACtrl $ Goto (show $ l''+1),
             ACtrl $ Lbl (show $ l''+1)]
     aasm' = aasme ++ aasm ++ aasms ++
             [ACtrl $ Goto (show $ l''+2), ACtrl $ Lbl (show $ l''+2)]
-  in genStmt (acc ++ aasm', n'', l''+2, ep') xs
-genStmt (acc, n, l, ep) ((Ctrl (If e s1 (Just s2) _) _) : xs) =
+  in genStmt (acc ++ aasm', n'', l''+2, ep') xs lens
+genStmt (acc, n, l, ep) ((Ctrl (If e s1 (Just s2) _) _) : xs) lens =
   case e of
-   (TrueT _) -> genStmt (acc, n, l, ep) (s1 : xs) 
-   (FalseT _) -> genStmt (acc, n, l, ep) (s2 : xs)
+   (TrueT _) -> genStmt (acc, n, l, ep) (s1 : xs) lens
+   (FalseT _) -> genStmt (acc, n, l, ep) (s2 : xs) lens
    _ -> let
-     (aasme, n1, l1) = genExp (n+1, l) e (ATemp n)
-     (aasms1, n2, l2, ep2) = genStmt ([], n1, l1, ep) [s1] 
-     (aasms2, n3, l3, ep3) = genStmt ([], n2, l2, ep2) [s2] 
+     (aasme, n1, l1) = genExp (n+1, l) e (ATemp n) lens
+     (aasms1, n2, l2, ep2) = genStmt ([], n1, l1, ep) [s1] lens
+     (aasms2, n3, l3, ep3) = genStmt ([], n2, l2, ep2) [s2] lens
      aasm = [ACtrl $ Ifz (ALoc (ATemp n)) (show $ l3+2),
              ACtrl $ Goto (show $ l3+1),
              ACtrl $ Lbl (show $ l3+1)]
      aasm' = aasme ++ aasm ++ aasms1 ++
              [ACtrl $ Goto (show $ l3+3), ACtrl $ Lbl (show $ l3+2)] ++
              aasms2 ++ [ACtrl $ Goto (show $ l3+3), ACtrl $ Lbl (show $ l3+3)]
-     in genStmt (acc ++ aasm', n3, l3+3, ep3) xs
-genStmt (acc, n, l, ep) ((Ctrl (While e s _) _) : xs) =
+     in genStmt (acc ++ aasm', n3, l3+3, ep3) xs lens
+genStmt (acc, n, l, ep) ((Ctrl (While e s _) _) : xs) lens =
   case e of
-    (FalseT _) -> genStmt (acc, n, l, ep) xs
+    (FalseT _) -> genStmt (acc, n, l, ep) xs lens
     _ ->
       let
-        (aasme, n1, l1) = genExp (n+1, l) e (ATemp n)
-        (aasms, n2, l2, ep') = genStmt ([], n1, l1, ep) [s]
+        (aasme, n1, l1) = genExp (n+1, l) e (ATemp n) lens
+        (aasms, n2, l2, ep') = genStmt ([], n1, l1, ep) [s] lens
         aasm = [ACtrl $ Ifz (ALoc (ATemp n)) (show $ l2+3),
                 ACtrl $ Goto (show $ l2+2),
                 ACtrl $ Lbl (show $ l2+2)]
         aasm' = [ACtrl $ Goto (show $ l2+1), ACtrl $ Lbl (show $ l2+1)] ++ aasme ++ aasm ++ aasms ++
                 [ACtrl $ Goto (show $ l2+1), ACtrl $ Lbl (show $ l2+3)]
-      in genStmt (acc ++ aasm', n2, l2+3, ep') xs
-genStmt (acc, n, l, ep) ((Ctrl (For ms1 e ms2 s3 p) _) : xs) =
+      in genStmt (acc ++ aasm', n2, l2+3, ep') xs lens
+genStmt (acc, n, l, ep) ((Ctrl (For ms1 e ms2 s3 p) _) : xs) lens =
   let
     (init, n1, l1, ep1) = case ms1 of
       Nothing -> ([], n, l, ep)
-      (Just s1) -> genStmt ([], n, l, ep) [Simp s1 p]
-    (aasme, n2, l2) = genExp (n1+1, l1) e (ATemp n1)
+      (Just s1) -> genStmt ([], n, l, ep) [Simp s1 p] lens
+    (aasme, n2, l2) = genExp (n1+1, l1) e (ATemp n1) lens
     (step, n3, l3, ep2) = case ms2 of
       Nothing -> ([], n2, l2, ep1)
-      (Just s2) -> genStmt ([], n2, l2, ep1) [Simp s2 p]
-    (body, n4, l4, ep3) = genStmt ([], n3, l3, ep2) [s3]
+      (Just s2) -> genStmt ([], n2, l2, ep1) [Simp s2 p] lens
+    (body, n4, l4, ep3) = genStmt ([], n3, l3, ep2) [s3] lens
     aasm = init ++ [ACtrl $ Goto (show $ l4+1), ACtrl $ Lbl (show $ l4+1)] ++ aasme ++
            [ACtrl $ Ifz (ALoc (ATemp n1)) (show $ l4+3),
             ACtrl $ Goto (show $ l4+2),
             ACtrl $ Lbl (show $ l4+2)] ++ body ++ step ++
            [ACtrl $ Goto (show $ l4+1),
             ACtrl $ Lbl (show $ l4+3)]
-  in genStmt (acc ++ aasm, n4, l4+3, ep3) xs
-genStmt acc ((Ctrl (Assert e _) p) : xs) = let
-  s = Ctrl (If (ExpUnOp LNot e p) (Simp (Expr (App "abort" [] p) p) p) Nothing p) p
-  in genStmt acc (s : xs)
+  in genStmt (acc ++ aasm, n4, l4+3, ep3) xs lens
+genStmt acc ((Ctrl (Assert e _) p) : xs) lens = let
+  s = Ctrl (If (ExpUnOp LNot e p) (Simp (Expr (App "_c0_abort" [] p) p) p) Nothing p) p
+  in genStmt acc (s : xs) lens
      
-genExp :: (Int, Int) -> Expr -> ALoc -> ([AAsm], Int, Int)
-genExp (n,l) (ExpInt _ i _) loc = ([AAsm [loc] Nop [AImm $ fromIntegral i]], n, l)
-genExp (n,l) (TrueT _) loc = ([AAsm [loc] Nop [AImm 1]], n, l)
-genExp (n,l) (FalseT _) loc = ([AAsm [loc] Nop [AImm 0]], n, l)
-genExp (n,l) (Ident s _) loc = ([AAsm [loc] Nop [ALoc $ AVar s]], n, l)
-genExp (n,l) (ExpBinOp LAnd e1 e2 p) loc =
-  genExp (n,l) (ExpTernOp e1 e2 (FalseT p) p) loc
-genExp (n,l) (ExpBinOp LOr e1 e2 p) loc =
-  genExp (n,l) (ExpTernOp e1 (TrueT p) e2 p) loc
-genExp (n,l) (ExpBinOp op e1 e2 p) loc | op == Shl || op == Shr = let
+genExp :: (Int, Int) -> Expr -> ALoc -> [(String, Int)] -> ([AAsm], Int, Int)
+genExp (n,l) (ExpInt _ i _) loc _ = ([AAsm [loc] Nop [AImm $ fromIntegral i]], n, l)
+genExp (n,l) (TrueT _) loc _ = ([AAsm [loc] Nop [AImm 1]], n, l)
+genExp (n,l) (FalseT _) loc _ = ([AAsm [loc] Nop [AImm 0]], n, l)
+genExp (n,l) (Ident s _) loc _ = ([AAsm [loc] Nop [ALoc $ AVar s]], n, l)
+genExp (n,l) (ExpBinOp LAnd e1 e2 p) loc lens =
+  genExp (n,l) (ExpTernOp e1 e2 (FalseT p) p) loc lens
+genExp (n,l) (ExpBinOp LOr e1 e2 p) loc lens =
+  genExp (n,l) (ExpTernOp e1 (TrueT p) e2 p) loc lens
+genExp (n,l) (ExpBinOp op e1 e2 p) loc lens | op == Shl || op == Shr = let
   div = ExpBinOp Div (ExpInt Dec 1 p) (ExpInt Dec 0 p) p
   cond = ExpBinOp LOr (ExpBinOp Gt e2 (ExpInt Dec 31 p) p)
          (ExpBinOp Lt e2 (ExpInt Dec 0 p) p) p
   sop = case op of
     Shl -> SShl
     Shr -> SShr
-  in genExp (n,l) (ExpTernOp cond div (ExpBinOp sop e1 e2 p) p) loc
-genExp (n,l) (ExpBinOp op e1 e2 _) loc = 
+  in genExp (n,l) (ExpTernOp cond div (ExpBinOp sop e1 e2 p) p) loc lens
+genExp (n,l) (ExpBinOp op e1 e2 _) loc lens = 
   case (op, e1, e2) of
     (Add, ExpInt _ i1 _, ExpInt _ i2 _) ->
       ([AAsm [loc] Nop [AImm $ fromIntegral $ i1 + i2]], n, l)
     _ -> let
-      (i1, n', l') = genExp (n + 1, l) e1 (ATemp n)
-      (i2, n'', l'') = genExp (n' + 1, l') e2 (ATemp n')
+      (i1, n', l') = genExp (n + 1, l) e1 (ATemp n) lens
+      (i2, n'', l'') = genExp (n' + 1, l') e2 (ATemp n') lens
       aasm  = [AAsm [loc] op [ALoc $ ATemp n, ALoc $ ATemp $ n']]
       in (i1 ++ i2 ++ aasm, n'', l'')
-genExp (n,l) (ExpUnOp Incr (Ident i _) p) _ = let
+genExp (n,l) (ExpUnOp Incr (Ident i _) p) _ lens = let
   e' = ExpBinOp Add (Ident i p) (ExpInt Dec 1 p) p
-  in genExp (n, l) e' (AVar i)
-genExp (n,l) (ExpUnOp Decr (Ident i _) p) _ = let
+  in genExp (n, l) e' (AVar i) lens
+genExp (n,l) (ExpUnOp Decr (Ident i _) p) _ lens = let
   e' = ExpBinOp Sub (Ident i p) (ExpInt Dec 1 p) p
-  in genExp (n, l) e' (AVar i)
-genExp (n,l) (ExpUnOp op e _) loc = let
-  (i1, n', l') = genExp (n + 1, l) e (ATemp n)
+  in genExp (n, l) e' (AVar i) lens
+genExp (n,l) (ExpUnOp op e _) loc lens = let
+  (i1, n', l') = genExp (n + 1, l) e (ATemp n) lens
   aasm = [AAsm [loc] op [ALoc $ ATemp n]]
   in (i1 ++ aasm, n', l')
-genExp (n, l) (ExpTernOp e1 e2 e3 _) loc = 
+genExp (n, l) (ExpTernOp e1 e2 e3 _) loc lens = 
   case e1 of
-    (TrueT _) -> genExp (n, l) e2 loc
-    (FalseT _) -> genExp (n, l) e3 loc
+    (TrueT _) -> genExp (n, l) e2 loc lens
+    (FalseT _) -> genExp (n, l) e3 loc lens
     _ ->
       let
-        (i1, n1, l1) = genExp (n+1, l) e1 (ATemp n)
-        (i2, n2, l2) = genExp (n1+1, l1) e2 loc
-        (i3, n3, l3) = genExp (n2+1, l2) e3 loc
+        (i1, n1, l1) = genExp (n+1, l) e1 (ATemp n) lens
+        (i2, n2, l2) = genExp (n1+1, l1) e2 loc lens
+        (i3, n3, l3) = genExp (n2+1, l2) e3 loc lens
         aasm = i1 ++ [ACtrl $ Ifz (ALoc (ATemp n)) (show $ l3+2),
                       ACtrl $ Goto (show $ l3+1),
                       ACtrl $ Lbl (show $ l3+1)] ++
@@ -233,21 +234,22 @@ genExp (n, l) (ExpTernOp e1 e2 e3 _) loc =
                i3 ++ [ACtrl $ Goto (show $ l3+3),
                       ACtrl $ Lbl (show $ l3+3)]
       in (aasm, n3, l3+3)
-genExp (n, l) (App f es _) loc = let
-  (computeArgs, temps, n', l') =
-    foldr (\e -> \(aasm, temps, n1, l1) -> let
-              (code, n2, l2) = genExp (n1+1, l1) e (ATemp n1)
-              in (code ++ aasm, n1 : temps, n2, l2)) ([], [], n, l) es
-  --TODO: more than 6 args
-  (front,rest) = splitAt 6 temps
-  --moveRestArgs = map (\t -> APush (ATemp t)) (reverse rest)
-  moveFrontArgs = map (\(i, t) ->
-                   AAsm {aAssign = [AArg i], aOp = Nop, aArgs = [ALoc $ ATemp t]})
-             $ zip [0..] front
-  --restoreRestArgs = map (\t -> APop (ATemp t)) rest
-  aasm = computeArgs ++ moveFrontArgs ++ [ACtrl $ Call f rest] ++
-         [AAsm {aAssign = [loc], aOp = Nop, aArgs = [ALoc $ ARes]}]
-  in (aasm, n', l')
+genExp (n, l) (App f es _) loc lens =
+  case lookup f lens of
+    Just 0 -> ([], n, l)
+    _ ->
+      let
+        (computeArgs, temps, n', l') =
+          foldr (\e -> \(aasm, temps, n1, l1) -> let
+                    (code, n2, l2) = genExp (n1+1, l1) e (ATemp n1) lens
+                    in (code ++ aasm, n1 : temps, n2, l2)) ([], [], n, l) es
+        (front,rest) = splitAt 6 temps
+        moveFrontArgs = map (\(i, t) ->
+                              AAsm {aAssign = [AArg i], aOp = Nop, aArgs = [ALoc $ ATemp t]})
+                        $ zip [0..] front
+        aasm = computeArgs ++ moveFrontArgs ++ [ACtrl $ Call f rest] ++
+               [AAsm {aAssign = [loc], aOp = Nop, aArgs = [ALoc $ ARes]}]
+      in (aasm, n', l')
                   
      
 -- begin 'temp -> register' translation
