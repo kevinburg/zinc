@@ -297,9 +297,12 @@ translate regMap _ (AAsm {aAssign = [dest], aOp = Sub, aArgs = [src1, src2]}) =
    case (s, s2) of
      _ ->
        if s2 == dest' then
+         if s == s2 then
          [Negl s2,
           Movl s (Reg R15D),
-          Addl (Reg R15D) s2] 
+          Addl (Reg R15D) s2] else
+           [Negl s2,
+            Addl s s2]
        else
          [Movl s (Reg R15D),
           Movl (Reg R15D) dest',
@@ -407,8 +410,11 @@ translate regMap n (ACtrl (Call s ts)) = let
               s -> ([Movl s (Stk (-i*8))] : acc, i+1)) ([], 1) ts
   saves = concat l
   restores = map (\(Movl x y) -> Movl y x) (reverse saves)
-  in saves ++ [Subb (Val $ (length ts)*8) (Reg RSP)] ++ [AsmCall s] ++ 
-     [Addd (Val $ (length ts)*8) (Reg RSP)] ++ restores
+  in if ((length ts)*8) > 0 then
+       saves ++ [Subb (Val $ (length ts)*8) (Reg RSP)] ++ [AsmCall s] ++ 
+       [Addd (Val $ (length ts)*8) (Reg RSP)] ++ restores
+     else
+       [AsmCall s]
 translate regMap _ (ACtrl (Ret (ALoc loc))) =
   [Pop (Reg RBP), AsmRet]
 translate regMap _ (ACtrl (Lbl l)) = 

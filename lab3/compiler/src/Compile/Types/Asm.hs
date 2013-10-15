@@ -85,7 +85,7 @@ instance Show Asm where
   show (Je s) = "\tje ." ++ s
   show (Cmpl e1 e2) = "\tcmpl " ++ show e1 ++ ", " ++ show e2
   show (AsmLbl s) = "." ++ s ++ ":"
-  show (AsmCall s) = "\tmov $0, %al\n" ++ if s == "_c0_abort" then
+  show (AsmCall s) = "\txorb %al, %al\n" ++ if s == "_c0_abort" then
                                             "\tcall abort" else
     if s == "fadd" || s == "fsub" || s == "fmul" ||
        s == "fdiv" || s == "fless" || s == "itof" ||
