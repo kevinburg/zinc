@@ -87,11 +87,11 @@ instance Show Asm where
   show (Cmpl e1 e2) = "\tcmpl " ++ show e1 ++ ", " ++ show e2
   show (AsmLbl s) = "." ++ s ++ ":"
   show (AsmCall s) = "\tmov $0, %al\n" ++ if s == "_c0_abort" then
-                                            "\tcall _abort" else
+                                            "\tcall abort" else
     if s == "fadd" || s == "fsub" || s == "fmul" ||
        s == "fdiv" || s == "fless" || s == "itof" ||
        s == "ftoi" || s == "print_fpt" || s == "print_int" ||
-       s == "print_hex" then "\tcall _" ++ s
+       s == "print_hex" then "\tcall " ++ s
     else "\tcall _c0_" ++ s
   show (Setl e) = "\tsetl " ++ (show e)
   show (Sete e) = "\tsete " ++ (show e)
