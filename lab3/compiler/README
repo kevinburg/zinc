@@ -54,3 +54,10 @@ Elaborate:
     -Elaborates on the PST, checking for errors in the format of expressions
     -Turns the PST into a different form of AST
 
+Function Calls:
+    -Obey calling conventions
+    -Make sure %al is set to 0 before calling printf which uses %al to
+        determine the number of arguments passed to it.
+    -Sign extend %al into %eax when receiving a boolean from C library
+        functions so as to use more than 1 byte for comparisons
+    -Generate code for each individual function
