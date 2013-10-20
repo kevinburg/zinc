@@ -12,7 +12,7 @@ elaborate :: Program -> Either String
                                    (Type, [Param], S, Map.Map String Type,
                                     Map.Map String (Type, [Type])))])
 elaborate (Program gdecls) =
-  case partProgram gdecls (Map.singleton "fpt" Int, Map.empty, []) of
+  case trace (show gdecls) $ partProgram gdecls (Map.singleton "fpt" Int, Map.empty, []) of
     Left err -> Left err
     Right (typedef, fdecl, fdefn) -> let
       res = map (\(key,(t, p, Block b _, t1, t2)) -> (key,(t, p, elaborate' b, t1, t2))) fdefn

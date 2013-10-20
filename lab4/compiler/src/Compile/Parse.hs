@@ -67,8 +67,34 @@ gdecl = try (do
                 i <- identifier
                 params <- parens $ commaSep param
                 b <- block
-                return $ FDefn t i params b p)
+                return $ FDefn t i params b p) <|>
+        try (do
+                p <- getPosition
+                reserved "struct"
+                i <- identifier
+                semi
+                return $ SDecl i p) <|>
+        try (do
+                p <- getPosition
+                reserved "struct"
+                i <- identifier
+                fields <- braces $ fieldList
+                semi
+                return $ SDefn i fields p)
         <?> "gdecl"
+
+field = do
+  t <- typeParse
+  i <- identifier
+  semi
+  return $ Param t i
+
+fieldList =
+  try (do
+          f <- field
+          fs <- fieldList
+          return $ f : fs
+      ) <|> do return []
 
 param :: C0Parser Param
 param = do
