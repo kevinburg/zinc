@@ -40,6 +40,8 @@ data Expr = ExpInt IntT Integer SourcePos
           | ExpBinOp Op Expr Expr SourcePos
           | ExpTernOp Expr Expr Expr SourcePos
           | App String [Expr] SourcePos
+          | Arrow Expr String SourcePos
+          | Dot Expr String SourcePos
 data IntT = Hex | Dec deriving Show
 
 instance Show Program where
@@ -68,6 +70,8 @@ instance Show Expr where
   show (ExpBinOp op e1 e2 _) = "(ExpBinOp " ++ (show op) ++ " " ++ (show e1) ++ " " ++ (show e2) ++ ")"
   show (ExpTernOp e1 e2 e3 _) = "(ExpTernOp " ++ (show e1) ++ " " ++ (show e2) ++ " " ++ (show e3) ++ ")"
   show (App f a _) = "(App " ++ f ++ " " ++ (show a) ++ ")"
+  show (Arrow e i _) = "(Arrow " ++ (show e) ++ " " ++ i ++ ")"
+  show (Dot e i _) = "(Dot " ++ (show e) ++ " " ++ i ++ ")"
   
 instance Show Ctrl where
   show (Return e _) = "(Return " ++ (show e) ++ ")"

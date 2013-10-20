@@ -9,7 +9,10 @@ module Compile.Types.Ops where
 data Type = Int 
           | Bool 
           | Void 
-          | Type String 
+          | Type String
+          | Struct String
+          | Pointer Type
+          | Array Type
           | Map [Type] Type deriving (Eq, Show)
 
 data Op = Mul
@@ -17,6 +20,7 @@ data Op = Mul
         | Sub
         | Div
         | Neg
+        | Deref
         | Mod
         | BAnd
         | BXor
@@ -70,6 +74,7 @@ instance Show Op where
   show Sub = "-"
   show Div = "/"
   show Neg = "-"
+  show Deref = "Deref"
   show Mod = "%"
   show LAnd = "&&"
   show LOr = "||"

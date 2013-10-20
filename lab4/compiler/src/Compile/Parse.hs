@@ -239,23 +239,42 @@ simpOpt = try (do
 
 
 typeParse :: C0Parser Type
-typeParse = try (do
-                    pos <- getPosition
-                    reserved "int"
-                    return Int) <|>
-            try (do
-                    pos <- getPosition
-                    reserved "bool"
-                    return Bool) <|>
-            try (do
-                    pos <- getPosition
-                    reserved "void"
-                    return Void) <|>
-            try (do
-                    pos <- getPosition
-                    i <- identifier
-                    return $ Type i) 
-            <?> "type"
+typeParse = do
+  t <- simpleType
+  f <- typeEnd
+  return $ f t
+  <?> "type"
+
+typeEnd = try (do
+                  reservedOp "*"
+                  f <- typeEnd
+                  return (\x -> f $ Pointer x)) <|>
+          try (do
+                  reservedOp "["
+                  reservedOp "]"
+                  f <- typeEnd
+                  return (\x -> f $ Array x)) <|>
+          try (do
+                  return (\x -> x)) 
+          <?> "typeEnd"
+
+simpleType = try (do
+                     reserved "int"
+                     return Int) <|>
+             try (do
+                     reserved "bool"
+                     return Bool) <|>
+             try (do
+                     reserved "void"
+                     return Void) <|>
+             try (do
+                     reserved "struct"
+                     i <- identifier
+                     return $ Struct i) <|>
+             try (do
+                     i <- identifier
+                     return $ Type i)
+             <?> "type"
 
 asnOp :: C0Parser (Maybe Op)
 asnOp = do
@@ -289,7 +308,7 @@ ternOp = try (do
                  l <- expr
                  reservedOp ":"
                  r <- expr
-                 return $ Just (l,r)) <|> 
+                 return $ Just (l,r)) <|>
          do return Nothing
 
 expr :: C0Parser Expr
@@ -302,7 +321,7 @@ expr = do
                      return $ ExpTernOp e l r p 
 
 expr' :: C0Parser Expr
-expr' = buildExpressionParser opTable term  <?> "expr"
+expr' = buildExpressionParser opTable term <?> "expr"
 
 term :: C0Parser Expr
 term = do
@@ -355,7 +374,8 @@ c0Def = LanguageDef
                        "return", "break", "continue", "NULL", "alloc",
                        "alloc_array", "typedef", "struct", "else", "assert",
                        "true", "false", "bool"],
-    reservedOpNames = ["+",  "*",  "-",  "/",  "%", "?", ":", "->", ".", "--", "++"],
+    reservedOpNames = ["+",  "*",  "-",  "/",  "%", "?", ":", "->", ".", "--",
+                       "++", "[", "]"],
     caseSensitive   = True}
 
 c0Tokens :: Tok.GenTokenParser ByteString () Identity
@@ -392,6 +412,7 @@ brackets   = Tok.brackets c0Tokens
 
 opTable = [[prefix "--" (ExpUnOp Fail),
             prefix  "-"   (ExpUnOp Neg),
+            prefix  "*"   (ExpUnOp Deref),
             prefix  "~"   (ExpUnOp BNot),
             prefix  "!"   (ExpUnOp LNot)],
            [binary  "*"   (ExpBinOp Mul)  AssocLeft,
