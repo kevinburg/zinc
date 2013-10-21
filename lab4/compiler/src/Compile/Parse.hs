@@ -323,14 +323,42 @@ expr = do
 expr' :: C0Parser Expr
 expr' = buildExpressionParser opTable term <?> "expr"
 
-term :: C0Parser Expr
 term = do
-  parens expr <|>
-          try (do
+  t <- termFront
+  f <- termEnd
+  return $ f t
+
+termEnd = try (do
                   p <- getPosition
-                  i <- identifier
-                  args <- parens $ commaSep expr
-                  return $ App i args p) <|>
+                  reservedOp "["
+                  e <- expr
+                  reserved "]"
+                  f <- termEnd
+                  return (\t -> f $ Subscr t e p)) <|>
+          (do return (\t -> t))
+
+termFront :: C0Parser Expr
+termFront = do
+  parens expr <|>
+    try (do
+            p <- getPosition
+            reserved "alloc_array"
+            (t, e) <- parens (do
+                                 t <- typeParse
+                                 comma
+                                 e <- expr
+                                 return (t,e))
+            return $ AllocArray t e p) <|>
+    try (do
+            p <- getPosition
+            reserved "alloc"
+            t <- parens typeParse
+            return $ Alloc t p) <|>
+    try (do
+            p <- getPosition
+            i <- identifier
+            args <- parens $ commaSep expr
+            return $ App i args p) <|>
    (do p <- getPosition
        i <- identifier
        return $ Ident i p) <|>
@@ -340,6 +368,9 @@ term = do
    (do p <- getPosition
        reserved "false"
        return $ FalseT p) <|>
+   (do p <- getPosition
+       reserved "NULL"
+       return $ Null p) <|>
    try (do
            p <- getPosition
            n <- hexadecimal

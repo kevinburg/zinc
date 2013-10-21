@@ -41,10 +41,14 @@ data Expr = ExpInt IntT Integer SourcePos
           | TrueT SourcePos
           | FalseT SourcePos
           | Ident String SourcePos
+          | Null SourcePos
           | ExpUnOp Op Expr SourcePos
           | ExpBinOp Op Expr Expr SourcePos
           | ExpTernOp Expr Expr Expr SourcePos
           | App String [Expr] SourcePos
+          | Alloc Type SourcePos
+          | AllocArray Type Expr SourcePos
+          | Subscr Expr Expr SourcePos
 data IntT = Hex | Dec deriving Show
 
 instance Show Program where
@@ -69,10 +73,14 @@ instance Show Expr where
   show (TrueT _) = "true"
   show (FalseT _) = "false"
   show (Ident s _) = "(Ident " ++ s ++ ")"
+  show (Null _) = "(NULL)"
   show (ExpUnOp op e _) = "(ExpUnOp " ++ (show op) ++ " " ++ (show e) ++ ")"
   show (ExpBinOp op e1 e2 _) = "(ExpBinOp " ++ (show op) ++ " " ++ (show e1) ++ " " ++ (show e2) ++ ")"
   show (ExpTernOp e1 e2 e3 _) = "(ExpTernOp " ++ (show e1) ++ " " ++ (show e2) ++ " " ++ (show e3) ++ ")"
   show (App f a _) = "(App " ++ f ++ " " ++ (show a) ++ ")"
+  show (Alloc t _) = "(Alloc " ++ (show t) ++ ")"
+  show (AllocArray t e _) = "(AllocArray " ++ (show t) ++ " " ++ (show e) ++ ")"
+  show (Subscr e1 e2 _) = "(Subscr " ++ (show e1) ++ " " ++ (show e2) ++ ")"
   
 instance Show Ctrl where
   show (Return e _) = "(Return " ++ (show e) ++ ")"
