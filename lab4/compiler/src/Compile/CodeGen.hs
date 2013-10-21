@@ -16,7 +16,7 @@ import Debug.Trace
 import Compile.SSA
 
 codeGen :: Program -> Map.Map String [Asm]
-codeGen (Program gdecls) =
+codeGen (Program gdecls) = Map.empty {-
   let
     fdefns = concatMap (\x -> case x of
                            (FDefn _ s p (Block b _) _) -> [(s,p,b)]
@@ -550,3 +550,4 @@ lowerReg (Reg R12D) = Reg R12B
 lowerReg (Reg R13D) = Reg R13B
 lowerReg (Reg R14D) = Reg R14B
 lowerReg x = x
+-}

@@ -11,7 +11,8 @@ elaborate :: Program -> Either String
              (Map.Map String Type, [(String,
                                    (Type, [Param], S, Map.Map String Type,
                                     Map.Map String (Type, [Type])))])
-elaborate (Program gdecls) =
+elaborate (Program gdecls) = trace (show gdecls) $ Left "lol"
+{-
   case trace (show gdecls) $ partProgram gdecls (Map.singleton "fpt" Int, Map.empty, []) of
     Left err -> Left err
     Right (typedef, fdecl, fdefn) -> let
@@ -197,3 +198,4 @@ contained i (ExpUnOp _ e _) = contained i e
 contained i (ExpBinOp _ e1 e2 _) = contained i e1 || contained i e2
 contained i (ExpTernOp e1 e2 e3 _) = contained i e1 || contained i e2 || contained i e3
 contained _ _ = False
+-}

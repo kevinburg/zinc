@@ -21,9 +21,14 @@ data GDecl = TypeDef Type String SourcePos
 data Param = Param Type String deriving Show
 data Block = Block [Stmt] SourcePos
 data Simp = Decl Type String (Maybe Expr) SourcePos
-          | Asgn String (Maybe Op) Expr SourcePos
-          | PostOp Op Expr SourcePos
+          | Asgn LValue (Maybe Op) Expr SourcePos
+          | PostOp Op LValue SourcePos
           | Expr Expr SourcePos
+data LValue = LIdent String
+            | LArrow LValue String
+            | LDot LValue String
+            | LDeref LValue
+            | LArray LValue Expr deriving Show
 data Stmt = Simp Simp SourcePos
           | Ctrl Ctrl SourcePos
           | BlockStmt Block SourcePos
@@ -40,8 +45,6 @@ data Expr = ExpInt IntT Integer SourcePos
           | ExpBinOp Op Expr Expr SourcePos
           | ExpTernOp Expr Expr Expr SourcePos
           | App String [Expr] SourcePos
-          | Arrow Expr String SourcePos
-          | Dot Expr String SourcePos
 data IntT = Hex | Dec deriving Show
 
 instance Show Program where
@@ -52,8 +55,8 @@ instance Show Block where
   
 instance Show Simp where
   show (Decl t s e _) = "(Decl " ++ (show t) ++ " " ++ s ++ " " ++ (show e) ++ ")"
-  show (Asgn s op e _) = "(Asgn " ++ s ++ " " ++ (show op) ++ " " ++ (show e) ++ ")"
-  show (PostOp op e _) = "(PostOp " ++ (show op) ++ " " ++ (show e) ++ ")"
+  show (Asgn l op e _) = "(Asgn " ++ (show l) ++ " " ++ (show op) ++ " " ++ (show e) ++ ")"
+  show (PostOp op l _) = "(PostOp " ++ (show op) ++ " " ++ (show l) ++ ")"
   show (Expr e _) = "(Expr " ++ (show e) ++ ")"
 
 instance Show Stmt where
@@ -70,8 +73,6 @@ instance Show Expr where
   show (ExpBinOp op e1 e2 _) = "(ExpBinOp " ++ (show op) ++ " " ++ (show e1) ++ " " ++ (show e2) ++ ")"
   show (ExpTernOp e1 e2 e3 _) = "(ExpTernOp " ++ (show e1) ++ " " ++ (show e2) ++ " " ++ (show e3) ++ ")"
   show (App f a _) = "(App " ++ f ++ " " ++ (show a) ++ ")"
-  show (Arrow e i _) = "(Arrow " ++ (show e) ++ " " ++ i ++ ")"
-  show (Dot e i _) = "(Dot " ++ (show e) ++ " " ++ i ++ ")"
   
 instance Show Ctrl where
   show (Return e _) = "(Return " ++ (show e) ++ ")"

@@ -21,6 +21,8 @@ data Op = Mul
         | Div
         | Neg
         | Deref
+        | Arrow
+        | Dot
         | Mod
         | BAnd
         | BXor
@@ -75,6 +77,8 @@ instance Show Op where
   show Div = "/"
   show Neg = "-"
   show Deref = "Deref"
+  show Arrow = "->"
+  show Dot = "."
   show Mod = "%"
   show LAnd = "&&"
   show LOr = "||"

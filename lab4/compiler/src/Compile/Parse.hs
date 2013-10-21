@@ -118,7 +118,7 @@ stmt = try (do
                op <- postOp
                semi
                case op of
-                 Just o -> return $ Simp (PostOp o (Ident dest pos) pos) pos
+                 Just o -> return $ Simp (PostOp o dest pos) pos
                  Nothing -> Text.ParserCombinators.Parsec.unexpected "asdfdsf") <|>
        try (do
                pos <- getPosition
@@ -163,7 +163,7 @@ simp = try (do
                dest <- lvalue
                op <- postOp
                case op of
-                 Just o -> return $ PostOp o (Ident dest pos) pos
+                 Just o -> return $ PostOp o dest pos
                  Nothing -> Text.ParserCombinators.Parsec.unexpected "asdfdsf") <|>
        try (do
                pos <- getPosition
@@ -351,13 +351,38 @@ term = do
    <?> "term"
 
 lvalue = do
-  parens lvalue
-  <|>
-  (do
-      i <- identifier
-      return i)
-  <?> "lvalue"
+  l <- lvalueFront
+  f <- lvalueEnd
+  return $ f l
 
+lvalueFront = try (do parens lvalue) <|>
+              try (do
+                      reservedOp "*"
+                      l <- lvalue
+                      return $ LDeref l) <|>
+              try (do
+                      i <- identifier
+                      return $ LIdent i)
+              <?> "lvalueFront"
+
+lvalueEnd = try (do
+                    reservedOp "->"
+                    i <- identifier
+                    f <- lvalueEnd
+                    return $ (\l -> f $ LArrow l i)) <|>
+            try (do
+                    reservedOp "."
+                    i <- identifier
+                    f <- lvalueEnd
+                    return $ (\l -> f $ LDot l i)) <|>
+            try (do
+                    reservedOp "["
+                    e <- expr
+                    reservedOp "]"
+                    f <- lvalueEnd
+                    return $ (\l -> f $ LArray l e)) <|>
+            (do return (\l -> l))
+                    
 c0Def :: GenLanguageDef ByteString () Identity
 c0Def = LanguageDef
    {commentStart    = string "/*",
@@ -410,7 +435,9 @@ semiSep    = Tok.semiSep c0Tokens
 brackets   :: C0Parser a -> C0Parser a
 brackets   = Tok.brackets c0Tokens
 
-opTable = [[prefix "--" (ExpUnOp Fail),
+opTable = [[binary "->" (ExpBinOp Arrow) AssocLeft,
+            binary "."  (ExpBinOp Dot) AssocLeft],
+           [prefix "--" (ExpUnOp Fail),
             prefix  "-"   (ExpUnOp Neg),
             prefix  "*"   (ExpUnOp Deref),
             prefix  "~"   (ExpUnOp BNot),
