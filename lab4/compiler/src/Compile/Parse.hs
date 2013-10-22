@@ -8,12 +8,13 @@ import Control.Monad.Error
 import Data.ByteString as BS
 import Data.ByteString.Char8 as C8
 import Compile.Types
+import qualified Data.List as List
 
 import LiftIOE
 
 import Text.ParserCombinators.Parsec hiding (try)
 import Control.Monad.Identity                 -- For our custom Language Definition
-import Text.Parsec hiding (parse)             -- Parser Combinators
+import Text.Parsec --hiding (parse)             -- Parser Combinators
 import Text.Parsec.Expr                       -- Expression Parser Generator
 import Text.Parsec.Token (GenLanguageDef(..)) -- Language Definition Structure
 import qualified Text.Parsec.Token as Tok
@@ -23,11 +24,11 @@ import Debug.Trace
 parseAST :: FilePath -> ErrorT String IO Program
 parseAST file = do
   code <- liftIOE $ BS.readFile file
-  case parse programParser file code of
+  case Text.Parsec.runParser programParser [] file code of
     Left e  -> throwError (show e)
     Right a -> return a
 
-type C0Parser = Parsec ByteString ()
+type C0Parser = Parsec ByteString [String]
 
 programParser :: C0Parser Program
 programParser = do
@@ -53,6 +54,8 @@ gdecl = try (do
                 t <- typeParse
                 i <- identifier
                 semi
+                s <- getState
+                putState (i : s)
                 return $ TypeDef t i p) <|>
         try (do
                 p <- getPosition
@@ -157,7 +160,15 @@ simp = try (do
                pos <- getPosition
                t <- typeParse
                ident <- identifier
-               return $ Decl t ident Nothing pos) <|>
+               s <- getState
+               case t of
+                 Pointer (Type i) ->
+                   if List.elem i s then 
+                     return $ Decl t ident Nothing pos
+                   else
+                     Text.ParserCombinators.Parsec.unexpected "ug"
+                 _ ->
+                   return $ Decl t ident Nothing pos) <|>
        try (do
                pos <- getPosition
                dest <- lvalue
@@ -414,7 +425,7 @@ lvalueEnd = try (do
                     return $ (\l -> f $ LArray l e)) <|>
             (do return (\l -> l))
                     
-c0Def :: GenLanguageDef ByteString () Identity
+c0Def :: GenLanguageDef ByteString [String] Identity
 c0Def = LanguageDef
    {commentStart    = string "/*",
     commentStartStr = "/*",
@@ -434,7 +445,7 @@ c0Def = LanguageDef
                        "++", "[", "]"],
     caseSensitive   = True}
 
-c0Tokens :: Tok.GenTokenParser ByteString () Identity
+c0Tokens :: Tok.GenTokenParser ByteString [String] Identity
 c0Tokens = Tok.makeTokenParser c0Def
 
 reserved   :: String -> C0Parser ()
@@ -494,11 +505,12 @@ opTable = [[binary "->" (ExpBinOp Arrow) AssocLeft,
           {-
 We used a few helper functions which are in the Parsec documentation of Text.Parsec.Expr, located at \url{http://hackage.haskell.org/packages/archive/parsec/3.1.0/doc/html/Text-Parsec-Expr.html} The functions ``binary'', ``prefix'', and ``postfix'' were taken from there and are not my work, however they are used because rewriting them would look much the same, and they do not provide any core functionality, just make my code easier to read. Type signatures and location annotations were added by me.
 -}
-binary :: String -> (a -> a -> SourcePos -> a) -> Assoc -> Operator ByteString () Identity a
+binary :: String -> (a -> a -> SourcePos -> a) -> Assoc ->
+          Operator ByteString [String] Identity a
 binary  name f = Infix $ do pos <- getPosition
                             reservedOp name
                             return $ \x y -> f x y pos
-prefix :: String -> (a -> SourcePos -> a) -> Operator ByteString () Identity a
+prefix :: String -> (a -> SourcePos -> a) -> Operator ByteString [String] Identity a
 prefix  name f = Prefix $ do pos <- getPosition
                              reservedOp name
                              return $ \x -> f x pos
