@@ -1,0 +1,20 @@
+//struct blah;
+int foo(struct blah* b);
+
+int main(){
+    struct blah* b = NULL;
+    int x = foo(b);
+    return x;
+}
+
+struct blah{
+    int y;
+};
+
+typedef struct blah* blahp;
+
+int foo(blahp b){
+    b = alloc(struct blah);
+    b->y = 5;
+    return b->y;
+}
