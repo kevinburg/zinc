@@ -325,7 +325,6 @@ checkE (Alloc t _) ctx d =
   case t of
     Void -> BadE "Can't allocate pointer of type void"
     Map _ _ -> BadE "awww shit...."
-    Array _ -> BadE "Don't you mean alloc_array?"
     _ -> ValidE (Pointer t)
 checkE (AllocArray t e _) ctx d =
   case checkE e ctx d of
