@@ -10,12 +10,13 @@ import Compile.CheckAST
 elaborate :: Program -> Either String
              (Map.Map String Type, [(String,
                                    (Type, [Param], S, Map.Map String Type,
-                                    Map.Map String (Type, [Type])))])
+                                    Map.Map String (Type, [Type])))], Map.Map (String, String) Type)
 elaborate (Program gdecls) =
   case partProgram gdecls (Map.singleton "fpt" Int, Map.empty, [], Map.empty) of
     Left err -> Left err
-    Right (typedef, fdecl, fdefn, _) -> let
+    Right (typedef, fdecl, fdefn, sdefn) -> let
       res = map (\(key,(t, p, Block b _, t1, t2)) -> (key,(t, p, elaborate' b, t1, t2))) fdefn
+      smap = Map.unions $ map (\(k, p)-> Map.unions $ map (\(Param t s) -> Map.insert (k,s) t Map.empty) p) $ Map.toList sdefn
       in case foldr
               (\(key, val) -> \acc ->
                 case (acc, val) of
@@ -24,7 +25,7 @@ elaborate (Program gdecls) =
                   (Right m, (t, p, Right val', a, b)) ->
                     Right $ (key,(t, p, val', a, b)) : m) (Right []) res of
            Left s -> Left s
-           Right m -> Right (typedef, m)
+           Right m -> trace (show smap) $ Right (typedef, m, smap)
 
 partProgram [] acc = Right acc
 partProgram ((TypeDef t s _) : xs) (typedef, fdecl, fdefn, sdefn) =
@@ -101,7 +102,7 @@ elaborate' ((Simp (Decl t i Nothing _) _) : xs) =
   case elaborate' xs of
     Left s -> Left s
     Right s -> Right (ADeclare i t s)
-elaborate' ((Simp (Decl t i (Just e) _) _) : xs) =
+elaborate' ((Simp (Decl t i (Just e) p) _) : xs) =
   case elaborate' xs of
     Left s -> Left s
     Right s ->

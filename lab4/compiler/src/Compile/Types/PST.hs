@@ -28,7 +28,7 @@ data LValue = LIdent String
             | LArrow LValue String
             | LDot LValue String
             | LDeref LValue
-            | LArray LValue Expr deriving Show
+            | LArray LValue Expr -- deriving Show
 data Stmt = Simp Simp SourcePos
           | Ctrl Ctrl SourcePos
           | BlockStmt Block SourcePos
@@ -67,7 +67,14 @@ instance Show Stmt where
   show (Simp s _) = "(Simp " ++ (show s) ++ ")"
   show (Ctrl c _) = "(Ctrl " ++ (show c) ++ ")"
   show (BlockStmt b _) = "\n\n\t(BlockStmt " ++ (show b) ++ ")\n\n\t"
-  
+
+instance Show LValue where
+  show (LIdent s) = "(LIdent " ++ (show s) ++ ")"
+  show (LArrow l s) = "(LArrow " ++ (show l) ++ " " ++ (show s) ++ ")"
+  show (LDot l s) = "(LDot " ++ (show l) ++ " " ++ (show s) ++ ")"
+  show (LDeref l) = "(LDeref " ++ (show l) ++ ")"
+  show (LArray l e) = "(LArray " ++ (show l) ++ " " ++ (show e) ++ ")"
+
 instance Show Expr where
   show (ExpInt _ i _) = "(ExpInt " ++ (show i) ++ ")"
   show (TrueT _) = "true"

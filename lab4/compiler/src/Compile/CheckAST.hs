@@ -9,8 +9,9 @@ import Debug.Trace
 checkAST :: (Map.Map String Type, [(String,
                                   (Type, [Param], S,
                                    Map.Map String Type,
-                                   Map.Map String (Type, [Type])))]) -> Either String ()
-checkAST (typedef, fdefns) =
+                                   Map.Map String (Type, [Type])))],
+             Map.Map (String, String) Type) -> Either String ()
+checkAST (typedef, fdefns, smap) =
   let
     (_, ctx) = addHeader typedef
   in
@@ -31,7 +32,7 @@ checkAST (typedef, fdefns) =
                  ctx' = Map.unions [ctx, Map.map (\(t1,t2) -> Map t2 t1) fdecls,
                                     Map.singleton fun (Map ts output)]
                  ctx'' = Map.map (findType tdefs) ctx'
-               in case checkFunction tdefs ctx'' (t,p,b) fdefns of
+               in case checkFunction tdefs ctx'' (t,p,b) fdefns smap of
                  Left s -> Left s
                  Right () -> Right ctx'') (Right ctx) fdefns of
       Left s -> Left s
@@ -64,6 +65,7 @@ fixTypes' m (AWhile e s) = AWhile (fixTypesE m e) (fixTypes' m s)
 fixTypes' m (ASeq s1 s2) = ASeq (fixTypes' m s1) (fixTypes' m s2)
 fixTypes' m (ABlock s1 s2) = ABlock (fixTypes' m s1) (fixTypes' m s2)
 fixTypes' m (AExpr e s) = AExpr (fixTypesE m e) (fixTypes' m s)
+fixTypes' m (AAssign l e) = AAssign l (fixTypesE m e)
 fixTypes' m x = x
 
 fixTypesE m (Alloc t p) = (Alloc (findType m t) p)
@@ -74,7 +76,7 @@ findType m (Map t1 t2) = Map (map (findType m) t1) (findType m t2)
 findType m (Pointer t) = Pointer (findType m t)
 findType _ x = x
              
-checkFunction m ctx val defined =
+checkFunction m ctx val defined smap =
   let
     -- replace all typedef types so we dont have to deal with them
     (t', p', s') = fixTypes m val
@@ -90,7 +92,7 @@ checkFunction m ctx val defined =
         False -> Left "error in returns check") >>= \_ ->
      (let
          ctx' = foldr (\(Param t s) -> \acc -> Map.insert s t acc) ctx p'
-      in case checkS s' (Map.insert "main" (Map [] Int) ctx') m defined' t' of
+      in case checkS s' (Map.insert "main" (Map [] Int) ctx') m defined' t' smap of
         ValidS -> Right ()
         BadS s -> Left s) >>= \_ ->
      (let
@@ -169,22 +171,22 @@ data CheckE = ValidE Type
 type Context = Map.Map String Type
 
 -- Performs static type checking on a statements  under a typing context
-checkS :: S -> Context -> Context -> Set.Set String -> Type -> CheckS
-checkS ANup ctx _ _ _ = ValidS
-checkS (AAssert e) ctx m d _ =
+checkS :: S -> Context -> Context -> Set.Set String -> Type -> Map.Map (String,String) Type ->CheckS
+checkS ANup ctx _ _ _ _ = ValidS
+checkS (AAssert e) ctx m d _ smap =
   case checkE e ctx d of
     BadE s -> BadS s
     ValidE Bool -> ValidS
     ValidE _ -> BadS "Assert expression not type bool"
-checkS (ASeq s1 s2) ctx m d t = 
-  case checkS s1 ctx m d t of
+checkS (ASeq s1 s2) ctx m d t smap = 
+  case checkS s1 ctx m d t smap of
     BadS s -> BadS s
-    ValidS -> checkS s2 ctx m d t
-checkS (ABlock s1 s2) ctx m d t = 
-  case checkS s1 ctx m d t of
+    ValidS -> checkS s2 ctx m d t smap
+checkS (ABlock s1 s2) ctx m d t smap = 
+  case checkS s1 ctx m d t smap of
     BadS s -> BadS s
-    ValidS -> checkS s2 ctx m d t
-checkS (ADeclare i t' s) ctx m d t =
+    ValidS -> checkS s2 ctx m d t smap
+checkS (ADeclare i t' s) ctx m d t smap =
   if Map.member i m then BadS "Variable name conflicts with Type"
   else case t' of
     Void -> BadS "Variables can't be of type void"
@@ -195,13 +197,13 @@ checkS (ADeclare i t' s) ctx m d t =
           (ASeq (AAssign _ e) s2) ->
             case checkE e ctx d of
               BadE s -> BadS s
-              ValidE t2 -> if t' == t2 then checkS s2 (Map.insert i t' ctx) m d t
+              ValidE t2 -> if t' == t2 then checkS s2 (Map.insert i t' ctx) m d t smap
                            else BadS $ i ++ " declared with type " ++ (show t') ++ 
                                 " assigned with type " ++ (show t2)
-          _ -> checkS s (Map.insert i t' ctx) m d t
+          _ -> checkS s (Map.insert i t' ctx) m d t smap
         Just _ -> BadS $ "Redeclaring " ++ i
-        Nothing -> checkS s (Map.insert i t' ctx) m d t
-checkS (AReturn e) ctx m d t = 
+        Nothing -> checkS s (Map.insert i t' ctx) m d t smap
+checkS (AReturn e) ctx m d t smap = 
   case (e,t) of
     (Nothing, Void) -> ValidS
     (Nothing, _) -> BadS "empty return statement in non-void function"
@@ -210,38 +212,51 @@ checkS (AReturn e) ctx m d t =
       case checkE e' ctx d of
         BadE s -> BadS s
         ValidE t' -> if t==t' then ValidS else BadS "return type mismatch"
-checkS (AWhile e s) ctx m d t = 
+checkS (AWhile e s) ctx m d t smap = 
   case checkE e ctx d of
     BadE s -> BadS s
     ValidE Int -> BadS "While condition is not type bool"
-    ValidE Bool -> checkS s ctx m d t
-checkS (AAssign l e) ctx m d _ =
-  case lvalType l ctx of
+    ValidE Bool -> checkS s ctx m d t smap
+checkS (AAssign l e) ctx m d _ smap =
+  case lvalType l ctx smap of
     Nothing -> BadS $ "Assigning " ++ (show l) ++ " undeclared"
     Just t1 ->
       case checkE e ctx d of
         BadE s -> BadS s
-        ValidE t2 -> if t1 == t2 then ValidS
+        ValidE t2 -> if t1 == t2 || t2 == Pointer Void then ValidS
                      else BadS $ (show l) ++ " declared with type " ++ (show t1) ++ 
-                          " assigned with type " ++ (show t2)
-checkS (AIf e s1 s2) ctx m d t =
+                          " assigned with type " ++ (show t2) 
+checkS (AIf e s1 s2) ctx m d t smap =
   case checkE e ctx d of
     BadE s -> BadS s
     ValidE Int -> BadS "If condition is not type bool"
     ValidE Bool ->
-      case checkS s1 ctx m d t of
+      case checkS s1 ctx m d t smap of
         BadS s -> BadS s
-        ValidS -> checkS s2 ctx m d t
-checkS (AExpr e s) ctx m d t =
+        ValidS -> checkS s2 ctx m d t smap
+checkS (AExpr e s) ctx m d t smap =
   case checkE e ctx d of
     BadE s -> BadS s
-    ValidE _ -> checkS s ctx m d t
+    ValidE _ -> checkS s ctx m d t smap
 
-lvalType (LIdent i) ctx = Map.lookup i ctx
-lvalType (LDeref l) ctx =
-  case lvalType l ctx of
+lvalType (LIdent i) ctx smap = Map.lookup i ctx
+lvalType (LDeref l) ctx smap =
+  case lvalType l ctx smap of
     Nothing -> Nothing
     Just (Pointer t) -> Just t
+    _ -> Nothing
+lvalType (LArrow l s) ctx smap =
+  case lvalType l ctx smap of
+    Just (Pointer(Struct s1)) -> Map.lookup (s1,s) smap 
+    _ -> Nothing
+lvalType (LDot l s) ctx smap =
+  case lvalType l ctx smap of
+    Just (Pointer(Struct s1)) -> Map.lookup (s1,s) smap
+    _ -> Nothing
+lvalType (LArray l e) ctx smap =
+  case lvalType l ctx smap of
+    Just (Array t) -> Just t
+    Just t -> Just t
     _ -> Nothing
   
 -- Performs static type checking on an expression under a typing context
@@ -272,7 +287,7 @@ checkE (ExpBinOp op e1 e2 _) ctx d =
       (_, BadE s) -> BadE s
       (ValidE t1, ValidE t2) -> case t1 of
         Map l t -> BadE "Cannot compare Function Types"
-        _ -> if t1 == t2 then ValidE Bool
+        _ -> if t1 == t2 || t2 == Pointer Void then ValidE Bool
              else BadE "eq type mismatch"
   else
     let
@@ -304,8 +319,31 @@ checkE (App fun args _) ctx d =
         if ts' == input then ValidE output
         else BadE "function input type mismatch"
       _ -> BadE "undefined function call"
+checkE (Null _) ctx d=
+  ValidE (Pointer Void) -- Placeholder for Type Any
 checkE (Alloc t _) ctx d =
-  ValidE (Pointer t)
+  case t of
+    Void -> BadE "Can't allocate pointer of type void"
+    Map _ _ -> BadE "awww shit...."
+    Array _ -> BadE "Don't you mean alloc_array?"
+    _ -> ValidE (Pointer t)
+checkE (AllocArray t e _) ctx d =
+  case checkE e ctx d of
+    BadE s -> BadE s
+    ValidE t1 -> case t1 of
+      Int -> case t of
+        Map _ _ -> BadE "uh-oh"
+        Void -> BadE "Arrays cannot be of type void"
+        _ -> ValidE (Array t)
+      _ -> BadE "size for alloc_array not int"
+checkE (Subscr e1 e2 _) ctx d =
+  case (checkE e1 ctx d, checkE e2 ctx d) of
+    (ValidE t1, ValidE t2) -> case t2 of
+      Int -> case t1 of
+        Array t3 -> ValidE t3
+        _ -> BadE "Cannot subscript non-array type"
+      _ -> BadE "Subscript of array not of type int"
+    (BadE s, _) -> BadE s
 
 getIdent s (LIdent i) (LIdent _) = Right i
 getIdent s (LIdent i) _ =
@@ -313,6 +351,9 @@ getIdent s (LIdent i) _ =
     True -> Left $ "unitialized variable " ++ i
     False -> Right i
 getIdent s (LDeref l) l' = getIdent s l l'
+getIdent s (LArrow l _) l' = getIdent s l l'
+getIdent s (LDot l _) l' = getIdent s l l'
+getIdent s (LArray l e) l' = getIdent s l l'
 
 -- Checks that no variables are used before definition
 checkInit :: S -> (Set.Set String, Set.Set String) -> Either String (Set.Set String, Set.Set String)
