@@ -13,7 +13,7 @@ import Text.ParserCombinators.Parsec.Pos (SourcePos)
 import Compile.Types.Ops
 import Compile.Types.PST
 
-data S = AAssign String Expr
+data S = AAssign LValue Expr
        | AIf Expr S S
        | AWhile Expr S
        | AReturn (Maybe Expr)

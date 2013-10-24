@@ -46,29 +46,39 @@ data Op = Mul
         | Geq 
         | Fail deriving (Ord, Eq)
 
-opType Mul = ([Int, Int], Int)
-opType Add = ([Int, Int], Int)
-opType Sub = ([Int, Int], Int)
-opType Div = ([Int, Int], Int)
-opType Neg = ([Int], Int)
-opType Mod = ([Int, Int], Int)
-opType BAnd = ([Int, Int], Int)
-opType BXor = ([Int, Int], Int)
-opType BOr = ([Int, Int], Int)
-opType LAnd = ([Bool, Bool], Bool)
-opType LOr = ([Bool, Bool], Bool)
-opType Shl = ([Int, Int], Int)
-opType Shr = ([Int, Int], Int)
-opType SShl = ([Int, Int], Int)
-opType SShr = ([Int, Int], Int)
-opType BNot = ([Int], Int)
-opType LNot = ([Bool], Bool)
-opType Incr = ([Int], Int)
-opType Decr = ([Int], Int)
-opType Lt = ([Int, Int], Bool)
-opType Leq = ([Int, Int], Bool)
-opType Gt = ([Int, Int], Bool)
-opType Geq = ([Int, Int], Bool)
+opInt Int = True
+opInt _ = False
+
+opBool Bool = True
+opBool _ = False
+
+opPointer (Pointer _) = True
+opPointer _ = False
+
+opType Mul = ([opInt, opInt], \_ -> Int)
+opType Add = ([opInt, opInt], \_ -> Int)
+opType Sub = ([opInt, opInt], \_ -> Int)
+opType Div = ([opInt, opInt], \_ -> Int)
+opType Neg = ([opInt], \_ -> Int)
+opType Mod = ([opInt, opInt], \_ -> Int)
+opType BAnd = ([opInt, opInt], \_ -> Int)
+opType BXor = ([opInt, opInt], \_ -> Int)
+opType BOr = ([opInt, opInt], \_ -> Int)
+opType LAnd = ([opBool, opBool], \_ -> Bool)
+opType LOr = ([opBool, opBool], \_ -> Bool)
+opType Shl = ([opInt, opInt], \_ -> Int)
+opType Shr = ([opInt, opInt], \_ -> Int)
+opType SShl = ([opInt, opInt], \_ -> Int)
+opType SShr = ([opInt, opInt], \_ -> Int)
+opType BNot = ([opInt], \_ -> Int)
+opType LNot = ([opBool], \_ -> Bool)
+opType Incr = ([opInt], \_ -> Int)
+opType Decr = ([opInt], \_ -> Int)
+opType Lt = ([opInt, opInt], \_ -> Bool)
+opType Leq = ([opInt, opInt], \_ -> Bool)
+opType Gt = ([opInt, opInt], \_ -> Bool)
+opType Geq = ([opInt, opInt], \_ -> Bool)
+opType Deref = ([opPointer], \(Pointer t) -> t)
              
 instance Show Op where
   show Mul = "*"

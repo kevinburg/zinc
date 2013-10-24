@@ -11,11 +11,10 @@ elaborate :: Program -> Either String
              (Map.Map String Type, [(String,
                                    (Type, [Param], S, Map.Map String Type,
                                     Map.Map String (Type, [Type])))])
-elaborate (Program gdecls) = trace (show gdecls) $ Left "lol"
-{-
-  case trace (show gdecls) $ partProgram gdecls (Map.singleton "fpt" Int, Map.empty, []) of
+elaborate (Program gdecls) =
+  case partProgram gdecls (Map.singleton "fpt" Int, Map.empty, [], Map.empty) of
     Left err -> Left err
-    Right (typedef, fdecl, fdefn) -> let
+    Right (typedef, fdecl, fdefn, _) -> let
       res = map (\(key,(t, p, Block b _, t1, t2)) -> (key,(t, p, elaborate' b, t1, t2))) fdefn
       in case foldr
               (\(key, val) -> \acc ->
@@ -28,7 +27,7 @@ elaborate (Program gdecls) = trace (show gdecls) $ Left "lol"
            Right m -> Right (typedef, m)
 
 partProgram [] acc = Right acc
-partProgram ((TypeDef t s _) : xs) (typedef, fdecl, fdefn) =
+partProgram ((TypeDef t s _) : xs) (typedef, fdecl, fdefn, sdefn) =
   if t == Void then Left "loser" else
   (case Map.lookup s typedef of
       (Just _) -> Left $ "Type names may be defined only once - " ++ s
@@ -36,15 +35,15 @@ partProgram ((TypeDef t s _) : xs) (typedef, fdecl, fdefn) =
   (case (Map.lookup s fdecl, lookup s fdefn) of
       (Nothing, Nothing) -> Right ()
       _ -> Left $ "Typedef " ++ s ++ " collides with function decl") >>= \_ ->
-  partProgram xs (Map.insert s t typedef, fdecl, fdefn)
-partProgram ((FDecl t s p _) : xs) (typedef, fdecl, fdefn) =
+  partProgram xs (Map.insert s t typedef, fdecl, fdefn, sdefn)
+partProgram ((FDecl t s p _) : xs) (typedef, fdecl, fdefn, sdefn) =
   (let
       ps = map (\(Param _ name) -> name) p
    in if any (\x -> Map.member x typedef) ps then Left "bleh" else Right ()) >>= \_ ->
   case check (t, s, p) (typedef, fdecl, fdefn) of
     Left err -> Left err
-    Right () -> partProgram xs (typedef, Map.insert s (t, typeFromParams p) fdecl, fdefn)
-partProgram ((FDefn t s p b _) : xs) (typedef, fdecl, fdefn) =
+    Right () -> partProgram xs (typedef, Map.insert s (t, typeFromParams p) fdecl, fdefn, sdefn)
+partProgram ((FDefn t s p b _) : xs) (typedef, fdecl, fdefn, sdefn) =
   (let
       ps = map (\(Param _ name) -> name) p
    in if any (\x -> Map.member x typedef) ps then Left "bleh" else Right ()) >>= \_ ->
@@ -57,7 +56,15 @@ partProgram ((FDefn t s p b _) : xs) (typedef, fdecl, fdefn) =
      False -> Right ()) >>= \_ ->
   case check (t, s, p) (typedef, fdecl, fdefn) of
     Left err -> Left err
-    Right () -> partProgram xs (typedef, fdecl, (s, (t,p,b,typedef,fdecl)) : fdefn)
+    Right () -> partProgram xs (typedef, fdecl, (s, (t,p,b,typedef,fdecl)) : fdefn, sdefn)
+partProgram ((SDecl _ _) : xs) acc =
+  partProgram xs acc
+partProgram ((SDefn s f _) : xs) (typedef, fdecl, fdefn, sdefn) =
+  (case Map.lookup s sdefn of
+      Nothing -> Right ()
+      Just fs -> if f == fs then Right ()
+                 else Left "conflicting struct definitions") >>= \_ ->
+  partProgram xs (typedef, fdecl, fdefn, Map.insert s f sdefn)
 
 check (t, s, p) (typedef, fdecl, fdefn) = 
   (case t of
@@ -100,25 +107,25 @@ elaborate' ((Simp (Decl t i (Just e) _) _) : xs) =
     Right s ->
       case contained i e of
         True -> Left ("Recursive declaration of " ++ (show i))
-        False -> Right $ ADeclare i t (ASeq (AAssign i e) s)
-elaborate' ((Simp (Asgn i Nothing e _)_) : xs)  =
+        False -> Right $ ADeclare i t (ASeq (AAssign (LIdent i) e) s)
+elaborate' ((Simp (Asgn l Nothing e _)_) : xs)  =
   case elaborate' xs of
     Left s -> Left s
-    Right s -> Right $ ASeq (AAssign i e) s
-elaborate' ((Simp (Asgn i (Just op) e2 p) _) : xs) =
+    Right s -> Right $ ASeq (AAssign l e) s
+elaborate' ((Simp (Asgn l (Just op) e2 p) _) : xs) =
   case elaborate' xs of
     Left s -> Left s
-    Right s -> Right $ ASeq (AAssign i (ExpBinOp op (Ident i p) e2 p)) s
-elaborate' ((Simp (PostOp o e _)_) : xs) =
+    Right s -> let
+      e1 = unwrap l p
+      in Right $ ASeq (AAssign l (ExpBinOp op e1 e2 p)) s
+elaborate' ((Simp (PostOp o l _) p) : xs) =
   case elaborate' xs of
     Left s -> Left s
-    Right s -> 
-      case e of
-        Ident i p -> 
-          case o of 
-            Incr -> Right $ ASeq (AAssign i (ExpBinOp Add (Ident i p) (ExpInt Dec 1 p) p)) s
-            Decr -> Right $ ASeq (AAssign i (ExpBinOp Sub (Ident i p) (ExpInt Dec 1 p) p)) s
-        _ -> Left ("Applying " ++ (show o) ++ " to non-identifier " ++ (show e))
+    Right s -> let
+      e1 = unwrap l p in
+      case o of 
+        Incr -> Right $ ASeq (AAssign l (ExpBinOp Add e1 (ExpInt Dec 1 p) p)) s
+        Decr -> Right $ ASeq (AAssign l (ExpBinOp Sub e1 (ExpInt Dec 1 p) p)) s
 elaborate' ((Simp (Expr (ExpUnOp Fail _ _) _)_): xs) = Left  "bad prefix op"
 elaborate' ((Simp (Expr e p)_): xs) = 
   case elaborate' xs of
@@ -160,7 +167,8 @@ elaborate' ((Ctrl (For (Just (Decl t i e _)) exp s2 s3 _) p) : xs) =
             Nothing ->
               Right $ ASeq (ADeclare i t (AWhile exp (ASeq body step))) s
             (Just e') ->
-              Right $ ASeq (ADeclare i t (ASeq (AAssign i e') (AWhile exp (ASeq body step)))) s
+              Right $ ASeq (ADeclare i t (ASeq (AAssign (LIdent i) e')
+                                          (AWhile exp (ASeq body step)))) s
 elaborate' ((Ctrl (For s1 exp s2 s3 _) p) : xs) =
   case s2 of
     Just (Decl _ _ _ _) -> Left "step in for loop is decl"
@@ -188,6 +196,20 @@ elaborate' ((BlockStmt (Block l _) _) : xs) =
       Left s' -> Left s'
       Right s' -> Right $ ABlock s' s
 
+unwrap (LIdent i) p = Ident i p
+unwrap (LArrow l i) p = let
+  l' = unwrap l p
+  in ExpBinOp Arrow (Ident i p) l' p
+unwrap (LDot l i) p = let
+  l' = unwrap l p
+  in ExpBinOp Dot (Ident i p) l' p
+unwrap (LDeref l) p = let
+  l' = unwrap l p
+  in ExpUnOp Deref l' p
+unwrap (LArray l e) p = let
+  l' = unwrap l p
+  in Subscr l' e p
+
 -- extremely special case function
 mList Nothing _ = []
 mList (Just x) p = [Simp x p]
@@ -198,4 +220,3 @@ contained i (ExpUnOp _ e _) = contained i e
 contained i (ExpBinOp _ e1 e2 _) = contained i e1 || contained i e2
 contained i (ExpTernOp e1 e2 e3 _) = contained i e1 || contained i e2 || contained i e3
 contained _ _ = False
--}

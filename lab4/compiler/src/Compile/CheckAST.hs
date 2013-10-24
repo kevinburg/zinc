@@ -59,15 +59,19 @@ fixTypes m (t, p, s) =
   in (t', p', s') where
    
 fixTypes' m (ADeclare i t s) = ADeclare i (findType m t) (fixTypes' m s)
-fixTypes' m (AIf e s1 s2) = AIf e (fixTypes' m s1) (fixTypes' m s2)
-fixTypes' m (AWhile e s) = AWhile e (fixTypes' m s)
+fixTypes' m (AIf e s1 s2) = AIf (fixTypesE m e) (fixTypes' m s1) (fixTypes' m s2)
+fixTypes' m (AWhile e s) = AWhile (fixTypesE m e) (fixTypes' m s)
 fixTypes' m (ASeq s1 s2) = ASeq (fixTypes' m s1) (fixTypes' m s2)
 fixTypes' m (ABlock s1 s2) = ABlock (fixTypes' m s1) (fixTypes' m s2)
-fixTypes' m (AExpr e s) = AExpr e (fixTypes' m s)
+fixTypes' m (AExpr e s) = AExpr (fixTypesE m e) (fixTypes' m s)
 fixTypes' m x = x
+
+fixTypesE m (Alloc t p) = (Alloc (findType m t) p)
+fixTypesE m x = x
 
 findType m (Type s) = findType m (m Map.! s)
 findType m (Map t1 t2) = Map (map (findType m) t1) (findType m t2)
+findType m (Pointer t) = Pointer (findType m t)
 findType _ x = x
              
 checkFunction m ctx val defined =
@@ -188,7 +192,7 @@ checkS (ADeclare i t' s) ctx m d t =
       case Map.lookup i ctx of
         -- allow shadowing of variables over functions
         Just (Map _ _) -> case s of
-          (ASeq (AAssign i' e) s2) ->
+          (ASeq (AAssign _ e) s2) ->
             case checkE e ctx d of
               BadE s -> BadS s
               ValidE t2 -> if t' == t2 then checkS s2 (Map.insert i t' ctx) m d t
@@ -211,14 +215,14 @@ checkS (AWhile e s) ctx m d t =
     BadE s -> BadS s
     ValidE Int -> BadS "While condition is not type bool"
     ValidE Bool -> checkS s ctx m d t
-checkS (AAssign i e) ctx m d _ =
-  case Map.lookup i ctx of
-    Nothing -> BadS $ "Assigning " ++ i ++ " undeclared"
+checkS (AAssign l e) ctx m d _ =
+  case lvalType l ctx of
+    Nothing -> BadS $ "Assigning " ++ (show l) ++ " undeclared"
     Just t1 ->
       case checkE e ctx d of
         BadE s -> BadS s
         ValidE t2 -> if t1 == t2 then ValidS
-                     else BadS $ i ++ " declared with type " ++ (show t1) ++ 
+                     else BadS $ (show l) ++ " declared with type " ++ (show t1) ++ 
                           " assigned with type " ++ (show t2)
 checkS (AIf e s1 s2) ctx m d t =
   case checkE e ctx d of
@@ -232,6 +236,13 @@ checkS (AExpr e s) ctx m d t =
   case checkE e ctx d of
     BadE s -> BadS s
     ValidE _ -> checkS s ctx m d t
+
+lvalType (LIdent i) ctx = Map.lookup i ctx
+lvalType (LDeref l) ctx =
+  case lvalType l ctx of
+    Nothing -> Nothing
+    Just (Pointer t) -> Just t
+    _ -> Nothing
   
 -- Performs static type checking on an expression under a typing context
 checkE :: Expr -> Context -> Set.Set String -> CheckE
@@ -252,7 +263,7 @@ checkE (ExpUnOp op e _) ctx d =
     ([opT], ret) = opType op
   in case (checkE e ctx d) of
     BadE s -> BadE s
-    ValidE t -> if opT == t then ValidE ret
+    ValidE t -> if opT(t) then ValidE $ ret(t)
                 else BadE "unop expr mismatch"
 checkE (ExpBinOp op e1 e2 _) ctx d =
   if (op == Eq) || (op == Neq) then
@@ -270,7 +281,7 @@ checkE (ExpBinOp op e1 e2 _) ctx d =
       (BadE s, _) -> BadE s
       (_, BadE s) -> BadE s
       (ValidE t1, ValidE t2) ->
-        if (t1 == opT1) && (t2 == opT2) then ValidE ret
+        if opT1(t1) && opT2(t2) then ValidE $ ret(t1)
         else BadE ("binop expr mismatch " ++ (show e1) ++ (show e2) ++ (show op))
 checkE (ExpTernOp e1 e2 e3 _) ctx d =
   case (checkE e1 ctx d, checkE e2 ctx d, checkE e3 ctx d) of
@@ -293,7 +304,16 @@ checkE (App fun args _) ctx d =
         if ts' == input then ValidE output
         else BadE "function input type mismatch"
       _ -> BadE "undefined function call"
-                      
+checkE (Alloc t _) ctx d =
+  ValidE (Pointer t)
+
+getIdent s (LIdent i) (LIdent _) = Right i
+getIdent s (LIdent i) _ =
+  case Set.member i s of
+    True -> Left $ "unitialized variable " ++ i
+    False -> Right i
+getIdent s (LDeref l) l' = getIdent s l l'
+
 -- Checks that no variables are used before definition
 checkInit :: S -> (Set.Set String, Set.Set String) -> Either String (Set.Set String, Set.Set String)
 checkInit ANup acc = Right acc
@@ -304,10 +324,14 @@ checkInit (AReturn (Just e)) (live, defn) =
   case checkLive (uses e) live of
     True -> Left "Return statement uses undefined variable(s)"
     False -> Right (Set.empty, Set.union defn live)
-checkInit (AAssign i e) (live, defn) = 
+checkInit (AAssign l e) (live, defn) = 
   case checkLive (uses e) live of
-    True -> Left $ "Undeclared variable on RHS of define for " ++ i
-    False -> Right $ (Set.delete i live, Set.insert i defn)
+    True -> Left $ "Undeclared variable on RHS of define for " ++ (show l)
+    False -> let
+      i' = getIdent live l l
+      in case i' of
+        Left s -> Left s
+        Right i -> Right $ (Set.delete i live, Set.insert i defn)
 checkInit (AIf e s1 s2) (live, defn) = 
   case checkLive (uses e) live of
     True -> Left "If condition uses undefined variable(s)"
