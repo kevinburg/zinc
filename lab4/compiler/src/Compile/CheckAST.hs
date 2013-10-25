@@ -280,6 +280,11 @@ checkE (ExpUnOp op e _) ctx d =
     BadE s -> BadE s
     ValidE t -> if opT(t) then ValidE $ ret(t)
                 else BadE "unop expr mismatch"
+checkE (ExpBinOp Arrow (Ident s1 _) (Ident s2 _) _) ctx d =
+  case Map.lookup s2 ctx of -- use smap to do this
+    Nothing -> BadE "struct field not in context?"
+    Just t -> ValidE t
+checkE (ExpBinOp Arrow _ _ _) _ _ = BadE "Invalid arrow operation"
 checkE (ExpBinOp op e1 e2 _) ctx d =
   if (op == Eq) || (op == Neq) then
     case (checkE e1 ctx d, checkE e2 ctx d) of

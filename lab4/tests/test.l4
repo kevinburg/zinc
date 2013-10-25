@@ -1,3 +1,4 @@
+//test return 5
 //struct blah;
 int foo(struct blah* b);
 
