@@ -16,7 +16,7 @@ import Debug.Trace
 import Compile.SSA
 
 codeGen :: Program -> Map.Map String [Asm]
-codeGen (Program gdecls) = Map.empty {-
+codeGen (Program gdecls) =
   let
     fdefns = concatMap (\x -> case x of
                            (FDefn _ s p (Block b _) _) -> [(s,p,b)]
@@ -25,7 +25,7 @@ codeGen (Program gdecls) = Map.empty {-
     (res, _) = foldr (\f -> \(m, l) -> let
                     (s, aasm, l') = genFunction f l lengths
                     in (Map.insert s aasm m, l')) (Map.empty,0) fdefns
-  in res
+  in trace (show gdecls) res
 
 genFunction (fun,p,b) l lengths =
   let
@@ -39,7 +39,7 @@ genFunction (fun,p,b) l lengths =
       Nothing -> [ACtrl $ Ret $ ALoc ARes]
       Just ep' -> [ACtrl $ Lbl (show ep'),
                    ACtrl $ Ret $ ALoc ARes]
-    aasm' = prefix ++ aasm ++ cleanup
+    aasm' = trace (show aasm) prefix ++ aasm ++ cleanup
     s = ssa aasm' fun
     unssa = deSSA s
     (regMap, used) = allocateRegisters unssa
@@ -65,7 +65,7 @@ genFunction (fun,p,b) l lengths =
           in setup ++ save ++ sub ++ front ++ add ++ restore ++ back
         -- TODO: when x >= 5, we are storing local variables on stack.
              -- wat do here?!?!?
-    code' = removeRedundant code
+    code' = trace (show code) removeRedundant code
   in (fun, code', l')
 
 removeRedundant code = 
@@ -80,20 +80,35 @@ update aasm (Just acc) = Just $ acc ++ aasm
 updatePre aasm Nothing = Just aasm
 updatePre aasm (Just acc) = Just $ aasm ++ acc
      
+unroll (LIdent i) s = (Ident i s, i)
+unroll (LDeref l) s = 
+  let
+    (v, i) = unroll l s
+  in (ExpUnOp Deref v s, i)
+ 
+genPost (LIdent i) target res n = ([AAsm [target] Nop [ALoc res]], n)
+genPost (LDeref (LIdent i)) target res n = ([AAsm [Pt target] Nop [ALoc res]], n)
+genPost (LDeref l) target res n = 
+  let
+    (aasm, n') = genPost l (ATemp n) res (n+1)
+  in ((AAsm [ATemp n] Nop [ALoc $ Pt target]) : aasm, n')
+                           
 genStmt acc [] _ = acc
 genStmt acc ((Simp (Decl _ _ Nothing _) _) : xs) lens = genStmt acc xs lens
 genStmt (acc, n, l, ep) ((Simp (Decl _ i (Just e) _) _) : xs) lens =
   let
     (aasm, n', l') = genExp (n, l) e (AVar i) lens
   in genStmt (acc ++ aasm, n', l', ep) xs lens
-genStmt (acc, n, l, ep) ((Simp (Asgn i o e s) _) : xs) lens = 
+genStmt (acc, n, l, ep) ((Simp (Asgn lval o e s) _) : xs) lens = 
   let
+    (var, ident) = unroll lval s
     e' = case o of
       Nothing -> e
-      Just op -> ExpBinOp op (Ident i s) e s
-    (aasm, n', l') = genExp (n, l) e' (AVar i) lens
-  in genStmt (acc ++ aasm, n', l', ep) xs lens
-genStmt (acc, n, l, ep) ((Simp (PostOp o (Ident i _) s) _) : xs) lens =
+      Just op -> ExpBinOp op var e s
+    (aasm, n', l') = genExp (n+1, l) e' (ATemp n) lens
+    (post, n'') = genPost lval (AVar ident) (ATemp n) n'
+  in genStmt (acc ++ aasm ++ post, n'', l', ep) xs lens
+genStmt (acc, n, l, ep) ((Simp (PostOp o (LIdent i) s) _) : xs) lens =
   let
     op = case o of
       Incr -> Add
@@ -250,7 +265,11 @@ genExp (n, l) (App f es _) loc lens =
         aasm = computeArgs ++ moveFrontArgs ++ [ACtrl $ Call f rest] ++
                [AAsm {aAssign = [loc], aOp = Nop, aArgs = [ALoc $ ARes]}]
       in (aasm, n', l')
-                  
+genExp (n, l) (Alloc Int _) loc lens =                
+  let
+    aasm = [ACtrl $ Call "_c0_malloc" [],
+            AAsm [loc] Nop [ALoc $ ARes]]
+  in (aasm, n, l)
      
 -- begin 'temp -> register' translation
 translate regMap n (AAsm {aAssign = [dest], aOp = Nop, aArgs = [src]}) =
@@ -516,6 +535,8 @@ binOp (dest,src1,src2) op regMap =
 
 regFind :: Map.Map ALoc Arg -> AVal -> Arg
 regFind regMap (AImm i) = Val i
+regFind regMap (ALoc (Pt aloc)) = 
+  Loc (regFind regMap (ALoc aloc))
 regFind regMap (ALoc loc) = 
   case Map.lookup loc regMap of
     Just (reg) -> reg
@@ -550,4 +571,3 @@ lowerReg (Reg R12D) = Reg R12B
 lowerReg (Reg R13D) = Reg R13B
 lowerReg (Reg R14D) = Reg R14B
 lowerReg x = x
--}

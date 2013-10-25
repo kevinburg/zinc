@@ -37,7 +37,8 @@ data Asm = AsmRet
          | Setne Arg
          | AsmCall String deriving (Eq, Ord)
 
-data Arg = Reg Register
+data Arg = Loc Arg
+         | Reg Register
          | Stk Int -- Stack offset int
          | Val Int deriving (Eq, Ord)
 
@@ -99,6 +100,7 @@ instance Show Asm where
   show (Movzbl e1 e2) = "\tmovzbl " ++ (show e1) ++ ", " ++ (show e2)
   
 instance Show Arg where
+  show (Loc arg) = "(" ++ show arg ++ ")"
   show (Reg reg) = "%" ++ show reg
   show (Val i) = "$" ++ show i
   show (Stk i) = let neg = if i < 0 then "-0x" else "0x"

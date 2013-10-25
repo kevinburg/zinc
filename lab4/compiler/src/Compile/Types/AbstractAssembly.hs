@@ -8,6 +8,7 @@ module Compile.Types.AbstractAssembly where
 
 import Compile.Types.Ops
 import Compile.Types.Asm
+import Compile.Types.PST
 import qualified Data.Set as Set
 
 import Control.DeepSeq
@@ -39,6 +40,7 @@ data ALoc = ARes
           | ATemp Int
           | AVar String
           | AVarG String Int
+          | Pt ALoc
           | Register ALoc deriving (Show, Eq, Ord)
 
 instance NFData AAsm where
