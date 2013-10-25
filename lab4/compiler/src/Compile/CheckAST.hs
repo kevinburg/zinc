@@ -10,8 +10,8 @@ checkAST :: (Map.Map String Type, [(String,
                                   (Type, [Param], S,
                                    Map.Map String Type,
                                    Map.Map String (Type, [Type])))],
-             Map.Map (String, String) Type) -> Either String ()
-checkAST (typedef, fdefns, smap) =
+             Map.Map String [Param]) -> Either String ()
+checkAST (typedef, fdefns, sdefns) =
   let
     (_, ctx) = addHeader typedef
   in
@@ -32,7 +32,7 @@ checkAST (typedef, fdefns, smap) =
                  ctx' = Map.unions [ctx, Map.map (\(t1,t2) -> Map t2 t1) fdecls,
                                     Map.singleton fun (Map ts output)]
                  ctx'' = Map.map (findType tdefs) ctx'
-               in case checkFunction tdefs ctx'' (t,p,b) fdefns smap of
+               in case checkFunction tdefs ctx'' (t,p,b) fdefns sdefns of
                  Left s -> Left s
                  Right () -> Right ctx'') (Right ctx) fdefns of
       Left s -> Left s
@@ -76,7 +76,7 @@ findType m (Map t1 t2) = Map (map (findType m) t1) (findType m t2)
 findType m (Pointer t) = Pointer (findType m t)
 findType _ x = x
              
-checkFunction m ctx val defined smap =
+checkFunction m ctx val defined sdefns =
   let
     -- replace all typedef types so we dont have to deal with them
     (t', p', s') = fixTypes m val
@@ -92,7 +92,9 @@ checkFunction m ctx val defined smap =
         False -> Left "error in returns check") >>= \_ ->
      (let
          ctx' = foldr (\(Param t s) -> \acc -> Map.insert s t acc) ctx p'
-      in case checkS s' (Map.insert "main" (Map [] Int) ctx') m defined' t' smap of
+         ctx'' = Map.foldWithKey (\s -> \_ -> \acc -> Map.insert s (Struct s) acc)
+                 ctx' sdefns
+      in case checkS s' (Map.insert "main" (Map [] Int) ctx') m defined' t' sdefns of
         ValidS -> Right ()
         BadS s -> Left s) >>= \_ ->
      (let
@@ -171,7 +173,8 @@ data CheckE = ValidE Type
 type Context = Map.Map String Type
 
 -- Performs static type checking on a statements  under a typing context
-checkS :: S -> Context -> Context -> Set.Set String -> Type -> Map.Map (String,String) Type ->CheckS
+checkS :: S -> Context -> Context -> Set.Set String -> Type ->
+          Map.Map String [Param] ->CheckS
 checkS ANup ctx _ _ _ _ = ValidS
 checkS (AAssert e) ctx m d _ smap =
   case checkE e ctx d of
@@ -190,6 +193,7 @@ checkS (ADeclare i t' s) ctx m d t smap =
   if Map.member i m then BadS "Variable name conflicts with Type"
   else case t' of
     Void -> BadS "Variables can't be of type void"
+    Struct _ -> BadS "declaring large type"
     _ ->
       case Map.lookup i ctx of
         -- allow shadowing of variables over functions
@@ -247,11 +251,11 @@ lvalType (LDeref l) ctx smap =
     _ -> Nothing
 lvalType (LArrow l s) ctx smap =
   case lvalType l ctx smap of
-    Just (Pointer(Struct s1)) -> Map.lookup (s1,s) smap 
+    Just (Pointer(Struct s1)) -> Just Int
     _ -> Nothing
 lvalType (LDot l s) ctx smap =
   case lvalType l ctx smap of
-    Just (Pointer(Struct s1)) -> Map.lookup (s1,s) smap
+    Just (Struct s1) -> Just Int
     _ -> Nothing
 lvalType (LArray l e) ctx smap =
   case lvalType l ctx smap of
@@ -280,10 +284,13 @@ checkE (ExpUnOp op e _) ctx d =
     BadE s -> BadE s
     ValidE t -> if opT(t) then ValidE $ ret(t)
                 else BadE "unop expr mismatch"
-checkE (ExpBinOp Arrow (Ident s1 _) (Ident s2 _) _) ctx d =
-  case Map.lookup s2 ctx of -- use smap to do this
-    Nothing -> BadE "struct field not in context?"
-    Just t -> ValidE t
+checkE (ExpBinOp Arrow e (Ident s2 _) _) ctx d =
+  case checkE e ctx d of
+    BadE s -> BadE s
+    ValidE t ->
+      case t of
+        (Pointer (Struct i)) -> ValidE Int -- smap lookup
+        _ -> BadE "Invalid exp on LHS of arrow op"
 checkE (ExpBinOp Arrow _ _ _) _ _ = BadE "Invalid arrow operation"
 checkE (ExpBinOp op e1 e2 _) ctx d =
   if (op == Eq) || (op == Neq) then
@@ -329,15 +336,16 @@ checkE (Null _) ctx d=
 checkE (Alloc t _) ctx d =
   case t of
     Void -> BadE "Can't allocate pointer of type void"
-    Map _ _ -> BadE "awww shit...."
+    Map _ _ -> BadE "Allocating pointer with function type"
     _ -> ValidE (Pointer t)
 checkE (AllocArray t e _) ctx d =
   case checkE e ctx d of
     BadE s -> BadE s
     ValidE t1 -> case t1 of
       Int -> case t of
-        Map _ _ -> BadE "uh-oh"
-        Void -> BadE "Arrays cannot be of type void"
+        Map _ _ -> BadE "Allocating array with function type"
+        Void -> BadE "Allocating array with void type"
+        Struct _ -> BadE "Allocating array with large type"
         _ -> ValidE (Array t)
       _ -> BadE "size for alloc_array not int"
 checkE (Subscr e1 e2 _) ctx d =
@@ -418,6 +426,8 @@ checkLive s live =
 uses :: Expr -> Set.Set String
 uses (Ident i _) = Set.singleton i
 uses (ExpUnOp _ e _) = uses e
+uses (ExpBinOp Arrow e _ _) = uses e
+uses (ExpBinOp Dot e _ _) = uses e
 uses (ExpBinOp _ e1 e2 _) = Set.union (uses e1) (uses e2)
 uses (ExpTernOp e1 e2 e3 _) = Set.unions [uses e1, uses e2, uses e3]
 uses (App _ es _) = Set.unions (map uses es)
