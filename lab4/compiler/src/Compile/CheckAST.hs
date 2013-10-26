@@ -74,7 +74,12 @@ fixTypesE m x = x
 
 findType m (Type s) = findType m (m Map.! s)
 findType m (Map t1 t2) = Map (map (findType m) t1) (findType m t2)
-findType m (Pointer t) = Pointer (findType m t)
+findType m (Pointer t) = let
+  t' = findType m t
+  in t' `seq` Pointer t'
+findType m (Array t) = let
+  t' = findType m t
+  in t' `seq` Array (findType m t)
 findType _ x = x
              
 checkFunction m ctx val defined sdefns =

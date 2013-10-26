@@ -25,7 +25,7 @@ codeGen (Program gdecls) =
     (res, _) = foldr (\f -> \(m, l) -> let
                     (s, aasm, l') = genFunction f l lengths
                     in (Map.insert s aasm m, l')) (Map.empty,0) fdefns
-  in trace (show gdecls) res
+  in res
 
 genFunction (fun,p,b) l lengths =
   let
@@ -39,7 +39,7 @@ genFunction (fun,p,b) l lengths =
       Nothing -> [ACtrl $ Ret $ ALoc ARes]
       Just ep' -> [ACtrl $ Lbl (show ep'),
                    ACtrl $ Ret $ ALoc ARes]
-    aasm' = trace (show aasm) prefix ++ aasm ++ cleanup
+    aasm' = prefix ++ aasm ++ cleanup
     s = ssa aasm' fun
     unssa = deSSA s
     (regMap, used) = allocateRegisters unssa
@@ -63,9 +63,7 @@ genFunction (fun,p,b) l lengths =
           sub = [Subb (Val (n*8)) (Reg RSP)]
           add = [Addd (Val (n*8 )) (Reg RSP)]
           in setup ++ save ++ sub ++ front ++ add ++ restore ++ back
-        -- TODO: when x >= 5, we are storing local variables on stack.
-             -- wat do here?!?!?
-    code' = trace (show code) removeRedundant code
+    code' = removeRedundant code
   in (fun, code', l')
 
 removeRedundant code = 

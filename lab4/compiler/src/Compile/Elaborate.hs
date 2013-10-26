@@ -26,7 +26,7 @@ elaborate (Program gdecls) =
                   (Right m, (t, p, Right val', a, b)) ->
                     Right $ (key,(t, p, val', a, b)) : m) (Right []) res of
            Left s -> Left s
-           Right m -> trace (show sdefn) $ Right (typedef, m, sdefn)
+           Right m -> Right (typedef, m, sdefn)
 
 partProgram [] acc = Right acc
 partProgram ((TypeDef t s _) : xs) (typedef, fdecl, fdefn, sdefn) =
@@ -88,7 +88,7 @@ check (t, s, p) (typedef, fdecl, fdefn) =
         case (typeEq typedef (t,t')) &&
              length(p) == length(p') &&
              (all (typeEq typedef) $ zip p' $ typeFromParams p) of
-          False -> trace ((show t) ++ " " ++ (show t'))
+          False -> 
             Left $ "Function decl/defn conflicts with previous decl/defn"
           True -> Right ()
       Nothing -> Right ()) >>= \_ ->
