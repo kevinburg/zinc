@@ -62,10 +62,15 @@ partProgram ((FDefn t s p b _) : xs) (typedef, fdecl, fdefn, sdefn) =
 partProgram ((SDecl _ _) : xs) acc =
   partProgram xs acc
 partProgram ((SDefn s f _) : xs) (typedef, fdecl, fdefn, sdefn) =
+  (let
+      fieldList = map (\(Param _ i) -> i) f
+      fieldSet = Set.fromList fieldList
+   in case (length fieldList) == (Set.size fieldSet) of
+     True -> Right ()
+     False -> Left $ "Struct " ++ s ++ " contains duplicate field names.") >>= \_ ->
   (case Map.lookup s sdefn of
       Nothing -> Right ()
-      Just fs -> if f == fs then Right ()
-                 else Left "conflicting struct definitions") >>= \_ ->
+      Just fs -> Left $ "Struct " ++ s ++ " defined more than once.") >>= \_ ->
   partProgram xs (typedef, fdecl, fdefn, Map.insert s f sdefn)
 
 check (t, s, p) (typedef, fdecl, fdefn) = 
@@ -219,6 +224,8 @@ mList (Just x) p = [Simp x p]
 contained :: String -> Expr -> Bool
 contained i (Ident x _) = i == x
 contained i (ExpUnOp _ e _) = contained i e
+contained i (ExpBinOp Arrow e _ _) = contained i e
+contained i (ExpBinOp Dot e _ _) = contained i e
 contained i (ExpBinOp _ e1 e2 _) = contained i e1 || contained i e2
 contained i (ExpTernOp e1 e2 e3 _) = contained i e1 || contained i e2 || contained i e3
 contained _ _ = False

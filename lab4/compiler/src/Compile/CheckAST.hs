@@ -3,6 +3,7 @@ module Compile.CheckAST where
 import Compile.Types
 import qualified Data.Map as Map
 import qualified Data.Set as Set
+import qualified Data.List as List
 import Debug.Trace
 
 -- Checks that the abstract syntax adheres to the static semantics
@@ -177,7 +178,7 @@ checkS :: S -> Context -> Context -> Set.Set String -> Type ->
           Map.Map String [Param] ->CheckS
 checkS ANup ctx _ _ _ _ = ValidS
 checkS (AAssert e) ctx m d _ smap =
-  case checkE e ctx d of
+  case checkE e ctx d smap of
     BadE s -> BadS s
     ValidE Bool -> ValidS
     ValidE _ -> BadS "Assert expression not type bool"
@@ -199,7 +200,7 @@ checkS (ADeclare i t' s) ctx m d t smap =
         -- allow shadowing of variables over functions
         Just (Map _ _) -> case s of
           (ASeq (AAssign _ e) s2) ->
-            case checkE e ctx d of
+            case checkE e ctx d smap of
               BadE s -> BadS s
               ValidE t2 -> if t' == t2 then checkS s2 (Map.insert i t' ctx) m d t smap
                            else BadS $ i ++ " declared with type " ++ (show t') ++ 
@@ -213,11 +214,11 @@ checkS (AReturn e) ctx m d t smap =
     (Nothing, _) -> BadS "empty return statement in non-void function"
     (Just _, Void) -> BadS "non-empty return statement in void function"
     (Just e', _) ->
-      case checkE e' ctx d of
+      case checkE e' ctx d smap of
         BadE s -> BadS s
         ValidE t' -> if t==t' then ValidS else BadS "return type mismatch"
 checkS (AWhile e s) ctx m d t smap = 
-  case checkE e ctx d of
+  case checkE e ctx d smap of
     BadE s -> BadS s
     ValidE Int -> BadS "While condition is not type bool"
     ValidE Bool -> checkS s ctx m d t smap
@@ -225,13 +226,13 @@ checkS (AAssign l e) ctx m d _ smap =
   case lvalType l ctx smap of
     Nothing -> BadS $ "Assigning " ++ (show l) ++ " undeclared"
     Just t1 ->
-      case checkE e ctx d of
+      case checkE e ctx d smap of
         BadE s -> BadS s
-        ValidE t2 -> if t1 == t2 || t2 == Pointer Void then ValidS
+        ValidE t2 -> if t1 == t2 then ValidS
                      else BadS $ (show l) ++ " declared with type " ++ (show t1) ++ 
                           " assigned with type " ++ (show t2) 
 checkS (AIf e s1 s2) ctx m d t smap =
-  case checkE e ctx d of
+  case checkE e ctx d smap of
     BadE s -> BadS s
     ValidE Int -> BadS "If condition is not type bool"
     ValidE Bool ->
@@ -239,7 +240,7 @@ checkS (AIf e s1 s2) ctx m d t smap =
         BadS s -> BadS s
         ValidS -> checkS s2 ctx m d t smap
 checkS (AExpr e s) ctx m d t smap =
-  case checkE e ctx d of
+  case checkE e ctx d smap of
     BadE s -> BadS s
     ValidE _ -> checkS s ctx m d t smap
 
@@ -264,37 +265,59 @@ lvalType (LArray l e) ctx smap =
     _ -> Nothing
   
 -- Performs static type checking on an expression under a typing context
-checkE :: Expr -> Context -> Set.Set String -> CheckE
-checkE (ExpInt Dec i _) _ _ = if i > (2^31) then BadE "const too large"
+checkE :: Expr -> Context -> Set.Set String -> Map.Map String [Param] -> CheckE
+checkE (ExpInt Dec i _) _ _ _ = if i > (2^31) then BadE "const too large"
                               else ValidE Int
-checkE (ExpInt Hex i _) _ _ = if i > (2^32 - 1) then BadE "const too large"
+checkE (ExpInt Hex i _) _ _ _ = if i > (2^32 - 1) then BadE "const too large"
                               else ValidE Int
-checkE (TrueT _) _ _ = ValidE Bool
-checkE (FalseT _) _ _ = ValidE Bool
-checkE (Ident i _) ctx _ = 
+checkE (TrueT _) _ _ _ = ValidE Bool
+checkE (FalseT _) _ _ _ = ValidE Bool
+checkE (Ident i _) ctx d smap = 
   case Map.lookup i ctx of
     Nothing -> BadE $ i ++ " used undeclared."
     Just t -> ValidE t    
-checkE (ExpUnOp op e _) _ _ | op == Incr || op == Decr =
+checkE (ExpUnOp op e _) _ _ _ | op == Incr || op == Decr =
   BadE "incr or decr in expression"
-checkE (ExpUnOp op e _) ctx d =
+checkE (ExpUnOp op e _) ctx d smap =
   let
     ([opT], ret) = opType op
-  in case (checkE e ctx d) of
+  in case (checkE e ctx d smap) of
     BadE s -> BadE s
     ValidE t -> if opT(t) then ValidE $ ret(t)
                 else BadE "unop expr mismatch"
-checkE (ExpBinOp Arrow e (Ident s2 _) _) ctx d =
-  case checkE e ctx d of
+checkE (ExpBinOp Arrow e (Ident s2 _) _) ctx d smap =
+  case checkE e ctx d smap of
     BadE s -> BadE s
     ValidE t ->
       case t of
-        (Pointer (Struct i)) -> ValidE Int -- smap lookup
+        (Pointer (Struct i)) ->
+          case Map.lookup i smap of
+            Nothing -> BadE $ "undefined struct " ++ i
+            Just fields ->
+              case List.find (\(Param _ fieldName) -> fieldName == s2) fields of
+                Nothing -> BadE $ "field " ++ s2 ++ " undefined in struct " ++ i
+                Just (Param t' _) -> ValidE t'
         _ -> BadE "Invalid exp on LHS of arrow op"
-checkE (ExpBinOp Arrow _ _ _) _ _ = BadE "Invalid arrow operation"
-checkE (ExpBinOp op e1 e2 _) ctx d =
+checkE (ExpBinOp Arrow _ _ _) _ _ _ =
+  BadE $ "exp on RHS of arrow op is not identifier."
+checkE (ExpBinOp Dot e (Ident s2 _) _) ctx d smap =
+  case checkE e ctx d smap of
+    BadE s -> BadE s
+    ValidE t ->
+      case t of
+        (Struct i) ->
+          case Map.lookup i smap of
+            Nothing -> BadE $ "undefined struct " ++ i
+            Just fields ->
+              case List.find (\(Param _ fieldName) -> fieldName == s2) fields of
+                Nothing -> BadE $ "field " ++ s2 ++ " undefined in struct " ++ i
+                Just (Param t' _) -> ValidE t'
+        _ -> BadE "Invalid exp on LHS of dot op"
+checkE (ExpBinOp Dot _ _ _) _ _ _ =
+  BadE $ "exp on RHS of dot op is not identifier."
+checkE (ExpBinOp op e1 e2 _) ctx d smap =
   if (op == Eq) || (op == Neq) then
-    case (checkE e1 ctx d, checkE e2 ctx d) of
+    case (checkE e1 ctx d smap, checkE e2 ctx d smap) of
       (BadE s, _) -> BadE s
       (_, BadE s) -> BadE s
       (ValidE t1, ValidE t2) -> case t1 of
@@ -304,14 +327,14 @@ checkE (ExpBinOp op e1 e2 _) ctx d =
   else
     let
       ([opT1, opT2], ret) = opType op
-    in case (checkE e1 ctx d, checkE e2 ctx d) of
+    in case (checkE e1 ctx d smap, checkE e2 ctx d smap) of
       (BadE s, _) -> BadE s
       (_, BadE s) -> BadE s
       (ValidE t1, ValidE t2) ->
         if opT1(t1) && opT2(t2) then ValidE $ ret(t1)
         else BadE ("binop expr mismatch " ++ (show e1) ++ (show e2) ++ (show op))
-checkE (ExpTernOp e1 e2 e3 _) ctx d =
-  case (checkE e1 ctx d, checkE e2 ctx d, checkE e3 ctx d) of
+checkE (ExpTernOp e1 e2 e3 _) ctx d smap =
+  case (checkE e1 ctx d smap, checkE e2 ctx d smap, checkE e3 ctx d smap) of
     (BadE s, _, _) -> BadE s
     (_, BadE s, _) -> BadE s
     (_, _, BadE s) -> BadE s
@@ -320,10 +343,10 @@ checkE (ExpTernOp e1 e2 e3 _) ctx d =
         Int -> BadE "cond in ternary op not type bool"
         Bool -> if t2 == t3 && (t2 /= Void) then ValidE t2
                 else BadE "ternary result type mismatch"
-checkE (App fun args _) ctx d =
+checkE (App fun args _) ctx d smap =
   if Set.notMember fun d then BadE "undefined fun" else
     let
-      ts = map (\e -> checkE e ctx d) args
+      ts = map (\e -> checkE e ctx d smap) args
       -- TODO better error propagation here
       ts' = map (\(ValidE t) -> t) ts
     in case Map.lookup fun ctx of
@@ -331,15 +354,15 @@ checkE (App fun args _) ctx d =
         if ts' == input then ValidE output
         else BadE "function input type mismatch"
       _ -> BadE "undefined function call"
-checkE (Null _) ctx d=
+checkE (Null _) ctx d smap =
   ValidE (Pointer Void) -- Placeholder for Type Any
-checkE (Alloc t _) ctx d =
+checkE (Alloc t _) ctx d smap =
   case t of
     Void -> BadE "Can't allocate pointer of type void"
     Map _ _ -> BadE "Allocating pointer with function type"
     _ -> ValidE (Pointer t)
-checkE (AllocArray t e _) ctx d =
-  case checkE e ctx d of
+checkE (AllocArray t e _) ctx d smap =
+  case checkE e ctx d smap of
     BadE s -> BadE s
     ValidE t1 -> case t1 of
       Int -> case t of
@@ -348,8 +371,8 @@ checkE (AllocArray t e _) ctx d =
         Struct _ -> BadE "Allocating array with large type"
         _ -> ValidE (Array t)
       _ -> BadE "size for alloc_array not int"
-checkE (Subscr e1 e2 _) ctx d =
-  case (checkE e1 ctx d, checkE e2 ctx d) of
+checkE (Subscr e1 e2 _) ctx d smap =
+  case (checkE e1 ctx d smap, checkE e2 ctx d smap) of
     (ValidE t1, ValidE t2) -> case t2 of
       Int -> case t1 of
         Array t3 -> ValidE t3
