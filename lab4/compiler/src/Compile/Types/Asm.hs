@@ -8,6 +8,7 @@ import Control.DeepSeq
 
 data Asm = AsmRet
          | Movl Arg Arg 
+         | Movq Arg Arg 
          | Addl Arg Arg 
          | Addd Arg Arg 
          | Andl Arg Arg 
@@ -63,6 +64,7 @@ data Register = EAX | RAX | AL
 instance Show Asm where
   show (AsmRet) = "\tret"
   show (Movl e1 e2) = "\tmovl " ++ show e1 ++ ", " ++ show e2
+  show (Movq e1 e2) = "\tmovq " ++ show e1 ++ ", " ++ show e2
   show (Sarl e1 e2) = "\tsarl " ++ show e1 ++ ", " ++ show e2
   show (Sall e1 e2) = "\tsall " ++ show e1 ++ ", " ++ show e2
   show (Movslq e1 e2) = "\tmovslq " ++ show e1 ++ ", " ++ show e2
