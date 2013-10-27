@@ -233,9 +233,12 @@ checkS (AAssign l e) ctx m d _ smap =
     Just t1 ->
       case checkE e ctx d smap of
         BadE s -> BadS s
-        ValidE t2 -> if t1 == t2 || t2 == (Pointer Void) then ValidS
+        ValidE t2 -> if t1 == t2 || ptrAny(t1,t2) then ValidS
                      else BadS $ (show l) ++ " declared with type " ++ (show t1) ++ 
-                          " assigned with type " ++ (show t2) 
+                          " assigned with type " ++ (show t2)
+          where ptrAny(t1,t2) = case (t1,t2) of
+                  (Pointer _, Pointer Void) -> True
+                  _ -> False
 checkS (AIf e s1 s2) ctx m d t smap =
   case checkE e ctx d smap of
     BadE s -> BadS s
