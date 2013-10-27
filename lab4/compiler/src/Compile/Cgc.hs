@@ -52,9 +52,9 @@ coloring g = let size = Map.size g
                  bound = 50
                  m = Map.map (\x-> -1) g
                  preColoring = [(ARes, 0)] ++
-                               [(AReg RAX, 0), (AReg RDI, 1), (AReg RSI, 2),
-                                (AReg RDX, 3), (AReg RCX, 4), (AReg R8, 5),
-                                (AReg R9, 6), (AReg R10, 7), (AReg R11, 8)] ++
+                               [(AReg EAX, 0), (AReg EDI, 1), (AReg ESI, 2),
+                                (AReg EDX, 3), (AReg ECX, 4), (AReg R8D, 5),
+                                (AReg R9D, 6), (AReg R10D, 7), (AReg R11D, 8)] ++
                                [(AArg i, i+1) | i <- [0..5]]
                  m' = case size > bound of
                    False -> foldr (\(x,y) -> \acc -> Map.insert x y acc) m preColoring
@@ -118,5 +118,5 @@ mex l = let
 
 -- Orders the registers in the order we want to use them (ESP, EBP for stack)
 registerOrder () =
-  zip [0..] $ [RAX,RDI,RSI,RDX,RCX,R8,R9,R10,R11,RBX,R12,R13,R14]
+  zip [0..] $ [EAX,EDI,ESI,EDX,ECX,R8D,R9D,R10D,R11D,EBX,R12D,R13D,R14D]
   -- preference toward caller save registers

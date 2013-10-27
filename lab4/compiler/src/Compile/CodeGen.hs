@@ -68,7 +68,7 @@ genFunction (fun,p,b) l lengths =
 
 removeRedundant code = 
   filter (\inst -> case inst of
-             (Movq a1 a2) -> a1 /= a2
+             (Movl a1 a2) -> a1 /= a2
              _ -> True) code
 
 -- updates the abstract assembly at a label
@@ -278,13 +278,13 @@ translate regMap n (AAsm {aAssign = [dest], aOp = Nop, aArgs = [src]}) =
   in
    case s of
      (Stk _) ->
-       [Movq s (Reg R15),
-        Movq (Reg R15) (regFind regMap (ALoc dest))]
+       [Movl s (Reg R15D),
+        Movl (Reg R15D) (regFind regMap (ALoc dest))]
      (Reg (SpillArg i)) ->
-       [Movq (Stk ((i+n+1)*8)) (Reg R15),
-        Movq (Reg R15) (regFind regMap (ALoc dest))]
+       [Movl (Stk ((i+n+1)*8)) (Reg R15D),
+        Movl (Reg R15D) (regFind regMap (ALoc dest))]
      _ ->
-       [Movq (regFind regMap src) (regFind regMap (ALoc dest))]
+       [Movl (regFind regMap src) (regFind regMap (ALoc dest))]
 translate regMap _ (AAsm {aAssign = [dest], aOp = Add, aArgs = [src1, src2]}) =
   let
     dest' = regFind regMap (ALoc dest)
@@ -293,19 +293,19 @@ translate regMap _ (AAsm {aAssign = [dest], aOp = Add, aArgs = [src1, src2]}) =
   in
    case (s, s2) of
      (Stk _, _) ->
-       [Movq s (Reg R15),
-        Addl (regFind regMap src2) (Reg R15),
-        Movq (Reg R15) dest']
+       [Movl s (Reg R15D),
+        Addl (regFind regMap src2) (Reg R15D),
+        Movl (Reg R15D) dest']
      (_, Stk _) ->
-        [Movq s2 (Reg R15),
-        Addl s (Reg R15),
-        Movq (Reg R15) dest']
+        [Movl s2 (Reg R15D),
+        Addl s (Reg R15D),
+        Movl (Reg R15D) dest']
      _ ->
        if s == dest' then
-         [Movq s dest',
+         [Movl s dest',
           Addl (regFind regMap src2) dest']
        else
-         [Movq (regFind regMap src2) dest',
+         [Movl (regFind regMap src2) dest',
           Addl s dest']
 translate regMap _ (AAsm {aAssign = [dest], aOp = Sub, aArgs = [src1, src2]}) =
   let
@@ -318,15 +318,15 @@ translate regMap _ (AAsm {aAssign = [dest], aOp = Sub, aArgs = [src1, src2]}) =
        if s2 == dest' then
          if s == s2 then
          [Negl s2,
-          Movq s (Reg R15),
-          Addl (Reg R15) s2] else
+          Movl s (Reg R15D),
+          Addl (Reg R15D) s2] else
            [Negl s2,
             Addl s s2]
        else
-         [Movq s (Reg R15),
-          Movq (Reg R15) dest',
-          Movq s2 (Reg R15),
-          Subl (Reg R15) dest']
+         [Movl s (Reg R15D),
+          Movl (Reg R15D) dest',
+          Movl s2 (Reg R15D),
+          Subl (Reg R15D) dest']
 translate regMap _ (AAsm {aAssign = [dest], aOp = Mul, aArgs = [src1, src2]}) =
   let
     dest' = regFind regMap (ALoc dest)
@@ -335,30 +335,30 @@ translate regMap _ (AAsm {aAssign = [dest], aOp = Mul, aArgs = [src1, src2]}) =
   in
    case (s, s2) of
      (Stk _, _) ->
-       [Movq s (Reg R15),
-        Imull (regFind regMap src2) (Reg R15),
-        Movq (Reg R15) dest']
+       [Movl s (Reg R15D),
+        Imull (regFind regMap src2) (Reg R15D),
+        Movl (Reg R15D) dest']
      (_, Stk _) ->
-        [Movq s2 (Reg R15),
-        Imull s (Reg R15),
-        Movq (Reg R15) dest']
+        [Movl s2 (Reg R15D),
+        Imull s (Reg R15D),
+        Movl (Reg R15D) dest']
      _ ->
        if s == dest' then
-         [Movq s dest',
+         [Movl s dest',
           Imull (regFind regMap src2) dest']
        else
-         [Movq (regFind regMap src2) dest',
+         [Movl (regFind regMap src2) dest',
           Imull s dest']
 translate regMap _ (AAsm {aAssign = [dest], aOp = Div, aArgs = [src1, src2]}) =
-  [Movq (regFind regMap src1) (Reg RAX),
+  [Movl (regFind regMap src1) (Reg EAX),
    Cdq,
    Idivl (regFind regMap src2),
-   Movq (Reg RAX) (regFind regMap (ALoc dest))]
+   Movl (Reg EAX) (regFind regMap (ALoc dest))]
 translate regMap _ (AAsm {aAssign = [dest], aOp = Mod, aArgs = [src1, src2]}) =
-  [Movq (regFind regMap src1) (Reg RAX),
+  [Movl (regFind regMap src1) (Reg EAX),
    Cdq,
    Idivl (regFind regMap src2),
-   Movq (Reg RDX) (regFind regMap (ALoc dest))]
+   Movl (Reg EDX) (regFind regMap (ALoc dest))]
 translate regMap _ (AAsm {aAssign = [dest], aOp = Neg, aArgs = [src]}) =
   let
     dest' = regFind regMap (ALoc dest)
@@ -366,11 +366,11 @@ translate regMap _ (AAsm {aAssign = [dest], aOp = Neg, aArgs = [src]}) =
   in
    case (s, dest') of
      (Stk _, Stk _) ->
-       [Movq s (Reg R15),
-        Movq (Reg R15) dest',
+       [Movl s (Reg R15D),
+        Movl (Reg R15D) dest',
         Negl dest']
      _ ->
-       [Movq (regFind regMap src) dest',
+       [Movl (regFind regMap src) dest',
         Negl dest']
 translate regMap _ (AAsm {aAssign = [dest], aOp = BNot, aArgs = [src]}) =
   let
@@ -379,11 +379,11 @@ translate regMap _ (AAsm {aAssign = [dest], aOp = BNot, aArgs = [src]}) =
   in
    case (s, dest') of
      (Stk _, Stk _) ->
-       [Movq s (Reg R15),
-        Movq (Reg R15) dest',
+       [Movl s (Reg R15D),
+        Movl (Reg R15D) dest',
         Notl dest']
      _ ->
-       [Movq (regFind regMap src) dest',
+       [Movl (regFind regMap src) dest',
         Notl dest']
 translate regMap _ (AAsm {aAssign = [dest], aOp = LNot, aArgs = [src]}) =
   let
@@ -392,11 +392,11 @@ translate regMap _ (AAsm {aAssign = [dest], aOp = LNot, aArgs = [src]}) =
   in
    case (s, dest') of
      (Stk _, Stk _) ->
-       [Movq s (Reg R15),
-        Movq (Reg R15) dest',
+       [Movl s (Reg R15D),
+        Movl (Reg R15D) dest',
         Xorl (Val 1) dest']
      _ ->
-       [Movq s dest',
+       [Movl s dest',
         Xorl (Val 1) dest']
 translate regMap _ (AAsm {aAssign = [dest], aOp = Lt, aArgs = [src1, src2]}) =
   cmpOp (dest,src2,src1) Lt regMap
@@ -420,11 +420,11 @@ translate regMap n (ACtrl (Call s ts)) = let
   (l, _) = 
     foldr (\t -> \(acc, i) -> 
             case regFind regMap $ ALoc $ ATemp t of
-              (Stk j) -> ([Movq (Stk j) (Reg R15),
-                           Movq (Reg R15) (Stk (-i*8))] : acc, i+1)
-              s -> ([Movq s (Stk (-i*8))] : acc, i+1)) ([], 1) ts
+              (Stk j) -> ([Movl (Stk j) (Reg R15D),
+                           Movl (Reg R15D) (Stk (-i*8))] : acc, i+1)
+              s -> ([Movl s (Stk (-i*8))] : acc, i+1)) ([], 1) ts
   saves = concat l
-  restores = map (\(Movq x y) -> Movl y x) (reverse saves)
+  restores = map (\(Movl x y) -> Movl y x) (reverse saves)
   in if ((length ts)*8) > 0 then
        saves ++ [Subb (Val $ (length ts)*8) (Reg RSP)] ++ [AsmCall s] ++ 
        [Addd (Val $ (length ts)*8) (Reg RSP)] ++ restores
@@ -441,9 +441,9 @@ translate regMap _ (ACtrl (Ifz v l)) =
     v' = regFind regMap v
   in 
    case v' of
-     (Stk _) -> [Movq v' (Reg R15), 
-                 Movzbl (Reg R15B) (Reg R15),
-                 Testl (Reg R15) (Reg R15D), 
+     (Stk _) -> [Movl v' (Reg R15D), 
+                 Movzbl (Reg R15B) (Reg R15D),
+                 Testl (Reg R15D) (Reg R15D), 
                  Je l]
      _ -> [Movzbl (lowerReg v') v', Testl v' v', Je l]
 translate regMap _ (AAsm {aAssign = [dest], aOp = o, aArgs = [src1, src2]})
@@ -458,13 +458,13 @@ translate regMap _ (AAsm {aAssign = [dest], aOp = o, aArgs = [src1, src2]})
   in
    case (dest', s1) of
      (Stk _, Stk _) ->
-       [Movq s2 (Reg RCX),
-        Movq s1 (Reg R15),
-        Movq (Reg R15) dest',
+       [Movl s2 (Reg ECX),
+        Movl s1 (Reg R15D),
+        Movl (Reg R15D) dest',
         asm (Reg CL) dest']
      _ ->
-       [Movq s2 (Reg RCX),
-        Movq s1 dest',
+       [Movl s2 (Reg ECX),
+        Movl s1 dest',
         asm (Reg CL) dest']
 cmpOp (dest,src1,src2) op regMap = 
   let
@@ -481,19 +481,19 @@ cmpOp (dest,src1,src2) op regMap =
   in
    case (dest', s1, s2) of
      (Stk _, Stk _, Stk _) ->
-       [Movq s1 (Reg R15),
-        Cmpl (Reg R15) s2,
+       [Movl s1 (Reg R15D),
+        Cmpl (Reg R15D) s2,
         asm (Reg R15B),
-        Movzbl (Reg R15B) (Reg R15),
-        Movq (Reg R15) dest']
+        Movzbl (Reg R15B) (Reg R15D),
+        Movl (Reg R15D) dest']
      (Stk _, _, _) ->
        [Cmpl s1 s2,
         asm (Reg R15B),
-        Movzbl (Reg R15B) (Reg R15),
-        Movq (Reg R15) dest']
+        Movzbl (Reg R15B) (Reg R15D),
+        Movl (Reg R15D) dest']
      (_, Stk _, Stk _) ->
-       [Movq s1 (Reg R15),
-        Cmpl (Reg R15) s2,
+       [Movl s1 (Reg R15D),
+        Cmpl (Reg R15D) s2,
         asm (Reg R15B),
         Movzbl (Reg R15B) dest']
      _ ->
@@ -514,19 +514,19 @@ binOp (dest,src1,src2) op regMap =
   in
    case (s, s2) of
      (Stk _, _) ->
-       [Movq s (Reg R15),
-        asm s2 (Reg R15),
-        Movq (Reg R15) dest']
+       [Movl s (Reg R15D),
+        asm s2 (Reg R15D),
+        Movl (Reg R15D) dest']
      (_, Stk _) ->
-       [Movq s2 (Reg R15),
-        asm s (Reg R15),
-        Movq (Reg R15) dest']
+       [Movl s2 (Reg R15D),
+        asm s (Reg R15D),
+        Movl (Reg R15D) dest']
      _ ->
        if s == dest' then
-         [Movq s dest',
+         [Movl s dest',
           asm s2 dest']
        else
-         [Movq s2 dest',
+         [Movl s2 dest',
           asm s dest']
 
 regFind :: Map.Map ALoc Arg -> AVal -> Arg
@@ -536,19 +536,19 @@ regFind regMap (ALoc (Pt aloc)) =
 regFind regMap (ALoc loc) = 
   case Map.lookup loc regMap of
     Just (reg) -> reg
-    Nothing -> Reg RAX
+    Nothing -> Reg EAX
 
-lowerReg (Reg RAX) = Reg AL
-lowerReg (Reg RBX) = Reg BL
-lowerReg (Reg RCX) = Reg CL
-lowerReg (Reg RDX) = Reg DL
-lowerReg (Reg RSI) = Reg SIL
-lowerReg (Reg RDI) = Reg DIL
-lowerReg (Reg R8) = Reg R8B
-lowerReg (Reg R9) = Reg R9B
-lowerReg (Reg R10) = Reg R10B
-lowerReg (Reg R11) = Reg R11B
-lowerReg (Reg R12) = Reg R12B
-lowerReg (Reg R13) = Reg R13B
-lowerReg (Reg R14) = Reg R14B
+lowerReg (Reg EAX) = Reg AL
+lowerReg (Reg EBX) = Reg BL
+lowerReg (Reg ECX) = Reg CL
+lowerReg (Reg EDX) = Reg DL
+lowerReg (Reg ESI) = Reg SIL
+lowerReg (Reg EDI) = Reg DIL
+lowerReg (Reg R8D) = Reg R8B
+lowerReg (Reg R9D) = Reg R9B
+lowerReg (Reg R10D) = Reg R10B
+lowerReg (Reg R11D) = Reg R11B
+lowerReg (Reg R12D) = Reg R12B
+lowerReg (Reg R13D) = Reg R13B
+lowerReg (Reg R14D) = Reg R14B
 lowerReg x = x

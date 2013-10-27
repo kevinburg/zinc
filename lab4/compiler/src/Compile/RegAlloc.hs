@@ -137,8 +137,8 @@ genInter' (stmt : aasm) i live inter vars =
       inter' = Set.union inter newInter
       in genInter' aasm (i+1) live inter' vars'
     ACtrl (Call f ts) -> let
-      ler = [AReg RAX, AReg RDI, AReg RSI, AReg RDX, AReg RCX,
-             AReg R8, AReg R9, AReg R10, AReg R11]
+      ler = [AReg EAX, AReg EDI, AReg ESI, AReg EDX, AReg ECX,
+             AReg R8D, AReg R9D, AReg R10D, AReg R11D]
       vs = case Map.lookup i live of
         Nothing -> Set.empty
         Just s -> s
@@ -170,7 +170,7 @@ genInter' (stmt : aasm) i live inter vars =
         Just s -> s
       newInter = Set.map (\x -> (dest, x)) (Set.difference vs (Set.fromList srcs'))
       inter' = Set.union inter newInter
-      inter'' = Set.union inter' (Set.fromList [(a, AReg RCX) | a <- (Set.toList vs) ++ [dest]])
+      inter'' = Set.union inter' (Set.fromList [(a, AReg ECX) | a <- (Set.toList vs) ++ [dest]])
       in genInter' aasm (i+1) live inter'' vars'
     AAsm {aAssign = [dest], aOp = o, aArgs = srcs} | o == Div || o == Mod -> let
       srcs' = isTemp srcs
@@ -181,7 +181,7 @@ genInter' (stmt : aasm) i live inter vars =
       newInter = Set.map (\x -> (dest, x)) (Set.difference vs (Set.fromList srcs'))
       inter' = Set.union inter newInter
       inter'' = Set.union inter' (Set.fromList [(a, b) | a <- Set.toList vs,
-                                                b <- [AReg RAX, AReg RDX]])
+                                                b <- [AReg EAX, AReg EDX]])
       in genInter' aasm (i+1) live inter'' vars'
     AAsm {aAssign = [dest], aOp = _, aArgs = srcs} -> let
       srcs' = isTemp srcs
