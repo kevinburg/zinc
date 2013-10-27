@@ -77,7 +77,11 @@ update aasm (Just acc) = Just $ acc ++ aasm
 
 updatePre aasm Nothing = Just aasm
 updatePre aasm (Just acc) = Just $ aasm ++ acc
-     
+
+unroll (LIdent i) s = Ident i s
+unroll (LDeref l) s = let
+  e = unroll l s
+  in ExpUnOp Deref e s
 
 getAddr (LDeref (LIdent i)) t n = ([AAsm [t] Nop [ALoc $ Pt $ AVar i]], n)
 getAddr (LDeref l) t n = let
@@ -104,14 +108,16 @@ genStmt (acc, n, l, ep) ((Simp (Asgn lval o e s) _) : xs) lens =
     (aasm, n', l') = genExp (n+1, l) e' (ATemp n) lens
     (post, n'') = movToLval (ATemp n) lval n'
   in genStmt (acc ++ aasm ++ post, n'', l', ep) xs lens
-genStmt (acc, n, l, ep) ((Simp (PostOp o (LIdent i) s) _) : xs) lens =
+genStmt (acc, n, l, ep) ((Simp (PostOp o lval s) _) : xs) lens =
   let
     op = case o of
       Incr -> Add
       Decr -> Sub
-    e' = ExpBinOp op (Ident i s) (ExpInt Dec 1 s) s
-    (aasm, n', l') = genExp (n, l) e' (AVar i) lens
-  in genStmt (acc ++ aasm, n', l', ep) xs lens
+    e1 = unroll lval s
+    e' = ExpBinOp op e1 (ExpInt Dec 1 s) s
+    (aasm, n', l') = genExp (n+1, l) e' (ATemp n) lens
+    (post, n'') = movToLval (ATemp n) lval n'
+  in genStmt (acc ++ aasm ++ post, n'', l', ep) xs lens
 genStmt (acc, n, l, ep) ((Simp (Expr e _) _) : xs) lens = 
   let
     (aasm, n', l') = genExp (n + 1, l) e (ATemp n) lens
@@ -218,12 +224,9 @@ genExp (n,l) (ExpBinOp op e1 e2 _) loc lens =
       (i2, n'', l'') = genExp (n' + 1, l') e2 (ATemp n') lens
       aasm  = [AAsm [loc] op [ALoc $ ATemp n, ALoc $ ATemp $ n']]
       in (i1 ++ i2 ++ aasm, n'', l'')
-genExp (n,l) (ExpUnOp Incr (Ident i _) p) _ lens = let
-  e' = ExpBinOp Add (Ident i p) (ExpInt Dec 1 p) p
-  in genExp (n, l) e' (AVar i) lens
-genExp (n,l) (ExpUnOp Decr (Ident i _) p) _ lens = let
-  e' = ExpBinOp Sub (Ident i p) (ExpInt Dec 1 p) p
-  in genExp (n, l) e' (AVar i) lens
+genExp (n,l) (ExpUnOp Deref e _) loc lens = let
+  (aasm, n', l') = genExp (n+1, l) e (ATemp n) lens
+  in (aasm ++ [AAsm [loc] Nop [ALoc $ Pt $ ATemp n]], n', l')
 genExp (n,l) (ExpUnOp op e _) loc lens = let
   (i1, n', l') = genExp (n + 1, l) e (ATemp n) lens
   aasm = [AAsm [loc] op [ALoc $ ATemp n]]
@@ -278,13 +281,13 @@ translate regMap n (AAsm {aAssign = [dest], aOp = Nop, aArgs = [src]}) =
   in
    case s of
      (Stk _) ->
-       [Movl s (Reg R15D),
-        Movl (Reg R15D) (regFind regMap (ALoc dest))]
+       [Movq s (Reg R15),
+        Movq (Reg R15) (fullReg (regFind regMap (ALoc dest)))]
      (Reg (SpillArg i)) ->
-       [Movl (Stk ((i+n+1)*8)) (Reg R15D),
-        Movl (Reg R15D) (regFind regMap (ALoc dest))]
+       [Movq (Stk ((i+n+1)*8)) (Reg R15),
+        Movq (Reg R15) (fullReg (regFind regMap (ALoc dest)))]
      _ ->
-       [Movl (regFind regMap src) (regFind regMap (ALoc dest))]
+       [Movq (fullReg s) (fullReg (regFind regMap (ALoc dest)))]
 translate regMap _ (AAsm {aAssign = [dest], aOp = Add, aArgs = [src1, src2]}) =
   let
     dest' = regFind regMap (ALoc dest)
@@ -552,3 +555,19 @@ lowerReg (Reg R12D) = Reg R12B
 lowerReg (Reg R13D) = Reg R13B
 lowerReg (Reg R14D) = Reg R14B
 lowerReg x = x
+
+fullReg (Reg EAX) = Reg RAX
+fullReg (Reg EBX) = Reg RBX
+fullReg (Reg ECX) = Reg RCX
+fullReg (Reg EDX) = Reg RDX
+fullReg (Reg ESI) = Reg RSI
+fullReg (Reg EDI) = Reg RDI
+fullReg (Reg R8D) = Reg R8
+fullReg (Reg R9D) = Reg R9
+fullReg (Reg R10D) = Reg R10
+fullReg (Reg R11D) = Reg R11
+fullReg (Reg R12D) = Reg R12
+fullReg (Reg R13D) = Reg R13
+fullReg (Reg R14D) = Reg R14
+fullReg (Loc r) = Loc (fullReg r)
+fullReg x = x
