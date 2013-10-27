@@ -89,7 +89,9 @@ instance Show Asm where
   show (Cmpl e1 e2) = "\tcmpl " ++ show e1 ++ ", " ++ show e2
   show (AsmLbl s) = "." ++ s ++ ":"
   show (AsmCall s) = "\txorb %al, %al\n" ++ if s == "_c0_abort" then
-                                            "\tcall _abort" else
+                                              "\tcall _abort" else
+                                              if s == "_c0_malloc" then
+                                                "\tcall _malloc" else
     if s == "fadd" || s == "fsub" || s == "fmul" ||
        s == "fdiv" || s == "fless" || s == "itof" ||
        s == "ftoi" || s == "print_fpt" || s == "print_int" ||
