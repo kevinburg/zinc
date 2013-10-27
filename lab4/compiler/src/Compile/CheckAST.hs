@@ -208,7 +208,7 @@ checkS (ADeclare i t' s) ctx m d t smap =
             case checkE e ctx d smap of
               BadE s -> BadS s
               ValidE t2 -> if t' == t2 then checkS s2 (Map.insert i t' ctx) m d t smap
-                           else BadS $ i ++ " declared with type " ++ (show t') ++ 
+                              else BadS $ i ++ " declared with type " ++ (show t') ++ 
                                 " assigned with type " ++ (show t2)
           _ -> checkS s (Map.insert i t' ctx) m d t smap
         Just _ -> BadS $ "Redeclaring " ++ i
@@ -233,7 +233,7 @@ checkS (AAssign l e) ctx m d _ smap =
     Just t1 ->
       case checkE e ctx d smap of
         BadE s -> BadS s
-        ValidE t2 -> if t1 == t2 then ValidS
+        ValidE t2 -> if t1 == t2 || t2 == (Pointer Void) then ValidS
                      else BadS $ (show l) ++ " declared with type " ++ (show t1) ++ 
                           " assigned with type " ++ (show t2) 
 checkS (AIf e s1 s2) ctx m d t smap =
@@ -249,6 +249,7 @@ checkS (AExpr e s) ctx m d t smap =
     BadE s -> BadS s
     ValidE _ -> checkS s ctx m d t smap
 
+lvalType :: LValue -> Context -> Map.Map String [Param] -> Maybe Type
 lvalType (LIdent i) ctx smap = Map.lookup i ctx
 lvalType (LDeref l) ctx smap =
   case lvalType l ctx smap of
@@ -257,11 +258,19 @@ lvalType (LDeref l) ctx smap =
     _ -> Nothing
 lvalType (LArrow l s) ctx smap =
   case lvalType l ctx smap of
-    Just (Pointer(Struct s1)) -> Just Int
+    Just (Pointer(Struct s1)) -> case Map.lookup s1 smap of
+      Just ps -> case List.find (\(Param _ f) -> f == s) ps of
+        Just (Param t _) -> Just t
+        _ -> Nothing
+      _ -> Nothing 
     _ -> Nothing
 lvalType (LDot l s) ctx smap =
   case lvalType l ctx smap of
-    Just (Struct s1) -> Just Int
+    Just (Struct s1) -> case Map.lookup s1 smap of
+      Just ps -> case List.find (\(Param _ f) -> f == s) ps of
+        Just (Param t _) -> Just t
+        _ -> Nothing
+      _ -> Nothing
     _ -> Nothing
 lvalType (LArray l e) ctx smap =
   case lvalType l ctx smap of

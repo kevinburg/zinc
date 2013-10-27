@@ -40,8 +40,12 @@ partProgram ((TypeDef t s _) : xs) (typedef, fdecl, fdefn, sdefn) =
   partProgram xs (Map.insert s t typedef, fdecl, fdefn, sdefn)
 partProgram ((FDecl t s p _) : xs) (typedef, fdecl, fdefn, sdefn) =
   (let
-      ps = map (\(Param _ name) -> name) p
+      ps = map (\(Param _ name) -> name) p 
    in if any (\x -> Map.member x typedef) ps then Left "bleh" else Right ()) >>= \_ ->
+{-  (let
+      pt = map (\(Param t _) -> t) p
+      pt' = filter (\x -> case x of {Type s -> True; _ -> False}) pt
+   in if any (\(Type s) -> not (Map.member s typedef)) pt' then Left "Type unknown" else Right()) >> \_ -> -}
   case check (t, s, p) (typedef, fdecl, fdefn) of
     Left err -> Left err
     Right () -> partProgram xs (typedef, Map.insert s (t, typeFromParams p) fdecl, fdefn, sdefn)
@@ -49,6 +53,10 @@ partProgram ((FDefn t s p b _) : xs) (typedef, fdecl, fdefn, sdefn) =
   (let
       ps = map (\(Param _ name) -> name) p
    in if any (\x -> Map.member x typedef) ps then Left "bleh" else Right ()) >>= \_ ->
+{-  (let
+      pt = map (\(Param t _) -> t) p
+      pt' = filter (\x -> case x of {Type s -> True; _ -> False}) pt
+   in if any (\(Type s) -> not (Map.member s typedef)) pt' then Left "Type unknown" else Right()) >> \_ -> -}
   (case lookup s fdefn of
       (Just _) -> Left $ "Multiple definitions of function " ++ s
       Nothing -> Right ()) >>= \_ ->
@@ -71,14 +79,23 @@ partProgram ((SDefn s f _) : xs) (typedef, fdecl, fdefn, sdefn) =
   (case Map.lookup s sdefn of
       Nothing -> Right ()
       Just fs -> Left $ "Struct " ++ s ++ " defined more than once.") >>= \_ ->
+  (let
+      sts = filter (\(Param t i) -> case t of {Struct s -> True; _->False}) f
+      sts' = map (\(Param (Struct s) i) -> (Map.lookup s sdefn, s)) sts
+   in
+    case foldl(\(x,a)-> \(y,b)->case (x,y) of (Nothing, _)->(Nothing,a)
+                                              (_,Nothing)->(Nothing,b)
+                                              (Just t,_)->(Just t,a)) (Just Int,"asdf") sts' of
+      (Nothing,a) -> Left $ "Struct "++a++" used but not defined."
+      (Just _, _) -> Right ()) >>= \_ -> 
   partProgram xs (typedef, fdecl, fdefn, Map.insert s f sdefn)
 
 check (t, s, p) (typedef, fdecl, fdefn) = 
   (case t of
-      (Type s) ->
-        case Map.lookup s typedef of
+      Type s' ->
+        case Map.lookup s' typedef of
           (Just t') -> Right ()
-          Nothing -> Left $ "Type " ++ s ++ " not found"
+          Nothing -> Left $ "Type " ++ s' ++ " not found"
       _ -> Right ()) >>= \_ ->
   (case Map.lookup s typedef of
       (Just _) -> Left $ "Function decl/defn " ++ s ++ " collides with typedef"
@@ -92,6 +109,37 @@ check (t, s, p) (typedef, fdecl, fdefn) =
             Left $ "Function decl/defn conflicts with previous decl/defn"
           True -> Right ()
       Nothing -> Right ()) >>= \_ ->
+  (let
+      pt = filter (\x -> case x of {x|x==Bool || x==Int -> False; _ -> True}) $ typeFromParams p
+      pt' = map pType pt
+        where pType t = case t of
+                Type s -> Map.notMember s typedef
+                Struct s -> Map.notMember s typedef
+                Pointer t' -> pType t'
+                Array t' -> pType t'
+                Int -> False
+                Bool -> False
+                Void -> False
+                _ -> True
+   in
+    case any (\x -> x) pt' of
+      True -> Left $ "Parameter type unkown for function " ++ s ++ "."
+      _ -> Right ()) >>= \_ ->
+  (let
+      pt = filter(\x -> case x of {x|x==Bool||x==Int -> False; _ -> True}) $ typeFromParams p
+      pt' = map pType pt
+        where pType t = case t of
+                Struct s -> True
+                Type s -> case Map.lookup s typedef of
+                  Just t' -> case t' of
+                    Pointer t -> False
+                    _ -> True
+                  _ -> True
+                _ -> False
+   in
+    case any (\x -> x) pt' of
+      True -> Left $ "Parameter not of small type."
+      _ -> Right ()) >>= \_ -> 
   case lookup s fdefn of
     (Just (t', p', _, _, _)) ->
       case (typeEq typedef (t, t')) &&
