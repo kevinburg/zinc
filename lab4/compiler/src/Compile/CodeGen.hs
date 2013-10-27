@@ -41,7 +41,7 @@ genFunction (fun,p,b) l lengths =
                    ACtrl $ Ret $ ALoc ARes]
     aasm' = prefix ++ aasm ++ cleanup
     s = ssa aasm' fun
-    unssa = deSSA s
+    unssa = trace (show s) deSSA s
     (regMap, used) = allocateRegisters unssa
     code = 
       case used of
@@ -78,19 +78,18 @@ update aasm (Just acc) = Just $ acc ++ aasm
 updatePre aasm Nothing = Just aasm
 updatePre aasm (Just acc) = Just $ aasm ++ acc
      
-unroll (LIdent i) s = (Ident i s, i)
-unroll (LDeref l) s = 
-  let
-    (v, i) = unroll l s
-  in (ExpUnOp Deref v s, i)
- 
-genPost (LIdent i) target res n = ([AAsm [target] Nop [ALoc res]], n)
-genPost (LDeref (LIdent i)) target res n = ([AAsm [Pt target] Nop [ALoc res]], n)
-genPost (LDeref l) target res n = 
-  let
-    (aasm, n') = genPost l (ATemp n) res (n+1)
-  in ((AAsm [ATemp n] Nop [ALoc $ Pt target]) : aasm, n')
-                           
+
+getAddr (LDeref (LIdent i)) t n = ([AAsm [t] Nop [ALoc $ Pt $ AVar i]], n)
+getAddr (LDeref l) t n = let
+  (aasm, n') = getAddr l (ATemp n) (n+1)
+  in (aasm ++ [AAsm [t] Nop [ALoc $ Pt $ ATemp n]], n')
+
+movToLval t (LIdent i) n = ([AAsm [AVar i] Nop [ALoc t]], n)
+movToLval t (LDeref (LIdent i)) n = ([AAsm [Pt $ AVar i] Nop [ALoc t]], n)
+movToLval t (LDeref l) n = let
+  (aasm, n') = getAddr l (ATemp n) (n+1)
+  in (aasm ++ [AAsm [Pt $ ATemp n] Nop [ALoc t]], n')
+     
 genStmt acc [] _ = acc
 genStmt acc ((Simp (Decl _ _ Nothing _) _) : xs) lens = genStmt acc xs lens
 genStmt (acc, n, l, ep) ((Simp (Decl _ i (Just e) _) _) : xs) lens =
@@ -99,12 +98,11 @@ genStmt (acc, n, l, ep) ((Simp (Decl _ i (Just e) _) _) : xs) lens =
   in genStmt (acc ++ aasm, n', l', ep) xs lens
 genStmt (acc, n, l, ep) ((Simp (Asgn lval o e s) _) : xs) lens = 
   let
-    (var, ident) = unroll lval s
     e' = case o of
       Nothing -> e
-      Just op -> ExpBinOp op var e s
+      Just op -> e --ExpBinOp op var e s
     (aasm, n', l') = genExp (n+1, l) e' (ATemp n) lens
-    (post, n'') = genPost lval (AVar ident) (ATemp n) n'
+    (post, n'') = movToLval (ATemp n) lval n'
   in genStmt (acc ++ aasm ++ post, n'', l', ep) xs lens
 genStmt (acc, n, l, ep) ((Simp (PostOp o (LIdent i) s) _) : xs) lens =
   let
@@ -263,9 +261,13 @@ genExp (n, l) (App f es _) loc lens =
         aasm = computeArgs ++ moveFrontArgs ++ [ACtrl $ Call f rest] ++
                [AAsm {aAssign = [loc], aOp = Nop, aArgs = [ALoc $ ARes]}]
       in (aasm, n', l')
-genExp (n, l) (Alloc Int _) loc lens =                
+genExp (n, l) (Alloc t _) loc lens =                
   let
-    aasm = [ACtrl $ Call "_c0_malloc" [],
+    size = case t of
+      Int -> 4
+      (Pointer _) -> 8
+    aasm = [AAsm [AArg 0] Nop [AImm $ fromIntegral size],
+            ACtrl $ Call "_c0_malloc" [],
             AAsm [loc] Nop [ALoc $ ARes]]
   in (aasm, n, l)
      

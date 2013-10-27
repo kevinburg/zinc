@@ -95,9 +95,17 @@ liveVars' (stmt : aasm) i labels live m saturate =
     AAsm {aAssign = [dest], aOp = _, aArgs = srcs} ->
       let
         srcs' = isTemp srcs
-        live' = Set.union (Set.delete dest live) (Set.fromList srcs')
+        newLive = ptlive dest srcs'
+        live' = Set.union (Set.delete dest live) (Set.fromList newLive)
         (m', changed) = update m i live'
       in liveVars' aasm (i+1) labels live' m' (saturate && not(changed))
+
+ptlive (Pt x) srcs = x : (ptlive' srcs)
+ptlive _ srcs = ptlive' srcs
+
+ptlive' ((Pt x) : xs) = x : (ptlive' xs)
+ptlive' (x : xs) = x : (ptlive' xs)
+ptlive' [] = []
 
 isTemp [] = []
 isTemp ((ALoc x) : xs) = x : (isTemp xs)

@@ -111,6 +111,12 @@ gen2 (AAsm {aAssign = [AVar i], aOp = o, aArgs = srcs}) m = let
     (Just g) -> Map.insert i (g+1) m
   dest' = [AVarG i (m' Map.! i)]
   in (AAsm {aAssign = dest', aOp = o, aArgs = srcs'}, m')
+gen2 (AAsm {aAssign = [Pt (AVar i)], aOp = o, aArgs = srcs}) m = let
+  srcs' = map (updateGen' m) srcs
+  dest' = [Pt $ AVarG i (m Map.! i)] -- this should be ok because if
+                                -- we are using (Pt var x) then var x
+                                -- must have already been defined.
+  in (AAsm {aAssign = dest', aOp = o, aArgs = srcs'}, m)
 gen2 (AAsm {aAssign = [dest], aOp = o, aArgs = srcs}) m = let
   srcs' = map (updateGen' m) srcs
   in (AAsm {aAssign = [dest], aOp = o, aArgs = srcs'}, m)
@@ -133,6 +139,11 @@ updateGen m (AVar i) = let
     Nothing -> 0
     Just g -> g
   in AVarG i gen
+updateGen m (Pt (AVar i)) = let
+  gen = case Map.lookup i m of
+    Nothing -> 0
+    Just g -> g
+  in (Pt $ AVarG i gen)
 updateGen _ x = x
 
 updateGen' m (ALoc (AVar i)) = let
@@ -140,8 +151,12 @@ updateGen' m (ALoc (AVar i)) = let
     Nothing -> 0
     Just g -> g
   in ALoc (AVarG i gen)
+updateGen' m (ALoc (Pt (AVar i))) = let
+  gen = case Map.lookup i m of
+    Nothing -> 0
+    Just g -> g
+  in ALoc $ Pt $ AVarG i gen
 updateGen' _ x = x
-
 
 --build blockX calls blockY with params Set.Set AVal
 -- builds Map of Block String of Label -> Block String of Code -> Params from Code
@@ -223,6 +238,7 @@ minimize' blocks lblmap = let bmap = Map.fromList blocks
 
 
 unGen (AVarG s i) = AVar (s ++ (show i))
+unGen (Pt (AVarG s i)) = Pt $ AVar (s ++ (show i))
 unGen x = x
 
 -- Turn the SSA code back into non SSA code that gets rid of parameterized labels and gotos
@@ -260,10 +276,12 @@ deSSA blocks = let bmap = Map.fromList blocks
         f bmap AAsm{aAssign=locs, aOp = o, aArgs = vals} =
           let locs' = map (\x -> case x of
                               AVarG s i -> AVar (s ++ (show i))
+                              Pt (AVarG s i) -> Pt $ AVar (s ++ (show i))
                               a -> a
                           ) locs
               vals' = map (\(x) -> case x of
                               ALoc(AVarG s i) -> ALoc(AVar(s ++ (show i)))
+                              ALoc(Pt (AVarG s i)) -> ALoc(Pt $ AVar(s ++ (show i)))
                               y -> y
                           )vals
           in
