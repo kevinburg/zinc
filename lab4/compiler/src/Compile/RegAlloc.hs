@@ -168,7 +168,7 @@ genInter' (stmt : aasm) i live inter vars =
       vs = case Map.lookup i live of
         Nothing -> Set.empty
         Just s -> s
-      newInter = Set.map (\x -> (dest, x)) (Set.difference vs (Set.fromList srcs'))
+      newInter = Set.map (\x -> (dest, x)) vs -- (Set.difference vs (Set.fromList srcs'))
       inter' = Set.union inter newInter
       inter'' = Set.union inter' (Set.fromList [(a, AReg ECX) | a <- (Set.toList vs) ++ [dest]])
       in genInter' aasm (i+1) live inter'' vars'
@@ -178,7 +178,7 @@ genInter' (stmt : aasm) i live inter vars =
       vs = case Map.lookup i live of
         Nothing -> Set.empty
         Just s -> s
-      newInter = Set.map (\x -> (dest, x)) (Set.difference vs (Set.fromList srcs'))
+      newInter = Set.map (\x -> (dest, x)) vs -- (Set.difference vs (Set.fromList srcs'))
       inter' = Set.union inter newInter
       inter'' = Set.union inter' (Set.fromList [(a, b) | a <- Set.toList vs,
                                                 b <- [AReg EAX, AReg EDX]])
@@ -189,6 +189,6 @@ genInter' (stmt : aasm) i live inter vars =
       vs = case Map.lookup i live of
         Nothing -> Set.empty
         Just s -> s
-      newInter = Set.map (\x -> (dest, x)) (Set.difference vs (Set.fromList srcs'))
+      newInter = Set.map (\x -> (dest, x)) vs -- (Set.difference vs (Set.fromList srcs'))
       inter' = Set.union inter newInter
       in genInter' aasm (i+1) live inter' vars'

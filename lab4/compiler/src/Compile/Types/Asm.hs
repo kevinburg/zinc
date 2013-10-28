@@ -10,7 +10,7 @@ data Asm = AsmRet
          | Movl Arg Arg 
          | Movq Arg Arg 
          | Addl Arg Arg 
-         | Addd Arg Arg 
+         | Addq Arg Arg 
          | Andl Arg Arg 
          | Orl Arg Arg 
          | Xorl Arg Arg 
@@ -70,7 +70,7 @@ instance Show Asm where
   show (Movslq e1 e2) = "\tmovslq " ++ show e1 ++ ", " ++ show e2
   show (Mov e1 e2) = "\tmov " ++ show e1 ++ ", " ++ show e2
   show (Addl e1 e2) = "\taddl " ++ show e1 ++ ", " ++ show e2
-  show (Addd e1 e2) = "\tadd " ++ show e1 ++ ", " ++ show e2
+  show (Addq e1 e2) = "\taddq " ++ show e1 ++ ", " ++ show e2
   show (Andl e1 e2) = "\tandl " ++ show e1 ++ ", " ++ show e2
   show (Orl e1 e2) = "\torl " ++ show e1 ++ ", " ++ show e2
   show (Xorl e1 e2) = "\txorl " ++ show e1 ++ ", " ++ show e2
@@ -90,8 +90,8 @@ instance Show Asm where
   show (AsmLbl s) = "." ++ s ++ ":"
   show (AsmCall s) = "\txorb %al, %al\n" ++ if s == "_c0_abort" then
                                               "\tcall _abort" else
-                                              if s == "_c0_malloc" then
-                                                "\tcall _malloc" else
+                                              if s == "_c0_calloc" then
+                                                "\tcall _calloc" else
     if s == "fadd" || s == "fsub" || s == "fmul" ||
        s == "fdiv" || s == "fless" || s == "itof" ||
        s == "ftoi" || s == "print_fpt" || s == "print_int" ||

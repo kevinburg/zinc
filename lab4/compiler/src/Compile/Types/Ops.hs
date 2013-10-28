@@ -17,6 +17,7 @@ data Type = Int
 
 data Op = Mul
         | Add
+        | AddrAdd
         | Sub
         | Div
         | Neg
@@ -110,3 +111,4 @@ instance Show Op where
   show Gt = ">"
   show Geq = ">="
   show Nop = "[nop]"
+  show AddrAdd = "AddrAdd"
