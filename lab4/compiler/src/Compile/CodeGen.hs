@@ -88,6 +88,13 @@ getAddr (LDeref l) t n = let
   (aasm, n') = getAddr l (ATemp n) (n+1)
   in (aasm ++ [AAsm [t] Nop [ALoc $ Pt $ ATemp n]], n')
 
+getLvalAddr (LIdent _) _ n = ([], n)
+getLvalAddr (LDeref (LIdent i)) t n =
+  ([AAsm [t] Nop [ALoc $ AVar i]], n)
+getLvalAddr (LDeref l) t n = let
+  (aasm, n') = getLvalAddr l (ATemp n) (n+1)
+  in (aasm ++ [AAsm [t] Nop [ALoc $ Pt $ ATemp n]], n')
+
 movToLval t (LIdent i) n = ([AAsm [AVar i] Nop [ALoc t]], n)
 movToLval t (LDeref (LIdent i)) n = ([AAsm [Pt $ AVar i] Nop [ALoc t]], n)
 movToLval t (LDeref l) n = let
@@ -105,9 +112,13 @@ genStmt (acc, n, l, ep) ((Simp (Asgn lval o e s) _) : xs) lens =
     e' = case o of
       Nothing -> e
       Just op -> e --ExpBinOp op var e s
-    (aasm, n', l') = genExp (n+1, l) e' (ATemp n) lens
-    (post, n'') = movToLval (ATemp n) lval n'
-  in genStmt (acc ++ aasm ++ post, n'', l', ep) xs lens
+    (compute, n') = getLvalAddr lval (ATemp n) (n+1)
+    (aasm, n'', l') = genExp (n'+1, l) e' (ATemp n') lens
+    post = case compute of
+      [] -> []
+      _ -> [AAsm [Pt $ ATemp n] Nop [ALoc $ ATemp n']]
+    --(post, n''') = casemovToLval (ATemp n) lval n'
+  in genStmt (acc ++ compute ++ aasm ++ post, n'', l', ep) xs lens
 genStmt (acc, n, l, ep) ((Simp (PostOp o lval s) _) : xs) lens =
   let
     op = case o of
@@ -200,6 +211,7 @@ genStmt acc ((Ctrl (Assert e _) p) : xs) lens = let
      
 genExp :: (Int, Int) -> Expr -> ALoc -> [(String, Int)] -> ([AAsm], Int, Int)
 genExp (n,l) (ExpInt _ i _) loc _ = ([AAsm [loc] Nop [AImm $ fromIntegral i]], n, l)
+genExp (n,l) (Null _) loc _ = ([AAsm [loc] Nop [AImm 0]], n, l)
 genExp (n,l) (TrueT _) loc _ = ([AAsm [loc] Nop [AImm 1]], n, l)
 genExp (n,l) (FalseT _) loc _ = ([AAsm [loc] Nop [AImm 0]], n, l)
 genExp (n,l) (Ident s _) loc _ = ([AAsm [loc] Nop [ALoc $ AVar s]], n, l)
