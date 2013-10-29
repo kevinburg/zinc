@@ -307,15 +307,15 @@ checkE (ExpBinOp Arrow e (Ident s2 _) _) ctx d smap =
     BadE s -> BadE s
     ValidE t ->
       case t of
-        (Pointer (Struct i)) ->
-          case Map.lookup i smap of
-            Nothing -> BadE $ "undefined struct " ++ i
-            Just fields ->
-              case List.find (\(Param _ fieldName) -> fieldName == s2) fields of
-                Nothing -> BadE $ "field " ++ s2 ++ " undefined in struct " ++ i
-                Just (Param t' _) -> ValidE t'
+        (Pointer (Struct s)) ->
+              case Map.lookup s smap of
+                Nothing -> BadE $ "undefined struct " ++ s
+                Just fields ->
+                  case List.find (\(Param _ fieldName) -> fieldName == s2) fields of
+                    Nothing -> BadE $ "field " ++ s2 ++ " undefined in struct " ++ s
+                    Just (Param t' _) -> ValidE t'
         _ -> BadE "Invalid exp on LHS of arrow op"
-checkE (ExpBinOp Arrow _ _ _) _ _ _ =
+checkE (ExpBinOp Arrow _ _ _) _ _ _ = 
   BadE $ "exp on RHS of arrow op is not identifier."
 checkE (ExpBinOp Dot e (Ident s2 _) _) ctx d smap =
   case checkE e ctx d smap of
@@ -356,10 +356,13 @@ checkE (ExpTernOp e1 e2 e3 _) ctx d smap =
     (_, BadE s, _) -> BadE s
     (_, _, BadE s) -> BadE s
     (ValidE t1, ValidE t2, ValidE t3) ->
-      case t1 of
-        Int -> BadE "cond in ternary op not type bool"
-        Bool -> if t2 == t3 && (t2 /= Void) then ValidE t2
-                else BadE "ternary result type mismatch"
+      case (t2, t3) of
+        (Struct _,_) -> BadE "Ternary op returns large type"
+        (_,Struct _) -> BadE "Ternary op returns large type"
+        _ -> case t1 of
+          Int -> BadE "cond in ternary op not type bool"
+          Bool -> if t2 == t3 && (t2 /= Void) then ValidE t2
+                  else BadE "ternary result type mismatch"
 checkE (App fun args _) ctx d smap =
   if Set.notMember fun d then BadE "undefined fun" else
     let
@@ -385,7 +388,10 @@ checkE (AllocArray t e _) ctx d smap =
       Int -> case t of
         Map _ _ -> BadE "Allocating array with function type"
         Void -> BadE "Allocating array with void type"
-        Struct _ -> BadE "Allocating array with large type"
+        Struct s -> case Map.lookup s smap of
+          Nothing -> BadE "Struct definition not in map (checkE(Alloc...))"
+          Just t' -> if length(t') == 0 then ValidE (Array (Struct s))
+                     else BadE "Allocating array with large type"
         _ -> ValidE (Array t)
       _ -> BadE "size for alloc_array not int"
 checkE (Subscr e1 e2 _) ctx d smap =

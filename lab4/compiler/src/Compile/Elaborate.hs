@@ -18,6 +18,11 @@ elaborate (Program gdecls) =
     Right (typedef, fdecl, fdefn, sdefn) -> let
       res = map (\(key,(t, p, Block b _, t1, t2)) -> (key,(t, p, elaborate' b, t1, t2))) fdefn
       --smap = Map.unions $ map (\(k, p)-> Map.unions $ map (\(Param t s) -> Map.insert (k,s) t Map.empty) p) $ Map.toList sdefn
+      sdefn' = Map.map (\x -> map (\(Param t s) ->Param (pType(t,typedef)) s) x) sdefn
+        where pType(Type s,typedef) = typedef Map.! s
+              pType(Pointer t, typedef) = Pointer(pType(t,typedef))
+              pType(Array t,_) = Array(pType(t,typedef))
+              pType(t,_) = t
       in case foldr
               (\(key, val) -> \acc ->
                 case (acc, val) of
@@ -26,7 +31,7 @@ elaborate (Program gdecls) =
                   (Right m, (t, p, Right val', a, b)) ->
                     Right $ (key,(t, p, val', a, b)) : m) (Right []) res of
            Left s -> Left s
-           Right m -> Right (typedef, m, sdefn)
+           Right m -> Right (typedef, m, sdefn')
 
 partProgram [] acc = Right acc
 partProgram ((TypeDef t s _) : xs) (typedef, fdecl, fdefn, sdefn) =
@@ -87,7 +92,7 @@ partProgram ((SDefn s f _) : xs) (typedef, fdecl, fdefn, sdefn) =
                                               (_,Nothing)->(Nothing,b)
                                               (Just t,_)->(Just t,a)) (Just Int,"asdf") sts' of
       (Nothing,a) -> Left $ "Struct "++a++" used but not defined."
-      (Just _, _) -> Right ()) >>= \_ -> 
+      (Just _, _) -> Right ()) >>= \_ ->
   partProgram xs (typedef, fdecl, fdefn, Map.insert s f sdefn)
 
 check (t, s, p) (typedef, fdecl, fdefn) = 
@@ -114,7 +119,7 @@ check (t, s, p) (typedef, fdecl, fdefn) =
       pt' = map pType pt
         where pType t = case t of
                 Type s -> Map.notMember s typedef
-                Struct s -> Map.notMember s typedef
+                Struct s -> False -- False for implicit struct declaration? maybe? --Map.notMember s typedef
                 Pointer t' -> pType t'
                 Array t' -> pType t'
                 Int -> False
@@ -123,7 +128,7 @@ check (t, s, p) (typedef, fdecl, fdefn) =
                 _ -> True
    in
     case any (\x -> x) pt' of
-      True -> Left $ "Parameter type unkown for function " ++ s ++ "."
+      True -> Left $ "Parameter type unknown for function " ++ s ++ "."
       _ -> Right ()) >>= \_ ->
   (let
       pt = filter(\x -> case x of {x|x==Bool||x==Int -> False; _ -> True}) $ typeFromParams p
@@ -132,9 +137,9 @@ check (t, s, p) (typedef, fdecl, fdefn) =
                 Struct s -> True
                 Type s -> case Map.lookup s typedef of
                   Just t' -> case t' of
-                    Pointer t -> False
-                    _ -> True
-                  _ -> True
+                    Struct _ -> True
+                    _ -> False
+                  _ -> False
                 _ -> False
    in
     case any (\x -> x) pt' of
