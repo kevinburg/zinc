@@ -45,7 +45,10 @@ data Op = Mul
         | Leq
         | Gt
         | Geq 
-        | Fail deriving (Ord, Eq)
+        | Fail
+        | MemMov MovSize deriving (Ord, Eq)
+
+data MovSize = Small | Large deriving (Show, Ord, Eq)
 
 opInt Int = True
 opInt _ = False
@@ -112,3 +115,4 @@ instance Show Op where
   show Geq = ">="
   show Nop = "[nop]"
   show AddrAdd = "AddrAdd"
+  show (MemMov s) = "MemMov " ++ (show s)

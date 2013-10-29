@@ -149,6 +149,7 @@ instance Show Register where
   show R14D = "r14d"
   show R14 = "r14"
   show R15D = "r15d"
+  show R15 = "r15"
   show R15B = "r15b"
   show RSP = "rsp"
   show RBP = "rbp"

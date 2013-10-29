@@ -29,7 +29,7 @@ codeGen (Program gdecls) =
 
 genFunction (fun,p,b) l lengths =
   let
-    (aasm, _, l', ep) = genStmt ([], length(p), l, Nothing) b lengths
+    (aasm, _, l', ep) = genStmt ([], length(p), l, Nothing) b lengths Map.empty
     p' = zip (map (\(Param _ i) -> i) p) [0..]
     prefix = map (\(i, n) ->
                    AAsm {aAssign = [AVar i], aOp = Nop, aArgs = [ALoc $ AArg n]}) p'
@@ -43,32 +43,33 @@ genFunction (fun,p,b) l lengths =
     s = ssa aasm' fun
     unssa = deSSA s
     (regMap, used) = allocateRegisters unssa
+    program = foldr (\x -> \acc -> (show x) ++ "\n" ++ acc) "" unssa
     code = 
-      case used of
+      case trace (program) used of
         0 ->
           setup ++ (concatMap (translate regMap 0) unssa)
-        x | x < 5 -> let
-          save = map (\(r, i) -> Push r) $ zip [Reg RBX, Reg R12, Reg R13, Reg R14] [0..(x-1)]
+        x | x < 4 -> let
+          save = map (\(r, i) -> Push r) $ zip [Reg RBX, Reg R12, Reg R13] [0..(x-1)]
           restore = map (\(Push r) -> Pop r) $ reverse save
           code' =  concatMap (translate regMap (x + (mod x 2))) unssa
           (front, back) = splitAt (length(code')-2) code'
           in if ((mod x 2) == 0) then setup ++ save ++ front ++ restore ++ back
              else setup ++ save ++ [Push (Reg RBP)] ++ front ++ [Pop (Reg RBP)] ++ restore ++ back
         x -> let
-          save = map (\(r, i) -> Push r) $ zip [Reg RBX, Reg R12, Reg R13, Reg R14] [0..(x-1)]
+          save = map (\(r, i) -> Push r) $ zip [Reg RBX, Reg R12, Reg R13] [0..(x-1)]
           restore = map (\(Push r) -> Pop r) $ reverse save
-          n = x-3
+          n = x-2
           code' =  concatMap (translate regMap (x+1)) unssa
           (front, back) = splitAt (length(code')-2) code'
           sub = [Subb (Val (n*8)) (Reg RSP)]
-          add = [Addq (Val (n*8 )) (Reg RSP)]
+          add = [Addq (Val (n*8)) (Reg RSP)]
           in setup ++ save ++ sub ++ front ++ add ++ restore ++ back
     code' = removeRedundant code
   in (fun, code', l')
 
 removeRedundant code = 
   filter (\inst -> case inst of
-             (Movl a1 a2) -> a1 /= a2
+             (Movl a1 a2) -> (a1 /= a2) || (a1 == (Reg R15D))
              _ -> True) code
 
 -- updates the abstract assembly at a label
@@ -109,14 +110,23 @@ movToLval t (LDeref (LIdent i)) n = ([AAsm [Pt $ AVar i] Nop [ALoc t]], n)
 movToLval t (LDeref l) n = let
   (aasm, n') = getAddr l (ATemp n) (n+1)
   in (aasm ++ [AAsm [Pt $ ATemp n] Nop [ALoc t]], n')
+
+lvalType (LIdent i) ctx = ctx Map.! i
+lvalType (LDeref l) ctx =
+  case lvalType l ctx of
+    (Pointer t) -> t
+lvalType (LArray l _) ctx =
+  case lvalType l ctx of
+    (Array t) -> t
      
-genStmt acc [] _ = acc
-genStmt acc ((Simp (Decl _ _ Nothing _) _) : xs) lens = genStmt acc xs lens
-genStmt (acc, n, l, ep) ((Simp (Decl _ i (Just e) _) _) : xs) lens =
+genStmt acc [] _ _ = acc
+genStmt acc ((Simp (Decl t i Nothing _) _) : xs) lens ctx =
+  genStmt acc xs lens (Map.insert i t ctx)
+genStmt (acc, n, l, ep) ((Simp (Decl t i (Just e) _) _) : xs) lens ctx =
   let
     (aasm, n', l') = genExp (n, l) e (AVar i) lens
-  in genStmt (acc ++ aasm, n', l', ep) xs lens
-genStmt (acc, n, l, ep) ((Simp (Asgn lval o e s) _) : xs) lens = 
+  in genStmt (acc ++ aasm, n', l', ep) xs lens (Map.insert i t ctx)
+genStmt (acc, n, l, ep) ((Simp (Asgn lval o e s) _) : xs) lens ctx = 
   let
     e1 = unroll lval s
     e' = case o of
@@ -127,97 +137,109 @@ genStmt (acc, n, l, ep) ((Simp (Asgn lval o e s) _) : xs) lens =
     post = case compute of
       [] -> case lval of
         (LIdent i) -> [AAsm [AVar i] Nop [ALoc $ ATemp n']]
-      _ -> [AAsm [Pt $ ATemp n] Nop [ALoc $ ATemp n']]
-  in genStmt (acc ++ compute ++ aasm ++ post, n'', l'', ep) xs lens
-genStmt (acc, n, l, ep) ((Simp (PostOp o lval s) _) : xs) lens =
+      _ ->
+        let
+          size = case lvalType lval ctx of
+            Int -> Small
+            Bool -> Small
+            _ -> Large
+        in [AAsm [Pt $ ATemp n] (MemMov size) [ALoc $ ATemp n']]
+      -- TODO: figure out the size of the type being assigned.
+      -- Assume small for now.
+  in genStmt (acc ++ compute ++ aasm ++ post, n'', l'', ep) xs lens ctx
+genStmt (acc, n, l, ep) ((Simp (PostOp o lval s) _) : xs) lens ctx =
   let
     op = case o of
       Incr -> Add
       Decr -> Sub
-    e1 = unroll lval s
+    new = Simp (Asgn lval (Just op) (ExpInt Dec 1 s) s) s
+  in genStmt (acc, n, l, ep) (new : xs) lens ctx
+ {-   e1 = unroll lval s
     e' = ExpBinOp op e1 (ExpInt Dec 1 s) s
     (aasm, n', l') = genExp (n+1, l) e' (ATemp n) lens
     (post, n'') = movToLval (ATemp n) lval n'
-  in genStmt (acc ++ aasm ++ post, n'', l', ep) xs lens
-genStmt (acc, n, l, ep) ((Simp (Expr e _) _) : xs) lens = 
+  in genStmt (acc ++ aasm ++ post, n'', l', ep) xs lens -}
+genStmt (acc, n, l, ep) ((Simp (Expr e _) _) : xs) lens ctx = 
   let
     (aasm, n', l') = genExp (n + 1, l) e (ATemp n) lens
-  in genStmt (acc ++ aasm, n', l', ep) xs lens
-genStmt (acc, n, l, ep) ((BlockStmt (Block stmts _) _) : xs) lens = 
+  in genStmt (acc ++ aasm, n', l', ep) xs lens ctx
+genStmt (acc, n, l, ep) ((BlockStmt (Block stmts _) _) : xs) lens ctx = 
   let
-    (aasm, n', l', ep') = genStmt ([], n, l, ep) stmts lens
-  in genStmt (acc ++ aasm, n', l', ep') xs lens
-genStmt (acc, n, l, ep) ((Ctrl (Return (Just e) _) _) : xs) lens =
+    (aasm, n', l', ep') = genStmt ([], n, l, ep) stmts lens ctx
+  in genStmt (acc ++ aasm, n', l', ep') xs lens ctx
+genStmt (acc, n, l, ep) ((Ctrl (Return (Just e) _) _) : xs) lens _ =
   let
     (aasm, n', l') = genExp (n, l) e (ARes) lens
     (epilogue, l'') = case ep of
       (Just ep') -> (ep', l') 
       Nothing -> (l'+1, l'+1)
   in (acc ++ aasm ++ [ACtrl $ Goto (show epilogue)], n', l'', Just epilogue)
-genStmt (acc, n, l, ep) ((Ctrl (Return Nothing _) _) : xs) _ =
+genStmt (acc, n, l, ep) ((Ctrl (Return Nothing _) _) : xs) _ _ =
   let
     (epilogue, l') = case ep of
       (Just ep') -> (ep', l) 
       Nothing -> (l+1, l+1)
   in (acc ++ [ACtrl $ Goto (show epilogue)], n, l', Just epilogue)
-genStmt (acc, n, l, ep) ((Ctrl (If e s Nothing _) _) : xs) lens =
+genStmt (acc, n, l, ep) ((Ctrl (If e s Nothing _) _) : xs) lens ctx =
   let
     (aasme, n', l') = genExp (n + 1, l) e (ATemp n) lens
-    (aasms, n'', l'', ep') = genStmt ([], n', l', ep) [s] lens
+    (aasms, n'', l'', ep') = genStmt ([], n', l', ep) [s] lens ctx
     aasm = [ACtrl $ Ifz (ALoc (ATemp n)) (show $ l''+2),
             ACtrl $ Goto (show $ l''+1),
             ACtrl $ Lbl (show $ l''+1)]
     aasm' = aasme ++ aasm ++ aasms ++
             [ACtrl $ Goto (show $ l''+2), ACtrl $ Lbl (show $ l''+2)]
-  in genStmt (acc ++ aasm', n'', l''+2, ep') xs lens
-genStmt (acc, n, l, ep) ((Ctrl (If e s1 (Just s2) _) _) : xs) lens =
+  in genStmt (acc ++ aasm', n'', l''+2, ep') xs lens ctx
+genStmt (acc, n, l, ep) ((Ctrl (If e s1 (Just s2) _) _) : xs) lens ctx =
   case e of
-   (TrueT _) -> genStmt (acc, n, l, ep) (s1 : xs) lens
-   (FalseT _) -> genStmt (acc, n, l, ep) (s2 : xs) lens
+   (TrueT _) -> genStmt (acc, n, l, ep) (s1 : xs) lens ctx
+   (FalseT _) -> genStmt (acc, n, l, ep) (s2 : xs) lens ctx
    _ -> let
      (aasme, n1, l1) = genExp (n+1, l) e (ATemp n) lens
-     (aasms1, n2, l2, ep2) = genStmt ([], n1, l1, ep) [s1] lens
-     (aasms2, n3, l3, ep3) = genStmt ([], n2, l2, ep2) [s2] lens
+     (aasms1, n2, l2, ep2) = genStmt ([], n1, l1, ep) [s1] lens ctx
+     (aasms2, n3, l3, ep3) = genStmt ([], n2, l2, ep2) [s2] lens ctx
      aasm = [ACtrl $ Ifz (ALoc (ATemp n)) (show $ l3+2),
              ACtrl $ Goto (show $ l3+1),
              ACtrl $ Lbl (show $ l3+1)]
      aasm' = aasme ++ aasm ++ aasms1 ++
              [ACtrl $ Goto (show $ l3+3), ACtrl $ Lbl (show $ l3+2)] ++
              aasms2 ++ [ACtrl $ Goto (show $ l3+3), ACtrl $ Lbl (show $ l3+3)]
-     in genStmt (acc ++ aasm', n3, l3+3, ep3) xs lens
-genStmt (acc, n, l, ep) ((Ctrl (While e s _) _) : xs) lens =
+     in genStmt (acc ++ aasm', n3, l3+3, ep3) xs lens ctx
+genStmt (acc, n, l, ep) ((Ctrl (While e s _) _) : xs) lens ctx =
   case e of
-    (FalseT _) -> genStmt (acc, n, l, ep) xs lens
+    (FalseT _) -> genStmt (acc, n, l, ep) xs lens ctx
     _ ->
       let
         (aasme, n1, l1) = genExp (n+1, l) e (ATemp n) lens
-        (aasms, n2, l2, ep') = genStmt ([], n1, l1, ep) [s] lens
+        (aasms, n2, l2, ep') = genStmt ([], n1, l1, ep) [s] lens ctx
         aasm = [ACtrl $ Ifz (ALoc (ATemp n)) (show $ l2+3),
                 ACtrl $ Goto (show $ l2+2),
                 ACtrl $ Lbl (show $ l2+2)]
-        aasm' = [ACtrl $ Goto (show $ l2+1), ACtrl $ Lbl (show $ l2+1)] ++ aasme ++ aasm ++ aasms ++
+        aasm' = [ACtrl $ Goto (show $ l2+1), ACtrl $ Lbl (show $ l2+1)] ++
+                aasme ++ aasm ++ aasms ++
                 [ACtrl $ Goto (show $ l2+1), ACtrl $ Lbl (show $ l2+3)]
-      in genStmt (acc ++ aasm', n2, l2+3, ep') xs lens
-genStmt (acc, n, l, ep) ((Ctrl (For ms1 e ms2 s3 p) _) : xs) lens =
+      in genStmt (acc ++ aasm', n2, l2+3, ep') xs lens ctx
+--TODO: add possible variable declaration in for loop to context
+genStmt (acc, n, l, ep) ((Ctrl (For ms1 e ms2 s3 p) _) : xs) lens ctx =
   let
     (init, n1, l1, ep1) = case ms1 of
       Nothing -> ([], n, l, ep)
-      (Just s1) -> genStmt ([], n, l, ep) [Simp s1 p] lens
+      (Just s1) -> genStmt ([], n, l, ep) [Simp s1 p] lens ctx
     (aasme, n2, l2) = genExp (n1+1, l1) e (ATemp n1) lens
     (step, n3, l3, ep2) = case ms2 of
       Nothing -> ([], n2, l2, ep1)
-      (Just s2) -> genStmt ([], n2, l2, ep1) [Simp s2 p] lens
-    (body, n4, l4, ep3) = genStmt ([], n3, l3, ep2) [s3] lens
+      (Just s2) -> genStmt ([], n2, l2, ep1) [Simp s2 p] lens ctx
+    (body, n4, l4, ep3) = genStmt ([], n3, l3, ep2) [s3] lens ctx
     aasm = init ++ [ACtrl $ Goto (show $ l4+1), ACtrl $ Lbl (show $ l4+1)] ++ aasme ++
            [ACtrl $ Ifz (ALoc (ATemp n1)) (show $ l4+3),
             ACtrl $ Goto (show $ l4+2),
             ACtrl $ Lbl (show $ l4+2)] ++ body ++ step ++
            [ACtrl $ Goto (show $ l4+1),
             ACtrl $ Lbl (show $ l4+3)]
-  in genStmt (acc ++ aasm, n4, l4+3, ep3) xs lens
-genStmt acc ((Ctrl (Assert e _) p) : xs) lens = let
+  in genStmt (acc ++ aasm, n4, l4+3, ep3) xs lens ctx
+genStmt acc ((Ctrl (Assert e _) p) : xs) lens ctx = let
   s = Ctrl (If (ExpUnOp LNot e p) (Simp (Expr (App "_c0_abort" [] p) p) p) Nothing p) p
-  in genStmt acc (s : xs) lens
+  in genStmt acc (s : xs) lens ctx
      
 genExp :: (Int, Int) -> Expr -> ALoc -> [(String, Int)] -> ([AAsm], Int, Int)
 genExp (n,l) (ExpInt _ i _) loc _ = ([AAsm [loc] Nop [AImm $ fromIntegral i]], n, l)
@@ -320,19 +342,50 @@ genExp (n, l) (AllocArray t e _) loc lens =
   in (exp ++ aasm, n', l)
 
   -- begin 'temp -> register' translation
-translate regMap n (AAsm {aAssign = [dest], aOp = Nop, aArgs = [src]}) =
+translate regMap n (AAsm {aAssign = [dest], aOp = (MemMov Small), aArgs = [src]}) =
   let
     s = regFind regMap src
+    d = fullReg $ regFind regMap (ALoc dest)
   in
-   case s of
-     (Stk _) ->
-       [Movq s (Reg R15),
-        Movq (Reg R15) (fullReg (regFind regMap (ALoc dest)))]
-     (Reg (SpillArg i)) ->
+   case (fullReg s, d) of
+     (Stk x, Loc(Stk y))  ->
+       [Movq (Stk y) (Reg R15),
+        Movq (Stk x) (Reg R14),
+        Movl (Reg R14D) (Loc $ Reg R15)]
+     (Stk x, Stk y) ->
+       [Movq (fullReg s) (Reg R15),
+        Movl (Reg R15D) d]
+     (Reg (SpillArg i), _) ->
        [Movq (Stk ((i+n+1)*8)) (Reg R15),
-        Movq (Reg R15) (fullReg (regFind regMap (ALoc dest)))]
+        Movl (Reg R15D) d]
+     (Loc(Stk x), _) ->
+       [Movq (Stk x) (Reg R15),
+        Movq (Loc (Reg R15)) (Reg R15),
+        Movl (Reg R15D) d]
      _ ->
-       [Movq (fullReg s) (fullReg (regFind regMap (ALoc dest)))]
+       [Movl s d]
+translate regMap n (AAsm {aAssign = [dest], aOp = Nop, aArgs = [src]}) =
+  let
+    s = fullReg $ regFind regMap src
+    d = fullReg $ regFind regMap (ALoc dest)
+  in
+   case (s, d) of
+     (Stk x, Loc(Stk y))  ->
+       [Movq (Stk y) (Reg R15),
+        Movq (Stk x) (Reg R14),
+        Movq (Reg R14) (Loc $ Reg R15)]
+     (Stk x, Stk y) ->
+       [Movq s (Reg R15),
+        Movq (Reg R15) d]
+     (Reg (SpillArg i), _) ->
+       [Movq (Stk ((i+n+1)*8)) (Reg R15),
+        Movq (Reg R15) d]
+     (Loc(Stk x), _) ->
+       [Movq (Stk x) (Reg R15),
+        Movq (Loc (Reg R15)) (Reg R15),
+        Movq (Reg R15) d]
+     _ ->
+       [Movq s d]
 translate regMap _ (AAsm {aAssign = [dest], aOp = AddrAdd, aArgs = [src1, src2]}) =
   let
     dest' = fullReg $ regFind regMap (ALoc dest)
@@ -402,23 +455,33 @@ translate regMap _ (AAsm {aAssign = [dest], aOp = Mul, aArgs = [src1, src2]}) =
     dest' = regFind regMap (ALoc dest)
     s = regFind regMap src1
     s2 = regFind regMap src2
-  in
-   case (s, s2) of
-     (Stk _, _) ->
-       [Movl s (Reg R15D),
-        Imull (regFind regMap src2) (Reg R15D),
-        Movl (Reg R15D) dest']
-     (_, Stk _) ->
+    front = case (s, s2, dest') of
+      (Stk _, _, Stk _) ->
+        [Movl s (Reg R15D),
+         Imull s2 (Reg R15D),
+         Movl (Reg R15D) (Reg R15D),
+         Movq (Reg R15) dest']
+      (_, Stk _, Stk _) ->
         [Movl s2 (Reg R15D),
-        Imull s (Reg R15D),
-        Movl (Reg R15D) dest']
-     _ ->
-       if s == dest' then
-         [Movl s dest',
-          Imull (regFind regMap src2) dest']
-       else
-         [Movl (regFind regMap src2) dest',
-          Imull s dest']
+         Imull s (Reg R15D),
+         Movl (Reg R15D) (Reg R15D),
+         Movq (Reg R15) dest']
+      (Stk _, _, _) ->
+        [Movl s (Reg R15D),
+         Imull s2 (Reg R15D),
+         Movl (Reg R15) dest']
+      (_, Stk _, _) ->
+        [Movl s2 (Reg R15D),
+         Imull s (Reg R15D),
+         Movl (Reg R15D) dest']
+      _ ->
+        if s == dest' then
+          [Movl s dest',
+           Imull (regFind regMap src2) dest']
+        else
+          [Movl (regFind regMap src2) dest',
+           Imull s dest']
+  in front
 translate regMap _ (AAsm {aAssign = [dest], aOp = Div, aArgs = [src1, src2]}) =
   [Movl (regFind regMap src1) (Reg EAX),
    Cdq,

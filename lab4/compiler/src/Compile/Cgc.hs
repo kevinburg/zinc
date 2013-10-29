@@ -72,7 +72,7 @@ coloring g = let size = Map.size g
                                                    AArg i | i > 5 ->
                                                      (Map.insert key (-(i-5)) m, i+1)
                                                    _ ->
-                                                     (Map.insert key i m, i+1)) (Map.empty, 12) g
+                                                     (Map.insert key i m, i+1)) (Map.empty,11) g
                      in Map.union m' m''
                  regsUsed = List.maximum (Map.elems res)
                  order = registerOrder ()
@@ -118,5 +118,5 @@ mex l = let
 
 -- Orders the registers in the order we want to use them (ESP, EBP for stack)
 registerOrder () =
-  zip [0..] $ [EAX,EDI,ESI,EDX,ECX,R8D,R9D,R10D,R11D,EBX,R12D,R13D,R14D]
+  zip [0..] $ [EAX,EDI,ESI,EDX,ECX,R8D,R9D,R10D,R11D,EBX,R12D,R13D]
   -- preference toward caller save registers
