@@ -29,7 +29,8 @@ codeGen (Program gdecls) =
 
 genFunction (fun,p,b) l lengths =
   let
-    (aasm, _, l', ep) = genStmt ([], length(p), l, Nothing) b lengths Map.empty
+    ctx = foldr (\(Param t i) -> \acc -> Map.insert i t acc) Map.empty p
+    (aasm, _, l', ep) = genStmt ([], length(p), l, Nothing) b lengths ctx
     p' = zip (map (\(Param _ i) -> i) p) [0..]
     prefix = map (\(i, n) ->
                    AAsm {aAssign = [AVar i], aOp = Nop, aArgs = [ALoc $ AArg n]}) p'
@@ -45,7 +46,7 @@ genFunction (fun,p,b) l lengths =
     (regMap, used) = allocateRegisters unssa
     program = foldr (\x -> \acc -> (show x) ++ "\n" ++ acc) "" unssa
     code = 
-      case trace (program) used of
+      case used of
         0 ->
           setup ++ (concatMap (translate regMap 0) unssa)
         x | x < 4 -> let
