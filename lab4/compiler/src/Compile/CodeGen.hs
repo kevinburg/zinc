@@ -59,10 +59,10 @@ genFunction (fun,p,b) l lengths =
           save = map (\(r, i) -> Push r) $ zip [Reg RBX, Reg R12, Reg R13] [0..(x-1)]
           restore = map (\(Push r) -> Pop r) $ reverse save
           n = x-2
-          code' =  concatMap (translate regMap (x+1)) unssa
+          code' =  concatMap (translate regMap ((x - (mod x 2))+2)) unssa
           (front, back) = splitAt (length(code')-2) code'
-          sub = [Subb (Val (n*8)) (Reg RSP)]
-          add = [Addq (Val (n*8)) (Reg RSP)]
+          sub = [Subb (Val ((n - (mod x 2) + 1)*8)) (Reg RSP)]
+          add = [Addq (Val ((n - (mod x 2) + 1)*8)) (Reg RSP)]
           in setup ++ save ++ sub ++ front ++ add ++ restore ++ back
     code' = removeRedundant code
   in (fun, code', l')
@@ -87,11 +87,6 @@ unroll (LArray l e) s = let
   a = unroll l s
   in Subscr a e s
 
-getAddr (LDeref (LIdent i)) t n = ([AAsm [t] Nop [ALoc $ Pt $ AVar i]], n)
-getAddr (LDeref l) t n = let
-  (aasm, n') = getAddr l (ATemp n) (n+1)
-  in (aasm ++ [AAsm [t] Nop [ALoc $ Pt $ ATemp n]], n')
-
 getLvalAddr (LIdent _) _ n l = ([], n, l)
 getLvalAddr (LDeref (LIdent i)) t n l =
   ([AAsm [t] Nop [ALoc $ AVar i]], n, l)
@@ -104,12 +99,14 @@ getLvalAddr (LArray (LIdent i) e) t n l = let
   aasm = [AAsm [ATemp n'] Mul [AImm $ fromIntegral size, ALoc $ ATemp n],
           AAsm [t] AddrAdd [ALoc $ AVar i, ALoc $ ATemp n']]
   in (exp ++ aasm, n'+1, l')
-
-movToLval t (LIdent i) n = ([AAsm [AVar i] Nop [ALoc t]], n)
-movToLval t (LDeref (LIdent i)) n = ([AAsm [Pt $ AVar i] Nop [ALoc t]], n)
-movToLval t (LDeref l) n = let
-  (aasm, n') = getAddr l (ATemp n) (n+1)
-  in (aasm ++ [AAsm [Pt $ ATemp n] Nop [ALoc t]], n')
+getLvalAddr (LArray l e) t n lbl = let
+  (lvalAasm, n', lbl') = getLvalAddr l (ATemp n) (n+1) lbl
+  (exp, n'', lbl'') = genExp (n'+1, lbl') e (ATemp n') []
+  size = 4
+  aasm = [AAsm [ATemp n''] Mul [AImm $ fromIntegral size, ALoc $ ATemp n'],
+          AAsm [ATemp (n''+1)] Nop [ALoc $ Pt $ ATemp n],
+          AAsm [t] AddrAdd [ALoc $ ATemp (n''+1), ALoc $ ATemp n'']]
+  in (lvalAasm ++ exp ++ aasm, (n''+2), lbl'') 
 
 lvalType (LIdent i) ctx = ctx Map.! i
 lvalType (LDeref l) ctx =
@@ -143,7 +140,9 @@ genStmt (acc, n, l, ep) ((Simp (Asgn lval o e s) _) : xs) lens ctx =
             Int -> Small
             Bool -> Small
             _ -> Large
-        in [AAsm [Pt $ ATemp n] (MemMov size) [ALoc $ ATemp n']]
+        in case size of
+          Small -> [AAsm [Pt $ ATemp n] (MemMov size) [ALoc $ ATemp n']]
+          Large -> [AAsm [Pt $ ATemp n] Nop [ALoc $ ATemp n']]
       -- TODO: figure out the size of the type being assigned.
       -- Assume small for now.
   in genStmt (acc ++ compute ++ aasm ++ post, n'', l'', ep) xs lens ctx
@@ -154,11 +153,6 @@ genStmt (acc, n, l, ep) ((Simp (PostOp o lval s) _) : xs) lens ctx =
       Decr -> Sub
     new = Simp (Asgn lval (Just op) (ExpInt Dec 1 s) s) s
   in genStmt (acc, n, l, ep) (new : xs) lens ctx
- {-   e1 = unroll lval s
-    e' = ExpBinOp op e1 (ExpInt Dec 1 s) s
-    (aasm, n', l') = genExp (n+1, l) e' (ATemp n) lens
-    (post, n'') = movToLval (ATemp n) lval n'
-  in genStmt (acc ++ aasm ++ post, n'', l', ep) xs lens -}
 genStmt (acc, n, l, ep) ((Simp (Expr e _) _) : xs) lens ctx = 
   let
     (aasm, n', l') = genExp (n + 1, l) e (ATemp n) lens
@@ -323,6 +317,7 @@ genExp (n, l) (Alloc t _) loc lens =
       Int -> 4
       Bool -> 4
       (Pointer _) -> 8
+      (Array _) -> 8
     aasm = [AAsm [AArg 1] Nop [AImm $ fromIntegral size],
             AAsm [AArg 0] Nop [AImm $ fromIntegral 1],
             ACtrl $ Call "_c0_calloc" [],
@@ -384,6 +379,9 @@ translate regMap n (AAsm {aAssign = [dest], aOp = Nop, aArgs = [src]}) =
        [Movq (Stk x) (Reg R15),
         Movq (Loc (Reg R15)) (Reg R15),
         Movq (Reg R15) d]
+     (_, Loc(Stk y)) ->
+       [Movq (Stk y) (Reg R15),
+        Movq s (Loc $ Reg R15)]
      _ ->
        [Movq s d]
 translate regMap _ (AAsm {aAssign = [dest], aOp = AddrAdd, aArgs = [src1, src2]}) =
