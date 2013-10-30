@@ -10,7 +10,8 @@ import Debug.Trace
 checkAST :: (Map.Map String Type, [(String,
                                   (Type, [Param], S,
                                    Map.Map String Type,
-                                   Map.Map String (Type, [Type])))],
+                                   Map.Map String (Type, [Type]),
+                                   Map.Map String [Param]))],
              Map.Map String [Param]) -> Either String (Map.Map String [Param])
 checkAST (typedef, fdefns, sdefns) =
   let
@@ -18,24 +19,29 @@ checkAST (typedef, fdefns, sdefns) =
   in
     (case lookup "main" fdefns of
         Nothing -> Left "main undefined"
-        (Just (t, p, s, tdefs, _)) ->
+        (Just (t, p, s, tdefs, _, _)) ->
           if length(p) > 0 then Left "main should take no arguments" else
             if not(typeEq tdefs (Int, (findType tdefs) t)) then Left "main is not type int" else
               Right ()) >>= \_ ->
     case foldr
-         (\(fun,(t, p, b, tdefs, fdecls)) -> \acc ->
-           case acc of
-             Left s -> Left s
-             Right ctx -> 
-               let
-                 (output, args, _) = fixTypes tdefs (t,p,ANup)
-                 ts = map (\(Param ty i) -> ty) args
-                 ctx' = Map.unions [ctx, Map.map (\(t1,t2) -> Map t2 t1) fdecls,
-                                    Map.singleton fun (Map ts output)]
-                 ctx'' = Map.map (findType tdefs) ctx'
-               in case checkFunction tdefs ctx'' (t,p,b) fdefns sdefns of
+         (\(fun,(t, p, b, tdefs, fdecls, sdefns')) -> \acc ->
+           case findType tdefs t of
+             (Struct _) -> Left "function returns large type"
+             _ ->
+               case acc of
                  Left s -> Left s
-                 Right () -> Right ctx'') (Right ctx) fdefns of
+                 Right ctx -> let
+                   (output, args, _) = fixTypes tdefs (t,p,ANup)
+                   ts = map (\(Param ty i) -> ty) args
+                   ctx' = Map.unions [ctx, Map.map (\(t1,t2) -> Map t2 t1) fdecls,
+                                      Map.singleton fun (Map ts output)]
+                   ctx'' = Map.map (findType tdefs) ctx'
+                   sdefns'' = Map.map
+                              (\x -> map (\(Param t s) ->Param (findType typedef t) s) x)
+                              sdefns'
+                   in case checkFunction tdefs ctx'' (t,p,b) fdefns sdefns'' of
+                     Left s -> Left s
+                     Right () -> Right ctx'') (Right ctx) fdefns of
       Left s -> Left s
       Right _ -> Right sdefns
        
@@ -75,7 +81,9 @@ fixTypesE m (AllocArray t e p) = AllocArray (findType m t) e p
 fixTypesE m (ExpBinOp Arrow e i p) = ExpBinOp Arrow (fixTypesE m e) i p
 fixTypesE m x = x
 
-findType m (Type s) = findType m (m Map.! s)
+findType m (Type s) = let
+  res = (m Map.! s)
+  in res `seq` findType m res
 findType m (Map t1 t2) = Map (map (findType m) t1) (findType m t2)
 findType m (Pointer t) = let
   t' = findType m t
@@ -224,15 +232,19 @@ checkS (AReturn e) ctx m d t smap =
     (Just e', _) ->
       case checkE e' ctx d smap of
         BadE s -> BadS s
-        ValidE t' -> if t==t' then ValidS else BadS "return type mismatch"
+        ValidE t' -> let
+          cond = case (t,t') of
+            (Pointer _, Pointer Void) -> True
+            _ -> t==t'
+          in if cond then ValidS else BadS "return type mismatch"
 checkS (AWhile e s) ctx m d t smap = 
   case checkE e ctx d smap of
     BadE s -> BadS s
     ValidE Int -> BadS "While condition is not type bool"
     ValidE Bool -> checkS s ctx m d t smap
 checkS (AAssign l e) ctx m d _ smap =
-  case lvalType l ctx smap of
-    Nothing -> BadS $ "Assigning " ++ (show l) ++ " undeclared"
+  case lvalType l ctx d smap of
+    Nothing -> BadS $ "Could not derive type for lval " ++ (show l)
     Just t1 ->
       case checkE e ctx d smap of
         BadE s -> BadS s
@@ -255,33 +267,36 @@ checkS (AExpr e s) ctx m d t smap =
     BadE s -> BadS s
     ValidE _ -> checkS s ctx m d t smap
 
-lvalType :: LValue -> Context -> Map.Map String [Param] -> Maybe Type
-lvalType (LIdent i) ctx smap = Map.lookup i ctx
-lvalType (LDeref l) ctx smap =
-  case lvalType l ctx smap of
+lvalType :: LValue -> Context -> Set.Set String -> Map.Map String [Param] -> Maybe Type
+lvalType (LIdent i) ctx _ _ = Map.lookup i ctx
+lvalType (LDeref l) ctx d smap =
+  case lvalType l ctx d smap of
     Nothing -> Nothing
     Just (Pointer t) -> Just t
     _ -> Nothing
-lvalType (LArrow l s) ctx smap =
-  case lvalType l ctx smap of
+lvalType (LArrow l s) ctx d smap =
+  case lvalType l ctx d smap of
     Just (Pointer(Struct s1)) -> case Map.lookup s1 smap of
       Just ps -> case List.find (\(Param _ f) -> f == s) ps of
         Just (Param t _) -> Just t
         _ -> Nothing
       _ -> Nothing 
     _ -> Nothing
-lvalType (LDot l s) ctx smap =
-  case lvalType l ctx smap of
+lvalType (LDot l s) ctx d smap =
+  case lvalType l ctx d smap of
     Just (Struct s1) -> case Map.lookup s1 smap of
       Just ps -> case List.find (\(Param _ f) -> f == s) ps of
         Just (Param t _) -> Just t
         _ -> Nothing
       _ -> Nothing
     _ -> Nothing
-lvalType (LArray l e) ctx smap =
-  case lvalType l ctx smap of
-    Just (Array t) -> Just t
-    Just t -> Just t
+lvalType (LArray l e) ctx d smap =
+  case checkE e ctx d smap of
+    ValidE Int ->
+      case lvalType l ctx d smap of
+        Just (Array t) -> Just t
+        Just t -> Just t
+        _ -> Nothing
     _ -> Nothing
   
 -- Performs static type checking on an expression under a typing context
@@ -298,6 +313,15 @@ checkE (Ident i _) ctx d smap =
     Just t -> ValidE t    
 checkE (ExpUnOp op e _) _ _ _ | op == Incr || op == Decr =
   BadE "incr or decr in expression"
+checkE (ExpUnOp Deref e _) ctx d smap =
+  let
+    op = Deref
+    ([opT], ret) = opType op
+  in case (checkE e ctx d smap) of
+    BadE s -> BadE s
+    ValidE (Pointer Void) -> BadE "Dereferencing Null"
+    ValidE t -> if opT(t) then ValidE $ ret(t)
+                else BadE "unop expr mismatch"
 checkE (ExpUnOp op e _) ctx d smap =
   let
     ([opT], ret) = opType op
@@ -342,8 +366,10 @@ checkE (ExpBinOp op e1 e2 _) ctx d smap =
       (_, BadE s) -> BadE s
       (ValidE t1, ValidE t2) -> case t1 of
         Map l t -> BadE "Cannot compare Function Types"
-        _ -> if t1 == t2 || t2 == Pointer Void then ValidE Bool
-             else BadE "eq type mismatch"
+        _ -> case t1 of
+          (Pointer _) -> if t1 == t2 || t2 == Pointer Void then ValidE Bool
+                         else BadE "eq type mismatch"
+          _ -> if t1 == t2 then ValidE Bool else BadE "eq type mismatch"
   else
     let
       ([opT1, opT2], ret) = opType op

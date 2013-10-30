@@ -10,26 +10,23 @@ import Compile.CheckAST
 elaborate :: Program -> Either String
              ((Map.Map String Type, [(String,
                                       (Type, [Param], S, Map.Map String Type,
-                                       Map.Map String (Type, [Type])))],
+                                       Map.Map String (Type, [Type]),
+                                       Map.Map String [Param]))],
                Map.Map String [Param]), Program)
 elaborate (Program gdecls) =
   case partProgram gdecls (Map.singleton "fpt" Int, Map.empty, [], Map.empty) of
     Left err -> Left err
     Right (typedef, fdecl, fdefn, sdefn) -> let
-      res = map (\(key,(t, p, Block b _, t1, t2)) -> (key,(t, p, elaborate' b, t1, t2))) fdefn
-      --smap = Map.unions $ map (\(k, p)-> Map.unions $ map (\(Param t s) -> Map.insert (k,s) t Map.empty) p) $ Map.toList sdefn
-      sdefn' = Map.map (\x -> map (\(Param t s) ->Param (pType(t,typedef)) s) x) sdefn
-        where pType(Type s,typedef) = typedef Map.! s
-              pType(Pointer t, typedef) = Pointer(pType(t,typedef))
-              pType(Array t,_) = Array(pType(t,typedef))
-              pType(t,_) = t
+      res = map (\(key,(t, p, Block b _, t1, t2, t3)) ->
+                  (key,(t, p, elaborate' b, t1, t2, t3))) fdefn
+      sdefn' = Map.map (\x -> map (\(Param t s) -> Param (findType typedef t) s) x) sdefn
       in case foldr
               (\(key, val) -> \acc ->
                 case (acc, val) of
                   (Left s, _) -> Left s
-                  (_, (_, _, Left s, _, _)) -> Left s
-                  (Right m, (t, p, Right val', a, b)) ->
-                    Right $ (key,(t, p, val', a, b)) : m) (Right []) res of
+                  (_, (_, _, Left s, _, _, _)) -> Left s
+                  (Right m, (t, p, Right val', a, b, c)) ->
+                    Right $ (key,(t, p, val', a, b, c)) : m) (Right []) res of
            Left s -> Left s
            Right m -> Right ((typedef, m, sdefn'), Program $ map (replaceType typedef) gdecls)
 
@@ -90,10 +87,6 @@ partProgram ((FDecl t s p _) : xs) (typedef, fdecl, fdefn, sdefn) =
   (let
       ps = map (\(Param _ name) -> name) p 
    in if any (\x -> Map.member x typedef) ps then Left "bleh" else Right ()) >>= \_ ->
-{-  (let
-      pt = map (\(Param t _) -> t) p
-      pt' = filter (\x -> case x of {Type s -> True; _ -> False}) pt
-   in if any (\(Type s) -> not (Map.member s typedef)) pt' then Left "Type unknown" else Right()) >> \_ -> -}
   case check (t, s, p) (typedef, fdecl, fdefn) of
     Left err -> Left err
     Right () -> partProgram xs (typedef, Map.insert s (t, typeFromParams p) fdecl, fdefn, sdefn)
@@ -101,10 +94,6 @@ partProgram ((FDefn t s p b _) : xs) (typedef, fdecl, fdefn, sdefn) =
   (let
       ps = map (\(Param _ name) -> name) p
    in if any (\x -> Map.member x typedef) ps then Left "bleh" else Right ()) >>= \_ ->
-{-  (let
-      pt = map (\(Param t _) -> t) p
-      pt' = filter (\x -> case x of {Type s -> True; _ -> False}) pt
-   in if any (\(Type s) -> not (Map.member s typedef)) pt' then Left "Type unknown" else Right()) >> \_ -> -}
   (case lookup s fdefn of
       (Just _) -> Left $ "Multiple definitions of function " ++ s
       Nothing -> Right ()) >>= \_ ->
@@ -114,7 +103,7 @@ partProgram ((FDefn t s p b _) : xs) (typedef, fdecl, fdefn, sdefn) =
      False -> Right ()) >>= \_ ->
   case check (t, s, p) (typedef, fdecl, fdefn) of
     Left err -> Left err
-    Right () -> partProgram xs (typedef, fdecl, (s, (t,p,b,typedef,fdecl)) : fdefn, sdefn)
+    Right () -> partProgram xs (typedef, fdecl, (s, (t,p,b,typedef,fdecl,sdefn)) : fdefn, sdefn)
 partProgram ((SDecl _ _) : xs) acc =
   partProgram xs acc
 partProgram ((SDefn s f _) : xs) (typedef, fdecl, fdefn, sdefn) =
@@ -189,7 +178,7 @@ check (t, s, p) (typedef, fdecl, fdefn) =
       True -> Left $ "Parameter not of small type."
       _ -> Right ()) >>= \_ -> 
   case lookup s fdefn of
-    (Just (t', p', _, _, _)) ->
+    (Just (t', p', _, _, _, _)) ->
       case (typeEq typedef (t, t')) &&
            length(p) == length(p') &&
            (all (typeEq typedef) $ zip (typeFromParams p') $ typeFromParams p) of

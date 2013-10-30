@@ -405,6 +405,11 @@ lvalueFront = try (do parens lvalue) <|>
                       return $ LIdent "NULL") <|>
               try (do
                       reservedOp "*"
+                      i <- identifier
+                      reservedOp "--"
+                      return $ LIdent "NULL") <|>
+              try (do
+                      reservedOp "*"
                       l <- lvalue
                       return $ LDeref l) <|>
               try (do
