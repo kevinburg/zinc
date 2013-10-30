@@ -11,7 +11,7 @@ checkAST :: (Map.Map String Type, [(String,
                                   (Type, [Param], S,
                                    Map.Map String Type,
                                    Map.Map String (Type, [Type])))],
-             Map.Map String [Param]) -> Either String ()
+             Map.Map String [Param]) -> Either String (Map.Map String [Param])
 checkAST (typedef, fdefns, sdefns) =
   let
     (_, ctx) = addHeader typedef
@@ -37,7 +37,7 @@ checkAST (typedef, fdefns, sdefns) =
                  Left s -> Left s
                  Right () -> Right ctx'') (Right ctx) fdefns of
       Left s -> Left s
-      Right _ -> Right ()
+      Right _ -> Right sdefns
        
 
 addHeader typedef = let

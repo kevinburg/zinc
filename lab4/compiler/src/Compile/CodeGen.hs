@@ -15,9 +15,10 @@ import Debug.Trace
 
 import Compile.SSA
 
-codeGen :: Program -> Map.Map String [Asm]
-codeGen (Program gdecls) =
+codeGen :: (Program, Map.Map String [Param]) -> Map.Map String [Asm]
+codeGen (Program gdecls, sdefn) =
   let
+    smap = structInfo sdefn
     fdefns = concatMap (\x -> case x of
                            (FDefn _ s p (Block b _) _) -> [(s,p,b)]
                            _ -> []) gdecls
@@ -26,14 +27,36 @@ codeGen (Program gdecls) =
                     (FDefn t s _ _ _) -> Map.insert s t acc
                     _ -> acc) Map.empty gdecls
     (res, _) = foldr (\f -> \(m, l) -> let
-                    (s, aasm, l') = genFunction f l lengths ctx
+                    (s, aasm, l') = genFunction f l lengths (ctx, smap)
                     in (Map.insert s aasm m, l')) (Map.empty,0) fdefns
-  in res
+  in trace (show smap) res
 
-genFunction (fun,p,b) l lengths c =
+-- Computes struct size and field offsets in bytes.
+structInfo :: Map.Map String [Param] -> Map.Map String (Int, Map.Map String Int)
+structInfo sdefn = 
+  Map.map (\params -> let
+              (largest, size, m) = foldl addField (0, 0, Map.empty) params
+              -- Struct size aligned to size of largest field
+              size' = case mod size largest of
+                0 -> size
+                n -> size + largest - n
+              in (size', m)) sdefn
+  where addField = (\(largest, size, m) -> \(Param t s) -> let
+                       pSize = case t of
+                         Bool -> 4
+                         Int -> 4
+                         (Pointer _) -> 8
+                         (Array _) -> 8
+                         -- TODO: nested structs
+                       offset = case mod size pSize of
+                         0 -> size
+                         n -> size + pSize - n
+                       in (max largest pSize, offset + pSize, Map.insert s offset m))
+
+genFunction (fun,p,b) l lengths (c, smap) =
   let
     ctx = foldr (\(Param t i) -> \acc -> Map.insert i t acc) c p
-    (aasm, _, l', ep) = genStmt ([], length(p), l, Nothing) b lengths ctx
+    (aasm, _, l', ep) = genStmt ([], length(p), l, Nothing) b lengths (ctx, smap)
     p' = zip (map (\(Param _ i) -> i) p) [0..]
     prefix = map (\(i, n) ->
                    AAsm {aAssign = [AVar i], aOp = Nop, aArgs = [ALoc $ AArg n]}) p'
@@ -112,7 +135,7 @@ getLvalAddr (LArray l e) t n lbl ctx = let
           AAsm [t] AddrAdd [ALoc $ ATemp (n''+1), ALoc $ ATemp n'']]
   in (lvalAasm ++ exp ++ aasm, (n''+2), lbl'') 
 
-lvalType (LIdent i) ctx = ctx Map.! i
+lvalType (LIdent i) (ctx, smap) = ctx Map.! i
 lvalType (LDeref l) ctx =
   case lvalType l ctx of
     (Pointer t) -> t
@@ -120,23 +143,23 @@ lvalType (LArray l _) ctx =
   case lvalType l ctx of
     (Array t) -> t
      
-arrType (Ident i _) ctx = ctx Map.! i
+arrType (Ident i _) (ctx, smap) = ctx Map.! i
 arrType (ExpUnOp Deref e _) ctx =
   case arrType e ctx of
     (Pointer t) -> t
-arrType (App f _ _) ctx = ctx Map.! f
+arrType (App f _ _) (ctx, smap) = ctx Map.! f
 arrType (ExpTernOp _ e2 e3 _) ctx = arrType e2 ctx
 arrType (Subscr e _ _) ctx = 
   case arrType e ctx of
     (Array t) -> t
   
 genStmt acc [] _ _ = acc
-genStmt acc ((Simp (Decl t i Nothing _) _) : xs) lens ctx =
-  genStmt acc xs lens (Map.insert i t ctx)
-genStmt (acc, n, l, ep) ((Simp (Decl t i (Just e) _) _) : xs) lens ctx =
+genStmt acc ((Simp (Decl t i Nothing _) _) : xs) lens (ctx, smap) =
+  genStmt acc xs lens ((Map.insert i t ctx), smap)
+genStmt (acc, n, l, ep) ((Simp (Decl t i (Just e) _) _) : xs) lens (ctx, smap) =
   let
-    (aasm, n', l') = genExp (n, l) e (AVar i) lens ctx
-  in genStmt (acc ++ aasm, n', l', ep) xs lens (Map.insert i t ctx)
+    (aasm, n', l') = genExp (n, l) e (AVar i) lens (ctx, smap)
+  in genStmt (acc ++ aasm, n', l', ep) xs lens ((Map.insert i t ctx), smap)
 genStmt (acc, n, l, ep) ((Simp (Asgn lval o e s) _) : xs) lens ctx = 
   let
     e1 = unroll lval s
