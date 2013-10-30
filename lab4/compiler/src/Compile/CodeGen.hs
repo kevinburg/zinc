@@ -32,7 +32,7 @@ codeGen (Program gdecls, sdefn) =
   in trace (show smap) res
 
 -- Computes struct size and field offsets in bytes.
-structInfo :: Map.Map String [Param] -> Map.Map String (Int, Map.Map String Int)
+structInfo :: Map.Map String [Param] -> Map.Map String (Int, Map.Map String (Int, Type))
 structInfo sdefn = 
   Map.map (\params -> let
               (largest, size, m) = foldl addField (0, 0, Map.empty) params
@@ -51,7 +51,7 @@ structInfo sdefn =
                        offset = case mod size pSize of
                          0 -> size
                          n -> size + pSize - n
-                       in (max largest pSize, offset + pSize, Map.insert s offset m))
+                       in (max largest pSize, offset + pSize, Map.insert s (offset, t) m))
 
 genFunction (fun,p,b) l lengths (c, smap) =
   let
@@ -133,8 +133,15 @@ getLvalAddr (LArray l e) t n lbl ctx = let
   aasm = [AAsm [ATemp n''] Mul [AImm $ fromIntegral size, ALoc $ ATemp n'],
           AAsm [ATemp (n''+1)] Nop [ALoc $ Pt $ ATemp n],
           AAsm [t] AddrAdd [ALoc $ ATemp (n''+1), ALoc $ ATemp n'']]
-  in (lvalAasm ++ exp ++ aasm, (n''+2), lbl'') 
-
+  in (lvalAasm ++ exp ++ aasm, (n''+2), lbl'')
+getLvalAddr (LArrow (LIdent s) i) t n lbl (ctx, smap) = let
+  offset = case Map.lookup s ctx of
+    Just (Pointer (Struct st)) -> case Map.lookup st smap of
+      Just (_, m) -> case Map.lookup i m of
+        Just (offset, _) -> offset
+  aasm = [AAsm [t] AddrAdd [ALoc $ AVar s, AImm $ fromIntegral offset]]
+  in (aasm, n+1, lbl)
+   
 lvalType (LIdent i) (ctx, smap) = ctx Map.! i
 lvalType (LDeref l) ctx =
   case lvalType l ctx of
@@ -142,6 +149,13 @@ lvalType (LDeref l) ctx =
 lvalType (LArray l _) ctx =
   case lvalType l ctx of
     (Array t) -> t
+lvalType (LArrow l i) (ctx, smap) =
+  case lvalType l (ctx, smap) of
+    (Pointer (Struct s)) ->
+      case Map.lookup s smap of
+        (Just (_, fields)) ->
+          case Map.lookup i fields of
+            (Just (_, t)) -> t
      
 arrType (Ident i _) (ctx, smap) = ctx Map.! i
 arrType (ExpUnOp Deref e _) ctx =
@@ -277,6 +291,15 @@ genExp (n,l) (Null _) loc _ _ = ([AAsm [loc] Nop [AImm 0]], n, l)
 genExp (n,l) (TrueT _) loc _ _ = ([AAsm [loc] Nop [AImm 1]], n, l)
 genExp (n,l) (FalseT _) loc _ _ = ([AAsm [loc] Nop [AImm 0]], n, l)
 genExp (n,l) (Ident s _) loc _ _ = ([AAsm [loc] Nop [ALoc $ AVar s]], n, l)
+genExp (n,l) (ExpBinOp Arrow (Ident s _) (Ident f _) p) loc lens (ctx, smap) = let
+  (exp, n', l') = genExp (n+1,l) (Ident s p) (ATemp n) lens (ctx, smap)
+  offset = case Map.lookup s ctx of
+    Just (Pointer (Struct st)) -> case Map.lookup st smap of
+      Just (_, m) -> case Map.lookup f m of
+        Just (offset, _) -> offset
+  aasm = [AAsm [ATemp n'] AddrAdd [ALoc $ ATemp n, AImm $ fromIntegral offset],
+          AAsm [loc] Nop [ALoc $ Pt $ ATemp n']]
+  in (exp ++ aasm, n'+1, l')
 genExp (n,l) (ExpBinOp LAnd e1 e2 p) loc lens ctx =
   genExp (n,l) (ExpTernOp e1 e2 (FalseT p) p) loc lens ctx
 genExp (n,l) (ExpBinOp LOr e1 e2 p) loc lens ctx =
@@ -350,13 +373,15 @@ genExp (n, l) (Subscr e1 e2 _) loc lens ctx =
             AAsm [ATemp (n2+1)] AddrAdd [ALoc $ ATemp n2, ALoc $ ATemp n],
             AAsm [loc] Nop [ALoc $ Pt $ ATemp (n2+1)]]
   in (exp1 ++ exp2 ++ aasm, n2+2, l2)
-genExp (n, l) (Alloc t _) loc lens ctx =
+genExp (n, l) (Alloc t _) loc lens (ctx, smap) =
   let
     size = case t of
       Int -> 4
       Bool -> 4
       (Pointer _) -> 8
       (Array _) -> 8
+      (Struct s) -> case Map.lookup s smap of
+        Just (i, _) -> i
     aasm = [AAsm [AArg 1] Nop [AImm $ fromIntegral size],
             AAsm [AArg 0] Nop [AImm $ fromIntegral 1],
             ACtrl $ Call "_c0_calloc" [],
