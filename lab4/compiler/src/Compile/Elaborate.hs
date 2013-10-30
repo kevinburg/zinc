@@ -259,10 +259,10 @@ elaborate' ((BlockStmt (Block l _) _) : xs) =
 unwrap (LIdent i) p = Ident i p
 unwrap (LArrow l i) p = let
   l' = unwrap l p
-  in ExpBinOp Arrow (Ident i p) l' p
+  in ExpBinOp Arrow l' (Ident i p) p
 unwrap (LDot l i) p = let
   l' = unwrap l p
-  in ExpBinOp Dot (Ident i p) l' p
+  in ExpBinOp Dot l' (Ident i p) p
 unwrap (LDeref l) p = let
   l' = unwrap l p
   in ExpUnOp Deref l' p
