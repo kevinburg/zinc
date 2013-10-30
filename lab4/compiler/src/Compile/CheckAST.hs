@@ -67,9 +67,12 @@ fixTypes' m (ASeq s1 s2) = ASeq (fixTypes' m s1) (fixTypes' m s2)
 fixTypes' m (ABlock s1 s2) = ABlock (fixTypes' m s1) (fixTypes' m s2)
 fixTypes' m (AExpr e s) = AExpr (fixTypesE m e) (fixTypes' m s)
 fixTypes' m (AAssign l e) = AAssign l (fixTypesE m e)
+fixTypes' m (AReturn (Just e)) = AReturn $ Just (fixTypesE m e)
 fixTypes' m x = x
 
-fixTypesE m (Alloc t p) = (Alloc (findType m t) p)
+fixTypesE m (Alloc t p) = Alloc (findType m t) p
+fixTypesE m (AllocArray t e p) = AllocArray (findType m t) e p
+fixTypesE m (ExpBinOp Arrow e i p) = ExpBinOp Arrow (fixTypesE m e) i p
 fixTypesE m x = x
 
 findType m (Type s) = findType m (m Map.! s)

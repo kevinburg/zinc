@@ -8,10 +8,10 @@ import Debug.Trace
 import Compile.CheckAST
 
 elaborate :: Program -> Either String
-             (Map.Map String Type, [(String,
-                                   (Type, [Param], S, Map.Map String Type,
-                                    Map.Map String (Type, [Type])))],
-              Map.Map String [Param])
+             ((Map.Map String Type, [(String,
+                                      (Type, [Param], S, Map.Map String Type,
+                                       Map.Map String (Type, [Type])))],
+               Map.Map String [Param]), Program)
 elaborate (Program gdecls) =
   case partProgram gdecls (Map.singleton "fpt" Int, Map.empty, [], Map.empty) of
     Left err -> Left err
@@ -31,8 +31,51 @@ elaborate (Program gdecls) =
                   (Right m, (t, p, Right val', a, b)) ->
                     Right $ (key,(t, p, val', a, b)) : m) (Right []) res of
            Left s -> Left s
-           Right m -> Right (typedef, m, sdefn')
+           Right m -> Right ((typedef, m, sdefn'), Program $ map (replaceType typedef) gdecls)
 
+-- replace all user defined types in program
+replaceType m (FDefn t s ps (Block stmts pos1) pos2) =
+  FDefn (findType m t) s (map (replacePType m) ps) (Block (map (replaceTypeS m) stmts) pos1) pos2
+replaceType m x = x
+
+mRepStmt _ Nothing = Nothing
+mRepStmt m (Just s) = Just $ replaceTypeS m s
+
+mRepSimp _ Nothing = Nothing
+mRepSimp m (Just s) = let
+  (Simp s' pos) = replaceTypeS m (Simp s pos)
+  in Just s'
+
+replacePType m (Param t s) = Param (findType m t) s
+
+replaceTypeS m (Simp (Decl t s Nothing pos1) pos2) =
+  Simp (Decl (findType m t) s Nothing pos1) pos2
+replaceTypeS m (Simp (Decl t s (Just e) pos1) pos2) =
+  Simp (Decl (findType m t) s (Just $ replaceTypeE m e) pos1) pos2
+replaceTypeS m (Simp (Asgn l op e pos1) pos2) =
+  Simp (Asgn l op (replaceTypeE m e) pos1) pos2
+replaceTypeS m (Simp (Expr e pos1) pos2) =
+  Simp (Expr (replaceTypeE m e) pos1) pos2
+replaceTypeS _ (Simp (PostOp op l pos1) pos2) =
+  Simp (PostOp op l pos1) pos2
+replaceTypeS m (Ctrl (If e s1 s2 pos1) pos2) = 
+  Ctrl (If (replaceTypeE m e) (replaceTypeS m s1) (mRepStmt m s2) pos1) pos2
+replaceTypeS m (Ctrl (While e s pos1) pos2) =
+  Ctrl (While (replaceTypeE m e) (replaceTypeS m s) pos1) pos2
+replaceTypeS m (Ctrl (For s1 e s2 s3 pos1) pos2) =
+  Ctrl (For (mRepSimp m s1) (replaceTypeE m e) (mRepSimp m s2) (replaceTypeS m s3) pos1) pos2
+replaceTypeS _ (Ctrl (Return Nothing pos1) pos2) =
+  Ctrl (Return Nothing pos1) pos2
+replaceTypeS m (Ctrl (Return (Just e) pos1) pos2) =
+  Ctrl (Return (Just $ replaceTypeE m e) pos1) pos2
+replaceTypeS m (Ctrl (Assert e pos1) pos2) =
+  Ctrl (Assert (replaceTypeE m e) pos1) pos2
+replaceTypeS m (BlockStmt (Block stmts pos1) pos2) =
+  BlockStmt (Block (map (replaceTypeS m) stmts) pos1) pos2
+
+-- imported from checkAST
+replaceTypeE = fixTypesE
+  
 partProgram [] acc = Right acc
 partProgram ((TypeDef t s _) : xs) (typedef, fdecl, fdefn, sdefn) =
   if t == Void then Left "loser" else

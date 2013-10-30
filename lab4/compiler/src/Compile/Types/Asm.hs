@@ -142,18 +142,21 @@ instance Show Register where
   show R10B = "r10b"
   show R11D = "r11d"
   show R11 = "r11"
+  show R11B = "r11b"
   show R12D = "r12d"
   show R12 = "r12"
+  show R12B = "r12b"
   show R13D = "r13d"
   show R13 = "r13"
+  show R13B = "r13b"
   show R14D = "r14d"
   show R14 = "r14"
+  show R14B = "r14b"
   show R15D = "r15d"
   show R15 = "r15"
   show R15B = "r15b"
   show RSP = "rsp"
   show RBP = "rbp"
-
 
 instance NFData Asm where
   rnf _ = ()

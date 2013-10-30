@@ -10,7 +10,7 @@ import Compile.Types
 import Compile.RegAlloc
 import qualified Data.Map as Map
 import qualified Data.Set as Set
-
+import Text.Parsec.Pos
 import Debug.Trace
 
 import Compile.SSA
@@ -29,7 +29,7 @@ codeGen (Program gdecls, sdefn) =
     (res, _) = foldr (\f -> \(m, l) -> let
                     (s, aasm, l') = genFunction f l lengths (ctx, smap)
                     in (Map.insert s aasm m, l')) (Map.empty,0) fdefns
-  in trace (show smap) res
+  in res
 
 -- Computes struct size and field offsets in bytes.
 structInfo :: Map.Map String [Param] -> Map.Map String (Int, Map.Map String (Int, Type))
@@ -113,6 +113,9 @@ unroll (LDeref l) s = let
 unroll (LArray l e) s = let
   a = unroll l s
   in Subscr a e s
+unroll (LArrow l i) s = let
+  l' = unroll l s
+  in ExpBinOp Arrow l' (Ident i s) s
 
 getLvalAddr (LIdent _) _ n l _ = ([], n, l)
 getLvalAddr (LDeref (LIdent i)) t n l _ =
@@ -141,7 +144,17 @@ getLvalAddr (LArrow (LIdent s) i) t n lbl (ctx, smap) = let
         Just (offset, _) -> offset
   aasm = [AAsm [t] AddrAdd [ALoc $ AVar s, AImm $ fromIntegral offset]]
   in (aasm, n+1, lbl)
-   
+getLvalAddr (LArrow l i) t n lbl (ctx, smap) = let
+  e = unroll l (newPos "x" 1 1)
+  (lvalAasm, n', lbl') = getLvalAddr l (ATemp n) (n+1) lbl (ctx, smap)
+  s = case typecheck e (ctx, smap) of
+    (Pointer (Struct i)) -> i
+  offset = case Map.lookup s smap of
+    Just (_, m) -> case Map.lookup i m of
+      Just (offset, _) -> offset
+  aasm = [AAsm [t] AddrAdd [ALoc $ ATemp n, AImm $ fromIntegral offset]]
+  in (lvalAasm ++ aasm, n', lbl')
+  
 lvalType (LIdent i) (ctx, smap) = ctx Map.! i
 lvalType (LDeref l) ctx =
   case lvalType l ctx of
@@ -157,16 +170,24 @@ lvalType (LArrow l i) (ctx, smap) =
           case Map.lookup i fields of
             (Just (_, t)) -> t
      
-arrType (Ident i _) (ctx, smap) = ctx Map.! i
-arrType (ExpUnOp Deref e _) ctx =
-  case arrType e ctx of
+typecheck (Ident i _) (ctx, smap) = ctx Map.! i
+typecheck (ExpUnOp Deref e _) ctx =
+  case typecheck e ctx of
     (Pointer t) -> t
-arrType (App f _ _) (ctx, smap) = ctx Map.! f
-arrType (ExpTernOp _ e2 e3 _) ctx = arrType e2 ctx
-arrType (Subscr e _ _) ctx = 
-  case arrType e ctx of
+typecheck (App f _ _) (ctx, smap) = ctx Map.! f
+typecheck (ExpTernOp _ e2 e3 _) ctx = typecheck e2 ctx
+typecheck (Subscr e _ _) ctx = 
+  case typecheck e ctx of
     (Array t) -> t
-  
+typecheck (ExpBinOp Arrow e (Ident i _) _) (ctx, smap) =
+  case typecheck e (ctx, smap) of
+    (Pointer (Struct s)) ->
+      case Map.lookup s smap of
+        Just (_, m) ->
+          case Map.lookup i m of
+            Just (_, t) -> t
+typecheck (Alloc t _) ctx = Pointer t
+
 genStmt acc [] _ _ = acc
 genStmt acc ((Simp (Decl t i Nothing _) _) : xs) lens (ctx, smap) =
   genStmt acc xs lens ((Map.insert i t ctx), smap)
@@ -291,12 +312,13 @@ genExp (n,l) (Null _) loc _ _ = ([AAsm [loc] Nop [AImm 0]], n, l)
 genExp (n,l) (TrueT _) loc _ _ = ([AAsm [loc] Nop [AImm 1]], n, l)
 genExp (n,l) (FalseT _) loc _ _ = ([AAsm [loc] Nop [AImm 0]], n, l)
 genExp (n,l) (Ident s _) loc _ _ = ([AAsm [loc] Nop [ALoc $ AVar s]], n, l)
-genExp (n,l) (ExpBinOp Arrow (Ident s _) (Ident f _) p) loc lens (ctx, smap) = let
-  (exp, n', l') = genExp (n+1,l) (Ident s p) (ATemp n) lens (ctx, smap)
-  offset = case Map.lookup s ctx of
-    Just (Pointer (Struct st)) -> case Map.lookup st smap of
-      Just (_, m) -> case Map.lookup f m of
-        Just (offset, _) -> offset
+genExp (n,l) (ExpBinOp Arrow e (Ident f _) p) loc lens (ctx, smap) = let
+  (exp, n', l') = genExp (n+1,l) e (ATemp n) lens (ctx, smap)
+  s = case typecheck e (ctx, smap) of
+    (Pointer (Struct i)) -> i
+  offset = case Map.lookup s smap of
+    Just (_, m) -> case Map.lookup f m of
+      Just (offset, _) -> offset
   aasm = [AAsm [ATemp n'] AddrAdd [ALoc $ ATemp n, AImm $ fromIntegral offset],
           AAsm [loc] Nop [ALoc $ Pt $ ATemp n']]
   in (exp ++ aasm, n'+1, l')
@@ -363,7 +385,7 @@ genExp (n, l) (App f es _) loc lens ctx =
       in (aasm, n', l')
 genExp (n, l) (Subscr e1 e2 _) loc lens ctx =
   let
-    size = case arrType e1 ctx of
+    size = case typecheck e1 ctx of
       (Array Int) -> 4
       (Array Bool) -> 4
       (Array _) -> 8
@@ -394,6 +416,7 @@ genExp (n, l) (AllocArray t e _) loc lens ctx =
       Bool -> 4
       (Pointer _) -> 8
       (Array _) -> 8
+      (Struct _) -> 8
     (exp, n', l') = genExp (n+1, l) e (ATemp n) lens ctx
     aasm = [AAsm [AArg 1] Nop [AImm $ fromIntegral size],
             AAsm [AArg 0] Nop [ALoc $ ATemp n],
@@ -422,6 +445,9 @@ translate regMap n (AAsm {aAssign = [dest], aOp = (MemMov Small), aArgs = [src]}
        [Movq (Stk x) (Reg R15),
         Movq (Loc (Reg R15)) (Reg R15),
         Movl (Reg R15D) d]
+     (_, Loc(Stk y)) ->
+       [Movq (Stk y) (Reg R15),
+        Movl s (Loc (Reg R15))]
      _ ->
        [Movl s d]
 translate regMap n (AAsm {aAssign = [dest], aOp = Nop, aArgs = [src]}) =

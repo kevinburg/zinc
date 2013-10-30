@@ -42,11 +42,11 @@ compile :: Job -> IO ()
 compile job = do
   res <- runErrorT $ do
     ast <- parseAST $ jobSource job
-    elab <- liftEIO $ elaborate ast
+    (elab, ast') <- liftEIO $ elaborate ast
     smap <- liftEIO $ checkAST elab
     if jobOutFormat job == C0
       then writer (jobOut job) ast
-      else let asm = codeGen (ast, smap) in
+      else let asm = codeGen (ast', smap) in
              if jobOutFormat job == Asm
                 then sourceWriter (jobOut job) asm
                 else do writer asmFile ast
