@@ -22,14 +22,17 @@ codeGen (Program gdecls) =
                            (FDefn _ s p (Block b _) _) -> [(s,p,b)]
                            _ -> []) gdecls
     lengths = map (\(s,_,b) -> (s, length b)) fdefns
+    ctx = foldr (\x -> \acc -> case x of
+                    (FDefn t s _ _ _) -> Map.insert s t acc
+                    _ -> acc) Map.empty gdecls
     (res, _) = foldr (\f -> \(m, l) -> let
-                    (s, aasm, l') = genFunction f l lengths
+                    (s, aasm, l') = genFunction f l lengths ctx
                     in (Map.insert s aasm m, l')) (Map.empty,0) fdefns
   in res
 
-genFunction (fun,p,b) l lengths =
+genFunction (fun,p,b) l lengths c =
   let
-    ctx = foldr (\(Param t i) -> \acc -> Map.insert i t acc) Map.empty p
+    ctx = foldr (\(Param t i) -> \acc -> Map.insert i t acc) c p
     (aasm, _, l', ep) = genStmt ([], length(p), l, Nothing) b lengths ctx
     p' = zip (map (\(Param _ i) -> i) p) [0..]
     prefix = map (\(i, n) ->
@@ -88,21 +91,21 @@ unroll (LArray l e) s = let
   a = unroll l s
   in Subscr a e s
 
-getLvalAddr (LIdent _) _ n l = ([], n, l)
-getLvalAddr (LDeref (LIdent i)) t n l =
+getLvalAddr (LIdent _) _ n l _ = ([], n, l)
+getLvalAddr (LDeref (LIdent i)) t n l _ =
   ([AAsm [t] Nop [ALoc $ AVar i]], n, l)
-getLvalAddr (LDeref l) t n lbl = let
-  (aasm, n', lbl') = getLvalAddr l (ATemp n) (n+1) lbl
+getLvalAddr (LDeref l) t n lbl ctx = let
+  (aasm, n', lbl') = getLvalAddr l (ATemp n) (n+1) lbl ctx
   in (aasm ++ [AAsm [t] Nop [ALoc $ Pt $ ATemp n]], n', lbl')
-getLvalAddr (LArray (LIdent i) e) t n l = let
-  (exp, n', l') = genExp (n+1, l) e (ATemp n) []
+getLvalAddr (LArray (LIdent i) e) t n l ctx = let
+  (exp, n', l') = genExp (n+1, l) e (ATemp n) [] ctx
   size = 4
   aasm = [AAsm [ATemp n'] Mul [AImm $ fromIntegral size, ALoc $ ATemp n],
           AAsm [t] AddrAdd [ALoc $ AVar i, ALoc $ ATemp n']]
   in (exp ++ aasm, n'+1, l')
-getLvalAddr (LArray l e) t n lbl = let
-  (lvalAasm, n', lbl') = getLvalAddr l (ATemp n) (n+1) lbl
-  (exp, n'', lbl'') = genExp (n'+1, lbl') e (ATemp n') []
+getLvalAddr (LArray l e) t n lbl ctx = let
+  (lvalAasm, n', lbl') = getLvalAddr l (ATemp n) (n+1) lbl ctx
+  (exp, n'', lbl'') = genExp (n'+1, lbl') e (ATemp n') [] ctx
   size = 4
   aasm = [AAsm [ATemp n''] Mul [AImm $ fromIntegral size, ALoc $ ATemp n'],
           AAsm [ATemp (n''+1)] Nop [ALoc $ Pt $ ATemp n],
@@ -117,12 +120,22 @@ lvalType (LArray l _) ctx =
   case lvalType l ctx of
     (Array t) -> t
      
+arrType (Ident i _) ctx = ctx Map.! i
+arrType (ExpUnOp Deref e _) ctx =
+  case arrType e ctx of
+    (Pointer t) -> t
+arrType (App f _ _) ctx = ctx Map.! f
+arrType (ExpTernOp _ e2 e3 _) ctx = arrType e2 ctx
+arrType (Subscr e _ _) ctx = 
+  case arrType e ctx of
+    (Array t) -> t
+  
 genStmt acc [] _ _ = acc
 genStmt acc ((Simp (Decl t i Nothing _) _) : xs) lens ctx =
   genStmt acc xs lens (Map.insert i t ctx)
 genStmt (acc, n, l, ep) ((Simp (Decl t i (Just e) _) _) : xs) lens ctx =
   let
-    (aasm, n', l') = genExp (n, l) e (AVar i) lens
+    (aasm, n', l') = genExp (n, l) e (AVar i) lens ctx
   in genStmt (acc ++ aasm, n', l', ep) xs lens (Map.insert i t ctx)
 genStmt (acc, n, l, ep) ((Simp (Asgn lval o e s) _) : xs) lens ctx = 
   let
@@ -130,8 +143,8 @@ genStmt (acc, n, l, ep) ((Simp (Asgn lval o e s) _) : xs) lens ctx =
     e' = case o of
       Nothing -> e
       Just op -> ExpBinOp op e1 e s
-    (compute, n', l') = getLvalAddr lval (ATemp n) (n+1) l
-    (aasm, n'', l'') = genExp (n'+1, l') e' (ATemp n') lens
+    (compute, n', l') = getLvalAddr lval (ATemp n) (n+1) l ctx
+    (aasm, n'', l'') = genExp (n'+1, l') e' (ATemp n') lens ctx
     post = case compute of
       [] -> case lval of
         (LIdent i) -> [AAsm [AVar i] Nop [ALoc $ ATemp n']]
@@ -156,15 +169,15 @@ genStmt (acc, n, l, ep) ((Simp (PostOp o lval s) _) : xs) lens ctx =
   in genStmt (acc, n, l, ep) (new : xs) lens ctx
 genStmt (acc, n, l, ep) ((Simp (Expr e _) _) : xs) lens ctx = 
   let
-    (aasm, n', l') = genExp (n + 1, l) e (ATemp n) lens
+    (aasm, n', l') = genExp (n + 1, l) e (ATemp n) lens ctx
   in genStmt (acc ++ aasm, n', l', ep) xs lens ctx
 genStmt (acc, n, l, ep) ((BlockStmt (Block stmts _) _) : xs) lens ctx = 
   let
     (aasm, n', l', ep') = genStmt ([], n, l, ep) stmts lens ctx
   in genStmt (acc ++ aasm, n', l', ep') xs lens ctx
-genStmt (acc, n, l, ep) ((Ctrl (Return (Just e) _) _) : xs) lens _ =
+genStmt (acc, n, l, ep) ((Ctrl (Return (Just e) _) _) : xs) lens ctx =
   let
-    (aasm, n', l') = genExp (n, l) e (ARes) lens
+    (aasm, n', l') = genExp (n, l) e (ARes) lens ctx
     (epilogue, l'') = case ep of
       (Just ep') -> (ep', l') 
       Nothing -> (l'+1, l'+1)
@@ -177,7 +190,7 @@ genStmt (acc, n, l, ep) ((Ctrl (Return Nothing _) _) : xs) _ _ =
   in (acc ++ [ACtrl $ Goto (show epilogue)], n, l', Just epilogue)
 genStmt (acc, n, l, ep) ((Ctrl (If e s Nothing _) _) : xs) lens ctx =
   let
-    (aasme, n', l') = genExp (n + 1, l) e (ATemp n) lens
+    (aasme, n', l') = genExp (n + 1, l) e (ATemp n) lens ctx
     (aasms, n'', l'', ep') = genStmt ([], n', l', ep) [s] lens ctx
     aasm = [ACtrl $ Ifz (ALoc (ATemp n)) (show $ l''+2),
             ACtrl $ Goto (show $ l''+1),
@@ -190,7 +203,7 @@ genStmt (acc, n, l, ep) ((Ctrl (If e s1 (Just s2) _) _) : xs) lens ctx =
    (TrueT _) -> genStmt (acc, n, l, ep) (s1 : xs) lens ctx
    (FalseT _) -> genStmt (acc, n, l, ep) (s2 : xs) lens ctx
    _ -> let
-     (aasme, n1, l1) = genExp (n+1, l) e (ATemp n) lens
+     (aasme, n1, l1) = genExp (n+1, l) e (ATemp n) lens ctx
      (aasms1, n2, l2, ep2) = genStmt ([], n1, l1, ep) [s1] lens ctx
      (aasms2, n3, l3, ep3) = genStmt ([], n2, l2, ep2) [s2] lens ctx
      aasm = [ACtrl $ Ifz (ALoc (ATemp n)) (show $ l3+2),
@@ -205,7 +218,7 @@ genStmt (acc, n, l, ep) ((Ctrl (While e s _) _) : xs) lens ctx =
     (FalseT _) -> genStmt (acc, n, l, ep) xs lens ctx
     _ ->
       let
-        (aasme, n1, l1) = genExp (n+1, l) e (ATemp n) lens
+        (aasme, n1, l1) = genExp (n+1, l) e (ATemp n) lens ctx
         (aasms, n2, l2, ep') = genStmt ([], n1, l1, ep) [s] lens ctx
         aasm = [ACtrl $ Ifz (ALoc (ATemp n)) (show $ l2+3),
                 ACtrl $ Goto (show $ l2+2),
@@ -220,7 +233,7 @@ genStmt (acc, n, l, ep) ((Ctrl (For ms1 e ms2 s3 p) _) : xs) lens ctx =
     (init, n1, l1, ep1) = case ms1 of
       Nothing -> ([], n, l, ep)
       (Just s1) -> genStmt ([], n, l, ep) [Simp s1 p] lens ctx
-    (aasme, n2, l2) = genExp (n1+1, l1) e (ATemp n1) lens
+    (aasme, n2, l2) = genExp (n1+1, l1) e (ATemp n1) lens ctx
     (step, n3, l3, ep2) = case ms2 of
       Nothing -> ([], n2, l2, ep1)
       (Just s2) -> genStmt ([], n2, l2, ep1) [Simp s2 p] lens ctx
@@ -236,49 +249,48 @@ genStmt acc ((Ctrl (Assert e _) p) : xs) lens ctx = let
   s = Ctrl (If (ExpUnOp LNot e p) (Simp (Expr (App "_c0_abort" [] p) p) p) Nothing p) p
   in genStmt acc (s : xs) lens ctx
      
-genExp :: (Int, Int) -> Expr -> ALoc -> [(String, Int)] -> ([AAsm], Int, Int)
-genExp (n,l) (ExpInt _ i _) loc _ = ([AAsm [loc] Nop [AImm $ fromIntegral i]], n, l)
-genExp (n,l) (Null _) loc _ = ([AAsm [loc] Nop [AImm 0]], n, l)
-genExp (n,l) (TrueT _) loc _ = ([AAsm [loc] Nop [AImm 1]], n, l)
-genExp (n,l) (FalseT _) loc _ = ([AAsm [loc] Nop [AImm 0]], n, l)
-genExp (n,l) (Ident s _) loc _ = ([AAsm [loc] Nop [ALoc $ AVar s]], n, l)
-genExp (n,l) (ExpBinOp LAnd e1 e2 p) loc lens =
-  genExp (n,l) (ExpTernOp e1 e2 (FalseT p) p) loc lens
-genExp (n,l) (ExpBinOp LOr e1 e2 p) loc lens =
-  genExp (n,l) (ExpTernOp e1 (TrueT p) e2 p) loc lens
-genExp (n,l) (ExpBinOp op e1 e2 p) loc lens | op == Shl || op == Shr = let
+genExp (n,l) (ExpInt _ i _) loc _ _ = ([AAsm [loc] Nop [AImm $ fromIntegral i]], n, l)
+genExp (n,l) (Null _) loc _ _ = ([AAsm [loc] Nop [AImm 0]], n, l)
+genExp (n,l) (TrueT _) loc _ _ = ([AAsm [loc] Nop [AImm 1]], n, l)
+genExp (n,l) (FalseT _) loc _ _ = ([AAsm [loc] Nop [AImm 0]], n, l)
+genExp (n,l) (Ident s _) loc _ _ = ([AAsm [loc] Nop [ALoc $ AVar s]], n, l)
+genExp (n,l) (ExpBinOp LAnd e1 e2 p) loc lens ctx =
+  genExp (n,l) (ExpTernOp e1 e2 (FalseT p) p) loc lens ctx
+genExp (n,l) (ExpBinOp LOr e1 e2 p) loc lens ctx =
+  genExp (n,l) (ExpTernOp e1 (TrueT p) e2 p) loc lens ctx
+genExp (n,l) (ExpBinOp op e1 e2 p) loc lens ctx | op == Shl || op == Shr = let
   div = ExpBinOp Div (ExpInt Dec 1 p) (ExpInt Dec 0 p) p
   cond = ExpBinOp LOr (ExpBinOp Gt e2 (ExpInt Dec 31 p) p)
          (ExpBinOp Lt e2 (ExpInt Dec 0 p) p) p
   sop = case op of
     Shl -> SShl
     Shr -> SShr
-  in genExp (n,l) (ExpTernOp cond div (ExpBinOp sop e1 e2 p) p) loc lens
-genExp (n,l) (ExpBinOp op e1 e2 _) loc lens = 
+  in genExp (n,l) (ExpTernOp cond div (ExpBinOp sop e1 e2 p) p) loc lens ctx
+genExp (n,l) (ExpBinOp op e1 e2 _) loc lens ctx = 
   case (op, e1, e2) of
     (Add, ExpInt _ i1 _, ExpInt _ i2 _) ->
       ([AAsm [loc] Nop [AImm $ fromIntegral $ i1 + i2]], n, l)
     _ -> let
-      (i1, n', l') = genExp (n + 1, l) e1 (ATemp n) lens
-      (i2, n'', l'') = genExp (n' + 1, l') e2 (ATemp n') lens
+      (i1, n', l') = genExp (n + 1, l) e1 (ATemp n) lens ctx
+      (i2, n'', l'') = genExp (n' + 1, l') e2 (ATemp n') lens ctx
       aasm  = [AAsm [loc] op [ALoc $ ATemp n, ALoc $ ATemp $ n']]
       in (i1 ++ i2 ++ aasm, n'', l'')
-genExp (n,l) (ExpUnOp Deref e _) loc lens = let
-  (aasm, n', l') = genExp (n+1, l) e (ATemp n) lens
+genExp (n,l) (ExpUnOp Deref e _) loc lens ctx = let
+  (aasm, n', l') = genExp (n+1, l) e (ATemp n) lens ctx
   in (aasm ++ [AAsm [loc] Nop [ALoc $ Pt $ ATemp n]], n', l')
-genExp (n,l) (ExpUnOp op e _) loc lens = let
-  (i1, n', l') = genExp (n + 1, l) e (ATemp n) lens
+genExp (n,l) (ExpUnOp op e _) loc lens ctx = let
+  (i1, n', l') = genExp (n + 1, l) e (ATemp n) lens ctx
   aasm = [AAsm [loc] op [ALoc $ ATemp n]]
   in (i1 ++ aasm, n', l')
-genExp (n, l) (ExpTernOp e1 e2 e3 _) loc lens = 
+genExp (n, l) (ExpTernOp e1 e2 e3 _) loc lens ctx = 
   case e1 of
-    (TrueT _) -> genExp (n, l) e2 loc lens
-    (FalseT _) -> genExp (n, l) e3 loc lens
+    (TrueT _) -> genExp (n, l) e2 loc lens ctx
+    (FalseT _) -> genExp (n, l) e3 loc lens ctx
     _ ->
       let
-        (i1, n1, l1) = genExp (n+1, l) e1 (ATemp n) lens
-        (i2, n2, l2) = genExp (n1+1, l1) e2 loc lens
-        (i3, n3, l3) = genExp (n2+1, l2) e3 loc lens
+        (i1, n1, l1) = genExp (n+1, l) e1 (ATemp n) lens ctx
+        (i2, n2, l2) = genExp (n1+1, l1) e2 loc lens ctx
+        (i3, n3, l3) = genExp (n2+1, l2) e3 loc lens ctx
         aasm = i1 ++ [ACtrl $ Ifz (ALoc (ATemp n)) (show $ l3+2),
                       ACtrl $ Goto (show $ l3+1),
                       ACtrl $ Lbl (show $ l3+1)] ++
@@ -287,14 +299,14 @@ genExp (n, l) (ExpTernOp e1 e2 e3 _) loc lens =
                i3 ++ [ACtrl $ Goto (show $ l3+3),
                       ACtrl $ Lbl (show $ l3+3)]
       in (aasm, n3, l3+3)
-genExp (n, l) (App f es _) loc lens =
+genExp (n, l) (App f es _) loc lens ctx =
   case lookup f lens of
     Just 0 -> ([], n, l)
     _ ->
       let
         (computeArgs, temps, n', l') =
           foldr (\e -> \(aasm, temps, n1, l1) -> let
-                    (code, n2, l2) = genExp (n1+1, l1) e (ATemp n1) lens
+                    (code, n2, l2) = genExp (n1+1, l1) e (ATemp n1) lens ctx
                     in (code ++ aasm, n1 : temps, n2, l2)) ([], [], n, l) es
         (front,rest) = splitAt 6 temps
         moveFrontArgs = map (\(i, t) ->
@@ -303,16 +315,19 @@ genExp (n, l) (App f es _) loc lens =
         aasm = computeArgs ++ moveFrontArgs ++ [ACtrl $ Call f rest] ++
                [AAsm {aAssign = [loc], aOp = Nop, aArgs = [ALoc $ ARes]}]
       in (aasm, n', l')
-genExp (n, l) (Subscr e1 e2 _) loc lens =
+genExp (n, l) (Subscr e1 e2 _) loc lens ctx =
   let
-    size = 4
-    (exp1, n1, l1) = genExp (n+1, l) e1 (ATemp n) lens
-    (exp2, n2, l2) = genExp (n1+1, l1) e2 (ATemp n1) lens
+    size = case arrType e1 ctx of
+      (Array Int) -> 4
+      (Array Bool) -> 4
+      (Array _) -> 8
+    (exp1, n1, l1) = genExp (n+1, l) e1 (ATemp n) lens ctx
+    (exp2, n2, l2) = genExp (n1+1, l1) e2 (ATemp n1) lens ctx
     aasm = [AAsm [ATemp n2] Mul [AImm $ fromIntegral size, ALoc $ ATemp n1],
             AAsm [ATemp (n2+1)] AddrAdd [ALoc $ ATemp n2, ALoc $ ATemp n],
             AAsm [loc] Nop [ALoc $ Pt $ ATemp (n2+1)]]
   in (exp1 ++ exp2 ++ aasm, n2+2, l2)
-genExp (n, l) (Alloc t _) loc lens =
+genExp (n, l) (Alloc t _) loc lens ctx =
   let
     size = case t of
       Int -> 4
@@ -324,13 +339,14 @@ genExp (n, l) (Alloc t _) loc lens =
             ACtrl $ Call "_c0_calloc" [],
             AAsm [loc] Nop [ALoc $ ARes]]
   in (aasm, n, l)
-genExp (n, l) (AllocArray t e _) loc lens =
+genExp (n, l) (AllocArray t e _) loc lens ctx =
   let
     size = case t of
       Int -> 4
       Bool -> 4
       (Pointer _) -> 8
-    (exp, n', l') = genExp (n+1, l) e (ATemp n) lens
+      (Array _) -> 8
+    (exp, n', l') = genExp (n+1, l) e (ATemp n) lens ctx
     aasm = [AAsm [AArg 1] Nop [AImm $ fromIntegral size],
             AAsm [AArg 0] Nop [ALoc $ ATemp n],
             ACtrl $ Call "_c0_calloc" [],
