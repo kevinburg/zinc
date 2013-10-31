@@ -138,11 +138,11 @@ partProgram ((SDefn s f _) : xs) (typedef, fdecl, fdefn, sdefn) =
                                               _ -> False) f
       sts'' = map (\(Param t i) -> case t of Struct s' -> Param (Struct s') i
                                              Type s' -> Param (typedef Map.! s') i) sts
-      sts' = map (\(Param (Struct s') i) -> (Map.member s' sdefn && s == s', s')) sts''
+      sts' = map (\(Param (Struct s') i) -> (Map.member s' sdefn && s /= s', s')) sts''
    in
     case foldl(\(x,a)-> \(y,b)-> case x && y of False -> (False,b)
                                                 True -> (True,b)) (True,"asdf") sts' of
-      (False,a) -> Left $ "Recursive struct definitions of "++a
+      (False,a) -> trace s $ Left $ "'struct "++a++"' used but not defined."
       (True,a) -> Right ()) >>= \_ ->
   partProgram xs (typedef, fdecl, fdefn, Map.insert s f sdefn)
 

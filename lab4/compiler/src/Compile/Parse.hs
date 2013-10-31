@@ -442,7 +442,7 @@ lvalueEnd = try (do
             try (do
                     reservedOp "["
                     e <- expr
-                    reservedOp "]"
+                    reserved "]"
                     f <- lvalueEnd
                     return $ (\l -> f $ LArray l e)) <|>
             (do return (\l -> l))
