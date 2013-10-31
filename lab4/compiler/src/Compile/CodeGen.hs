@@ -39,7 +39,7 @@ structInfo :: Map.Map String [Param] -> Map.Map String (Int, Int, Map.Map String
 structInfo sdefn = 
   Map.foldWithKey (\s -> \params -> \acc -> let
                       (largest, size, ps, acc') = computeStruct s params sdefn acc
-                      size' = case mod size largest of
+                      size' = if largest == 0 then 0 else case mod size largest of
                          0 -> size
                          n -> size + largest - n
                       acc'' = Map.insert s (size', largest, ps) acc'
@@ -58,12 +58,12 @@ addField sdefn = (\(largest, size, ps, m) -> \(Param t s) -> let
                          Nothing -> let
                            params = sdefn Map.! s
                            (largest, size, ps, m') = computeStruct s params sdefn m
-                           size' = case mod size largest of
+                           size' = if largest == 0 then size else case mod size largest of
                              0 -> size
                              n -> size + largest - n
                            m'' = Map.insert s (size', largest, ps) m'
                            in (size', largest, m'')
-                     offset = case mod size align of
+                     offset = if align == 0 then size else case mod size align of
                        0 -> size
                        n -> size + pSize - n
                      in (max largest pSize, offset + pSize, Map.insert s (offset, t) ps, m'))
@@ -272,14 +272,10 @@ genStmt (acc, n, l, ep) ((Simp (Decl t i (Just e) _) _) : xs) lens (ctx, smap) =
   let
     (aasm, n', l') = genExp (n, l) e (AVar i) lens (ctx, smap)
   in genStmt (acc ++ aasm, n', l', ep) xs lens ((Map.insert i t ctx), smap)
-genStmt (acc, n, l, ep) ((Simp (Asgn lval o e s) _) : xs) lens ctx = 
+genStmt (acc, n, l, ep) ((Simp (Asgn lval Nothing e s) _) : xs) lens ctx = 
   let
-    e1 = unroll lval s
-    e' = case o of
-      Nothing -> e
-      Just op -> ExpBinOp op e1 e s
     (compute, n', l') = getLvalAddr lval (ATemp n) (n+1) l ctx
-    (aasm, n'', l'') = genExp (n'+1, l') e' (ATemp n') lens ctx
+    (aasm, n'', l'') = genExp (n'+1, l') e (ATemp n') lens ctx
     post = case compute of
       [] -> case lval of
         (LIdent i) -> [AAsm [AVar i] Nop [ALoc $ ATemp n']]
@@ -293,6 +289,27 @@ genStmt (acc, n, l, ep) ((Simp (Asgn lval o e s) _) : xs) lens ctx =
           Small -> [AAsm [Pt $ ATemp n] (MemMov size) [ALoc $ ATemp n']]
           Large -> [AAsm [Pt $ ATemp n] Nop [ALoc $ ATemp n']]
   in genStmt (acc ++ compute ++ aasm ++ post, n'', l'', ep) xs lens ctx
+genStmt (acc, n, l, ep) ((Simp (Asgn lval (Just op) e s) _) : xs) lens ctx = 
+  let
+    (compute, n', l') = getLvalAddr lval (ATemp n) (n+1) l ctx
+    (aasm, n'', l'') = genExp (n'+1, l') e (ATemp n') lens ctx
+    post = case compute of
+      [] -> case lval of
+        (LIdent i) -> [AAsm [AVar i] op [ALoc $ AVar i, ALoc $ ATemp n']]
+      _ ->
+        let
+          size = case lvalType lval ctx of
+            Int -> Small
+            Bool -> Small
+            _ -> Large
+        in case size of
+          Small -> [AAsm [ATemp n''] (MemMov size) [ALoc $ Pt $ ATemp n],
+                    AAsm [ATemp (n''+1)] op [ALoc $ ATemp n'', ALoc $ ATemp n'],
+                    AAsm [Pt $ ATemp n] (MemMov size) [ALoc $ ATemp (n''+1)]]
+          Large -> [AAsm [ATemp n''] Nop [ALoc $ Pt $ ATemp n],
+                    AAsm [ATemp (n''+1)] op [ALoc $ ATemp n'', ALoc $ ATemp n'],
+                    AAsm [Pt $ ATemp n] Nop [ALoc $ ATemp (n''+1)]]
+  in genStmt (acc ++ compute ++ aasm ++ post, n''+2, l'', ep) xs lens ctx
 genStmt (acc, n, l, ep) ((Simp (PostOp o lval s) _) : xs) lens ctx =
   let
     op = case o of

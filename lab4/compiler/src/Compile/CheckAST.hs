@@ -378,8 +378,11 @@ checkE (ExpBinOp op e1 e2 _) ctx d smap =
         Map l t -> BadE "Cannot compare Function Types"
         Struct _ -> BadE "Cannot compare Structs"
         _ -> case t1 of
-          (Pointer _) -> if t1 == t2 || t2 == Pointer Void then ValidE Bool
-                         else BadE "eq type mismatch"
+          (Pointer Void) -> case t2 of
+            (Pointer _) -> ValidE Bool
+            _ -> BadE "eq type mismatch2"
+          (Pointer _) -> if t1 == t2 || t2 == Pointer Void  then ValidE Bool
+                         else BadE "eq type mismatch1"
           _ -> if t1 == t2 then ValidE Bool else BadE "eq type mismatch"
   else
     let
@@ -415,7 +418,7 @@ checkE (App fun args _) ctx d smap =
                in
                 case Map.lookup fun ctx of
                   (Just (Map input output)) ->
-                    if ts' == input then ValidE output
+                    if all typeCompare $ zip ts' input then ValidE output
                     else BadE "function input type mismatch"
                   _ -> BadE "undefined function call"
 checkE (Null _) ctx d smap =
@@ -448,6 +451,10 @@ checkE (Subscr e1 e2 _) ctx d smap =
         _ -> BadE "Cannot subscript non-array type"
       _ -> BadE "Subscript of array not of type int"
     (BadE s, _) -> BadE s
+
+typeCompare (Pointer Void, Pointer _) = True
+typeCompare (Pointer _, Pointer Void) = True
+typeCompare (t1, t2) = t1 == t2
 
 getIdent s (LIdent i) (LIdent _) = Right i
 getIdent s (LIdent i) _ =
