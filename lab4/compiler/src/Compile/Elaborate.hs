@@ -142,7 +142,7 @@ partProgram ((SDefn s f _) : xs) (typedef, fdecl, fdefn, sdefn) =
    in
     case foldl(\(x,a)-> \(y,b)-> case x && y of False -> (False,b)
                                                 True -> (True,b)) (True,"asdf") sts' of
-      (False,a) -> trace s $ Left $ "'struct "++a++"' used but not defined."
+      (False,a) -> Left $ "'struct "++a++"' used but not defined."
       (True,a) -> Right ()) >>= \_ ->
   partProgram xs (typedef, fdecl, fdefn, Map.insert s f sdefn)
 

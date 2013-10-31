@@ -156,7 +156,10 @@ instance Show Register where
   show R15 = "r15"
   show R15B = "r15b"
   show RSP = "rsp"
+  show ESP = "esp"
   show RBP = "rbp"
+  show EBP = "ebp"
+  show (SpillArg i) = (show i)
 
 instance NFData Asm where
   rnf _ = ()

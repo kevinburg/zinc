@@ -544,6 +544,9 @@ translate regMap n (AAsm {aAssign = [dest], aOp = (MemMov Small), aArgs = [src]}
        [Movq x (Reg R15),
         Movq (Loc $ Reg R15) (Reg R15),
         Movl (Reg R15D) $ regFind regMap (ALoc dest)]
+     (Reg (SpillArg i), _) ->
+       [Movq (Stk ((i+n+1)*8)) (Reg R15),
+        Movl (Reg R15D) $ regFind regMap (ALoc dest)] 
      _ ->
        [Movq s (Reg R15),
         Movl (Reg R15D) $ regFind regMap (ALoc dest)]
@@ -566,6 +569,9 @@ translate regMap n (AAsm {aAssign = [dest], aOp = Nop, aArgs = [src]}) =
      (Loc x, _) ->
        [Movq x (Reg R15),
         Movq (Loc $ Reg R15) (Reg R15),
+        Movq (Reg R15) d]
+     (Reg (SpillArg i), _) ->
+       [Movq (Stk ((i+n+1)*8)) (Reg R15),
         Movq (Reg R15) d]
      _ ->
        [Movq s (Reg R15),
