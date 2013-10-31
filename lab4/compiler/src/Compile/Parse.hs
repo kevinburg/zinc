@@ -346,6 +346,18 @@ termEnd = try (do
                   reserved "]"
                   f <- termEnd
                   return (\t -> f $ Subscr t e p)) <|>
+          try (do
+                  p <- getPosition
+                  reservedOp "->"
+                  i <- identifier
+                  f <- termEnd
+                  return (\t -> f $ ExpBinOp Arrow t (Ident i p) p)) <|>
+          try (do
+                  p <- getPosition
+                  reservedOp "."
+                  i <- identifier
+                  f <- termEnd
+                  return (\t -> f $ ExpBinOp Dot t (Ident i p) p)) <|>
           (do return (\t -> t))
 
 termFront :: C0Parser Expr
@@ -487,9 +499,7 @@ semiSep    = Tok.semiSep c0Tokens
 brackets   :: C0Parser a -> C0Parser a
 brackets   = Tok.brackets c0Tokens
 
-opTable = [[binary "->" (ExpBinOp Arrow) AssocLeft,
-            binary "."  (ExpBinOp Dot) AssocLeft],
-           [prefix "--" (ExpUnOp Fail),
+opTable = [[prefix "--" (ExpUnOp Fail),
             prefix  "-"   (ExpUnOp Neg),
             prefix  "*"   (ExpUnOp Deref),
             prefix  "~"   (ExpUnOp BNot),

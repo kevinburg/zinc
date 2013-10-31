@@ -159,8 +159,9 @@ getLvalAddr (LArrow l i) t n lbl (ctx, smap) = let
   offset = case Map.lookup s smap of
     Just (_, m) -> case Map.lookup i m of
       Just (offset, _) -> offset
-  aasm = [AAsm [t] AddrAdd [ALoc $ ATemp n, AImm $ fromIntegral offset]]
-  in (lvalAasm ++ aasm, n', lbl')
+  aasm = [AAsm [ATemp n'] Nop [ALoc $ Pt $ ATemp n],
+          AAsm [t] AddrAdd [ALoc $ ATemp n', AImm $ fromIntegral offset]]
+  in (lvalAasm ++ aasm, (n'+1), lbl')
   
 lvalType (LIdent i) (ctx, smap) = ctx Map.! i
 lvalType (LDeref l) ctx =
