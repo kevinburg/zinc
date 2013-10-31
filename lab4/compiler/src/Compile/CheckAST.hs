@@ -373,6 +373,7 @@ checkE (ExpBinOp op e1 e2 _) ctx d smap =
       (_, BadE s) -> BadE s
       (ValidE t1, ValidE t2) -> case t1 of
         Map l t -> BadE "Cannot compare Function Types"
+        Struct _ -> BadE "Cannot compare Structs"
         _ -> case t1 of
           (Pointer _) -> if t1 == t2 || t2 == Pointer Void then ValidE Bool
                          else BadE "eq type mismatch"
@@ -404,12 +405,16 @@ checkE (App fun args _) ctx d smap =
     let
       ts = map (\e -> checkE e ctx d smap) args
       -- TODO better error propagation here
-      ts' = map (\(ValidE t) -> t) ts
-    in case Map.lookup fun ctx of
-      (Just (Map input output)) ->
-        if ts' == input then ValidE output
-        else BadE "function input type mismatch"
-      _ -> BadE "undefined function call"
+      --
+    in case any(\x -> case x of {BadE _ -> True; _ -> False}) ts of
+      True -> BadE $ "Error in params to function call " ++ (show fun)
+      False -> let ts' = map (\(ValidE t) -> t) ts
+               in
+                case Map.lookup fun ctx of
+                  (Just (Map input output)) ->
+                    if ts' == input then ValidE output
+                    else BadE "function input type mismatch"
+                  _ -> BadE "undefined function call"
 checkE (Null _) ctx d smap =
   ValidE (Pointer Void) -- Placeholder for Type Any
 checkE (Alloc t _) ctx d smap =
