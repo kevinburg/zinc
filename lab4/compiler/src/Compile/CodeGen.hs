@@ -125,14 +125,21 @@ getLvalAddr (LDeref l) t n lbl ctx = let
   in (aasm ++ [AAsm [t] Nop [ALoc $ Pt $ ATemp n]], n', lbl')
 getLvalAddr (LArray (LIdent i) e) t n l ctx = let
   (exp, n', l') = genExp (n+1, l) e (ATemp n) [] ctx
-  size = 4
+  size = case typecheck (Ident i (newPos "x" 1 1))  ctx of
+    (Array Int) -> 4
+    (Array Bool) -> 4
+    (Array _) -> 8
   aasm = [AAsm [ATemp n'] Mul [AImm $ fromIntegral size, ALoc $ ATemp n],
           AAsm [t] AddrAdd [ALoc $ AVar i, ALoc $ ATemp n']]
   in (exp ++ aasm, n'+1, l')
 getLvalAddr (LArray l e) t n lbl ctx = let
   (lvalAasm, n', lbl') = getLvalAddr l (ATemp n) (n+1) lbl ctx
   (exp, n'', lbl'') = genExp (n'+1, lbl') e (ATemp n') [] ctx
-  size = 4
+  e1 = unroll l (newPos "x" 1 1)
+  size = case typecheck e1 ctx of
+    (Array Int) -> 4
+    (Array Bool) -> 4
+    (Array _) -> 8
   aasm = [AAsm [ATemp n''] Mul [AImm $ fromIntegral size, ALoc $ ATemp n'],
           AAsm [ATemp (n''+1)] Nop [ALoc $ Pt $ ATemp n],
           AAsm [t] AddrAdd [ALoc $ ATemp (n''+1), ALoc $ ATemp n'']]
@@ -215,8 +222,6 @@ genStmt (acc, n, l, ep) ((Simp (Asgn lval o e s) _) : xs) lens ctx =
         in case size of
           Small -> [AAsm [Pt $ ATemp n] (MemMov size) [ALoc $ ATemp n']]
           Large -> [AAsm [Pt $ ATemp n] Nop [ALoc $ ATemp n']]
-      -- TODO: figure out the size of the type being assigned.
-      -- Assume small for now.
   in genStmt (acc ++ compute ++ aasm ++ post, n'', l'', ep) xs lens ctx
 genStmt (acc, n, l, ep) ((Simp (PostOp o lval s) _) : xs) lens ctx =
   let
