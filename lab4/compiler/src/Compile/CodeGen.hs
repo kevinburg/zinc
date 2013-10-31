@@ -21,7 +21,7 @@ being thrown out after elaboration. -}
 codeGen :: (Program, Map.Map String [Param]) -> Map.Map String [Asm]
 codeGen (Program gdecls, sdefn) =
   let
-    smap = structInfo sdefn
+    smap = Map.map (\(a,b,c) -> (a,c)) $ structInfo sdefn
     fdefns = concatMap (\x -> case x of
                            (FDefn _ s p (Block b _) _) -> [(s,p,b)]
                            _ -> []) gdecls
@@ -35,27 +35,39 @@ codeGen (Program gdecls, sdefn) =
   in res
 
 -- Computes struct size and field offsets in bytes.
-structInfo :: Map.Map String [Param] -> Map.Map String (Int, Map.Map String (Int, Type))
+structInfo :: Map.Map String [Param] -> Map.Map String (Int, Int, Map.Map String (Int, Type))
 structInfo sdefn = 
-  Map.map (\params -> let
-              (largest, size, m) = foldl addField (0, 0, Map.empty) params
-              -- Struct size aligned to size of largest field
-              size' = case mod size largest of
-                0 -> size
-                n -> size + largest - n
-              in (size', m)) sdefn
-  where addField = (\(largest, size, m) -> \(Param t s) -> let
-                       pSize = case t of
-                         Bool -> 4
-                         Int -> 4
-                         (Pointer _) -> 8
-                         (Array _) -> 8
-                         -- TODO: nested structs
-                       offset = case mod size pSize of
+  Map.foldWithKey (\s -> \params -> \acc -> let
+                      (largest, size, ps, acc') = computeStruct s params sdefn acc
+                      size' = case mod size largest of
                          0 -> size
-                         n -> size + pSize - n
-                       in (max largest pSize, offset + pSize, Map.insert s (offset, t) m))
+                         n -> size + largest - n
+                      acc'' = Map.insert s (size', largest, ps) acc'
+                      in acc'') Map.empty sdefn
 
+computeStruct s params sdefn m = foldl (addField sdefn) (0, 0, Map.empty, m) params
+  
+addField sdefn = (\(largest, size, ps, m) -> \(Param t s) -> let
+                     (pSize, align, m') = case t of
+                       Bool -> (4, 4, m)
+                       Int -> (4, 4, m)
+                       (Pointer _) -> (8, 8, m)
+                       (Array _) -> (8, 8, m)
+                       (Struct s) -> case Map.lookup s m of
+                         Just (len, align, _) -> (len, align, m)
+                         Nothing -> let
+                           params = sdefn Map.! s
+                           (largest, size, ps, m') = computeStruct s params sdefn m
+                           size' = case mod size largest of
+                             0 -> size
+                             n -> size + largest - n
+                           m'' = Map.insert s (size', largest, ps) m'
+                           in (size', largest, m'')
+                     offset = case mod size align of
+                       0 -> size
+                       n -> size + pSize - n
+                     in (max largest pSize, offset + pSize, Map.insert s (offset, t) ps, m'))
+        
 genFunction (fun,p,b) l lengths (c, smap) =
   let
     ctx = foldr (\(Param t i) -> \acc -> Map.insert i t acc) c p

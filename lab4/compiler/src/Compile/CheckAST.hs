@@ -434,9 +434,7 @@ checkE (AllocArray t e _) ctx d smap =
         Void -> BadE "Allocating array with void type"
         Struct s -> case Map.lookup s smap of
           Nothing -> BadE "Struct definition not in map (checkE(Alloc...))"
-          Just t' -> if length(t') == 0 then ValidE (Array (Struct s))
-                     else BadE "Allocating array with large type"
-                     -- TODO: You can allocate an array of structs I'm dum
+          Just t' -> ValidE (Array (Struct s))
         _ -> ValidE (Array t)
       _ -> BadE "size for alloc_array not int"
 checkE (Subscr e1 e2 _) ctx d smap = 
