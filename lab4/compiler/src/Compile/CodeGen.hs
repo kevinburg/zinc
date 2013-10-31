@@ -182,7 +182,17 @@ getLvalAddr (LArrow l i) t n lbl (ctx, smap) = let
   aasm = [AAsm [ATemp n'] Nop [ALoc $ Pt $ ATemp n],
           AAsm [t] AddrAdd [ALoc $ ATemp n', AImm $ fromIntegral offset]]
   in (lvalAasm ++ aasm, (n'+1), lbl')
-  
+getLvalAddr (LDot l i) t n lbl (ctx, smap) = let
+  e = unroll l (newPos "x" 1 1)
+  (lvalAasm, n', lbl') = getLvalAddr l (ATemp n) (n+1) lbl (ctx, smap)
+  s = case typecheck e (ctx, smap) of
+    (Struct i) -> i
+  offset = case Map.lookup s smap of
+    Just (_, m) -> case Map.lookup i m of
+      Just (offset, _) -> offset
+  aasm = [AAsm [t] AddrAdd [ALoc $ ATemp n, AImm $ fromIntegral offset]]
+  in (lvalAasm ++ aasm, n', lbl')
+ 
 lvalType (LIdent i) (ctx, smap) = ctx Map.! i
 lvalType (LDeref l) ctx =
   case lvalType l ctx of
@@ -193,6 +203,13 @@ lvalType (LArray l _) ctx =
 lvalType (LArrow l i) (ctx, smap) =
   case lvalType l (ctx, smap) of
     (Pointer (Struct s)) ->
+      case Map.lookup s smap of
+        (Just (_, fields)) ->
+          case Map.lookup i fields of
+            (Just (_, t)) -> t
+lvalType (LDot l i) (ctx, smap) =
+  case lvalType l (ctx, smap) of
+    (Struct s) ->
       case Map.lookup s smap of
         (Just (_, fields)) ->
           case Map.lookup i fields of
@@ -210,6 +227,13 @@ typecheck (Subscr e _ _) ctx =
 typecheck (ExpBinOp Arrow e (Ident i _) _) (ctx, smap) =
   case typecheck e (ctx, smap) of
     (Pointer (Struct s)) ->
+      case Map.lookup s smap of
+        Just (_, m) ->
+          case Map.lookup i m of
+            Just (_, t) -> t
+typecheck (ExpBinOp Dot e (Ident i _) _) (ctx, smap) =
+  case typecheck e (ctx, smap) of
+    (Struct s) ->
       case Map.lookup s smap of
         Just (_, m) ->
           case Map.lookup i m of
@@ -349,6 +373,15 @@ genExp (n,l) (ExpBinOp Arrow e (Ident f _) p) loc lens (ctx, smap) = let
   aasm = [AAsm [ATemp n'] AddrAdd [ALoc $ ATemp n, AImm $ fromIntegral offset],
           AAsm [loc] Nop [ALoc $ Pt $ ATemp n']]
   in (exp ++ aasm, n'+1, l')
+genExp (n,l) (ExpBinOp Dot e (Ident f _) p) loc lens (ctx, smap) = let
+  (exp, n', l') = genExp (n+1,l) e (ATemp n) lens (ctx, smap)
+  s = case typecheck e (ctx, smap) of
+    (Struct i) -> i
+  offset = case Map.lookup s smap of
+    Just (_, m) -> case Map.lookup f m of
+      Just (offset, _) -> offset
+  aasm = [AAsm [loc] AddrAdd [ALoc $ ATemp n, AImm $ fromIntegral offset]]
+  in (exp ++ aasm, n', l')
 genExp (n,l) (ExpBinOp LAnd e1 e2 p) loc lens ctx =
   genExp (n,l) (ExpTernOp e1 e2 (FalseT p) p) loc lens ctx
 genExp (n,l) (ExpBinOp LOr e1 e2 p) loc lens ctx =
