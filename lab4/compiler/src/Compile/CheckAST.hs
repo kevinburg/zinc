@@ -217,6 +217,7 @@ checkS (ADeclare i t' s) ctx m d t smap =
   else case t' of
     Void -> BadS "Variables can't be of type void"
     Struct _ -> BadS "declaring large type"
+    Array (Void) -> BadS "Arrays cannot have type void"
     _ ->
       case Map.lookup i ctx of
         -- allow shadowing of variables over functions
@@ -415,6 +416,9 @@ checkE (Alloc t _) ctx d smap =
   case t of
     Void -> BadE "Can't allocate pointer of type void"
     Map _ _ -> BadE "Allocating pointer with function type"
+    Struct s -> case Map.lookup s smap of
+      Just t' -> ValidE (Pointer (Struct s))
+      Nothing -> BadE "Allocating undefined struct"
     _ -> ValidE (Pointer t)
 checkE (AllocArray t e _) ctx d smap =
   case checkE e ctx d smap of
@@ -430,7 +434,7 @@ checkE (AllocArray t e _) ctx d smap =
                      -- TODO: You can allocate an array of structs I'm dum
         _ -> ValidE (Array t)
       _ -> BadE "size for alloc_array not int"
-checkE (Subscr e1 e2 _) ctx d smap =
+checkE (Subscr e1 e2 _) ctx d smap = 
   case (checkE e1 ctx d smap, checkE e2 ctx d smap) of
     (ValidE t1, ValidE t2) -> case t2 of
       Int -> case t1 of
@@ -513,4 +517,7 @@ uses (ExpBinOp Dot e _ _) = uses e
 uses (ExpBinOp _ e1 e2 _) = Set.union (uses e1) (uses e2)
 uses (ExpTernOp e1 e2 e3 _) = Set.unions [uses e1, uses e2, uses e3]
 uses (App _ es _) = Set.unions (map uses es)
+uses (Subscr e1 e2 _) = Set.union (uses e1) (uses e2)
+uses (Alloc _ _) = Set.empty
+uses (AllocArray _ e _) = uses e
 uses _ = Set.empty

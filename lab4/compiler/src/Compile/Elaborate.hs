@@ -117,14 +117,33 @@ partProgram ((SDefn s f _) : xs) (typedef, fdecl, fdefn, sdefn) =
       Nothing -> Right ()
       Just fs -> Left $ "Struct " ++ s ++ " defined more than once.") >>= \_ ->
   (let
-      sts = filter (\(Param t i) -> case t of {Struct s -> True; _->False}) f
-      sts' = map (\(Param (Struct s) i) -> (Map.lookup s sdefn, s)) sts
+      f' = map(\(Param t i) -> case pType t of Type s'-> case Map.lookup s' typedef of
+                                                 Nothing -> False
+                                                 _ -> True
+                                               _ -> True) f
+        where pType t = case t of
+                Pointer t' -> pType t'
+                t' -> t'
    in
-    case foldl(\(x,a)-> \(y,b)->case (x,y) of (Nothing, _)->(Nothing,a)
-                                              (_,Nothing)->(Nothing,b)
-                                              (Just t,_)->(Just t,a)) (Just Int,"asdf") sts' of
-      (Nothing,a) -> Left $ "Struct "++a++" used but not defined."
-      (Just _, _) -> Right ()) >>= \_ ->
+    case all (\x -> x) f' of
+      False -> Left $ "Type in struct not in typedef context"
+      True -> Right ()) >>= \_ ->
+  (let
+      sts = filter (\(Param t i) -> case t of Struct _ -> True
+                                              Type s' -> case Map.lookup s' typedef of
+                                                Just t' -> case t' of
+                                                  Struct _ -> True
+                                                  _ -> False
+                                                Nothing -> False
+                                              _ -> False) f
+      sts'' = map (\(Param t i) -> case t of Struct s' -> Param (Struct s') i
+                                             Type s' -> Param (typedef Map.! s') i) sts
+      sts' = map (\(Param (Struct s') i) -> (Map.member s' sdefn && s == s', s')) sts''
+   in
+    case foldl(\(x,a)-> \(y,b)-> case x && y of False -> (False,b)
+                                                True -> (True,b)) (True,"asdf") sts' of
+      (False,a) -> Left $ "Recursive struct definitions of "++a
+      (True,a) -> Right ()) >>= \_ ->
   partProgram xs (typedef, fdecl, fdefn, Map.insert s f sdefn)
 
 check (t, s, p) (typedef, fdecl, fdefn) = 
