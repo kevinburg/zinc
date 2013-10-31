@@ -138,6 +138,14 @@ stmt = try (do
                return $ BlockStmt stmt pos)
        <?> "stmt"
 
+usertype (Int) = "NULL"
+usertype (Bool) = "NULL"
+usertype (Void) = "NULL"
+usertype (Type i) = i
+usertype (Pointer t) = usertype t
+usertype (Array t) = usertype t
+usertype (Struct _) = "NULL"
+
 simp :: C0Parser Simp
 simp = try (do
                pos <- getPosition
@@ -160,13 +168,18 @@ simp = try (do
                pos <- getPosition
                t <- typeParse
                ident <- identifier
-               s <- getState
                case t of
-                 Pointer (Type i) ->
-                   if List.elem i s then 
-                     return $ Decl t ident Nothing pos
-                   else
-                     Text.ParserCombinators.Parsec.unexpected "ug"
+                 Pointer t' -> do
+                   s <- getState
+                   case (usertype t') of
+                     "NULL" ->
+                       return $ Decl t ident Nothing pos
+                     x ->  
+                       case List.elem (usertype t') s of
+                         True ->
+                           return $ Decl t ident Nothing pos
+                         _ ->
+                           Text.ParserCombinators.Parsec.unexpected "ug"
                  _ ->
                    return $ Decl t ident Nothing pos) <|>
        try (do
@@ -440,9 +453,7 @@ lvalueEnd = try (do
                     f <- lvalueEnd
                     return $ (\l -> f $ LDot l i)) <|>
             try (do
-                    reservedOp "["
-                    e <- expr
-                    reserved "]"
+                    e <- brackets $ expr
                     f <- lvalueEnd
                     return $ (\l -> f $ LArray l e)) <|>
             (do return (\l -> l))
