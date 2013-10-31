@@ -23,7 +23,7 @@ our $COMPILER       = "l${LAB}c";                       # name of compiler to ge
 our $COMPILER_EXEC  = "bin/$COMPILER";                  # compiler executable
 our $COMPILER_ARGS  = "-l 15411.h0";
 our @LEXTS          = reverse map {"l$_"} (1 .. $LAB);  # source filename extensions
-our $GCC            = "/usr/local/bin/gcc-4.8 -m64";     # gcc executable and default flags
+our $GCC            = "gcc -m64";     # gcc executable and default flags
 our $RUNTIME        = "15411.c $rt_stem.c";   # runtime system for linking against asm file
 
 my $c0_level = 6 - $LAB;
