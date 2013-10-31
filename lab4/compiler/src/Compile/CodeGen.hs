@@ -88,7 +88,7 @@ genFunction (fun,p,b) l lengths (c, smap) =
           n = x-2
           code' =  concatMap (translate regMap ((x - (mod x 2))+2)) unssa
           (front, back) = splitAt (length(code')-2) code'
-          sub = [Subb (Val ((n - (mod x 2) + 1)*8)) (Reg RSP)]
+          sub = [Subq (Val ((n - (mod x 2) + 1)*8)) (Reg RSP)]
           add = [Addq (Val ((n - (mod x 2) + 1)*8)) (Reg RSP)]
           in setup ++ save ++ sub ++ front ++ add ++ restore ++ back
     code' = removeRedundant code
@@ -96,7 +96,7 @@ genFunction (fun,p,b) l lengths (c, smap) =
 
 removeRedundant code = 
   filter (\inst -> case inst of
-             (Movl a1 a2) -> (a1 /= a2) || (a1 == (Reg R15D))
+             (Movl a1 a2) -> (a1 /= a2) || (a1 == (Reg R15D)) || (a1 == (Reg R14D))
              _ -> True) code
 
 -- updates the abstract assembly at a label
@@ -129,9 +129,19 @@ getLvalAddr (LArray (LIdent i) e) t n l ctx = let
     (Array Int) -> 4
     (Array Bool) -> 4
     (Array _) -> 8
-  aasm = [AAsm [ATemp n'] Mul [AImm $ fromIntegral size, ALoc $ ATemp n],
-          AAsm [t] AddrAdd [ALoc $ AVar i, ALoc $ ATemp n']]
-  in (exp ++ aasm, n'+1, l')
+  op = case size of
+    4 -> MemMov Small
+    8 -> Nop
+  checks = [AAsm [ATemp n'] AddrSub [ALoc $ AVar i, AImm $ fromIntegral size],
+            AAsm [ATemp (n'+1)] op [ALoc $ Pt (ATemp n')],
+            AAsm [ATemp (n'+2)] Nop [AImm $ fromIntegral 0],
+            AAsm [ATemp (n'+3)] Geq [ALoc $ ATemp n, ALoc $ ATemp (n'+2)],
+            ACtrl $ Ifz (ALoc (ATemp (n'+3))) "mem",
+            AAsm [ATemp (n'+4)] Lt [ALoc $ ATemp n, ALoc $ ATemp (n'+1)],
+            ACtrl $ Ifz (ALoc (ATemp (n'+4))) "mem"]
+  aasm = [AAsm [ATemp (n'+5)] Mul [AImm $ fromIntegral size, ALoc $ ATemp n],
+          AAsm [t] AddrAdd [ALoc $ AVar i, ALoc $ ATemp (n'+5)]]
+  in (exp ++ checks ++ aasm, n'+6, l')
 getLvalAddr (LArray l e) t n lbl ctx = let
   (lvalAasm, n', lbl') = getLvalAddr l (ATemp n) (n+1) lbl ctx
   (exp, n'', lbl'') = genExp (n'+1, lbl') e (ATemp n') [] ctx
@@ -140,10 +150,20 @@ getLvalAddr (LArray l e) t n lbl ctx = let
     (Array Int) -> 4
     (Array Bool) -> 4
     (Array _) -> 8
-  aasm = [AAsm [ATemp n''] Mul [AImm $ fromIntegral size, ALoc $ ATemp n'],
-          AAsm [ATemp (n''+1)] Nop [ALoc $ Pt $ ATemp n],
-          AAsm [t] AddrAdd [ALoc $ ATemp (n''+1), ALoc $ ATemp n'']]
-  in (lvalAasm ++ exp ++ aasm, (n''+2), lbl'')
+  op = case size of
+    4 -> MemMov Small
+    8 -> Nop
+  checks = [AAsm [ATemp n''] AddrSub [ALoc $ ATemp n, AImm $ fromIntegral size],
+            AAsm [ATemp (n''+1)] op [ALoc $ Pt (ATemp n'')],
+            AAsm [ATemp (n''+2)] Nop [AImm $ fromIntegral 0],
+            AAsm [ATemp (n''+3)] Geq [ALoc $ ATemp n', ALoc $ ATemp (n''+2)],
+            ACtrl $ Ifz (ALoc (ATemp (n''+3))) "mem",
+            AAsm [ATemp (n''+4)] Lt [ALoc $ ATemp n', ALoc $ ATemp (n''+1)],
+            ACtrl $ Ifz (ALoc (ATemp (n''+4))) "mem"]
+  aasm = [AAsm [ATemp (n''+5)] Mul [AImm $ fromIntegral size, ALoc $ ATemp n'],
+          AAsm [ATemp (n''+6)] Nop [ALoc $ Pt $ ATemp n],
+          AAsm [t] AddrAdd [ALoc $ ATemp (n''+6), ALoc $ ATemp (n''+5)]]
+  in (lvalAasm ++ exp ++ aasm, n''+7, lbl'')
 getLvalAddr (LArrow (LIdent s) i) t n lbl (ctx, smap) = let
   offset = case Map.lookup s ctx of
     Just (Pointer (Struct st)) -> case Map.lookup st smap of
@@ -195,6 +215,7 @@ typecheck (ExpBinOp Arrow e (Ident i _) _) (ctx, smap) =
           case Map.lookup i m of
             Just (_, t) -> t
 typecheck (Alloc t _) ctx = Pointer t
+typecheck (AllocArray t _ _) ctx = Array t
 
 genStmt acc [] _ _ = acc
 genStmt acc ((Simp (Decl t i Nothing _) _) : xs) lens (ctx, smap) =
@@ -397,10 +418,20 @@ genExp (n, l) (Subscr e1 e2 _) loc lens ctx =
       (Array _) -> 8
     (exp1, n1, l1) = genExp (n+1, l) e1 (ATemp n) lens ctx
     (exp2, n2, l2) = genExp (n1+1, l1) e2 (ATemp n1) lens ctx
-    aasm = [AAsm [ATemp n2] Mul [AImm $ fromIntegral size, ALoc $ ATemp n1],
-            AAsm [ATemp (n2+1)] AddrAdd [ALoc $ ATemp n2, ALoc $ ATemp n],
-            AAsm [loc] Nop [ALoc $ Pt $ ATemp (n2+1)]]
-  in (exp1 ++ exp2 ++ aasm, n2+2, l2)
+    op = case size of
+      4 -> MemMov Small
+      8 -> Nop
+    checks = [AAsm [ATemp n2] AddrSub [ALoc $ ATemp n, AImm $ fromIntegral size],
+              AAsm [ATemp (n2+1)] op [ALoc $ Pt (ATemp n2)],
+              AAsm [ATemp (n2+2)] Nop [AImm $ fromIntegral 0],
+              AAsm [ATemp (n2+3)] Geq [ALoc $ ATemp n1, ALoc $ ATemp (n2+2)],
+              ACtrl $ Ifz (ALoc (ATemp (n2+3))) "mem",
+              AAsm [ATemp (n2+4)] Lt [ALoc $ ATemp n1, ALoc $ ATemp (n2+1)],
+              ACtrl $ Ifz (ALoc (ATemp (n2+4))) "mem"]
+    aasm = [AAsm [ATemp (n2+5)] Mul [AImm $ fromIntegral size, ALoc $ ATemp n1],
+            AAsm [ATemp (n2+6)] AddrAdd [ALoc $ ATemp (n2+5), ALoc $ ATemp n],
+            AAsm [loc] Nop [ALoc $ Pt $ ATemp (n2+6)]]
+  in (exp1 ++ exp2 ++ checks ++ aasm, n2+7, l2+1)
 genExp (n, l) (Alloc t _) loc lens (ctx, smap) =
   let
     size = case t of
@@ -424,85 +455,83 @@ genExp (n, l) (AllocArray t e _) loc lens ctx =
       (Array _) -> 8
       (Struct _) -> 8
     (exp, n', l') = genExp (n+1, l) e (ATemp n) lens ctx
-    aasm = [AAsm [AArg 1] Nop [AImm $ fromIntegral size],
-            AAsm [AArg 0] Nop [ALoc $ ATemp n],
+    aasm = [AAsm [ATemp n'] AddrAdd [ALoc $ ATemp n, AImm $ fromIntegral 1],
+            AAsm [AArg 1] Nop [AImm $ fromIntegral size],
+            AAsm [AArg 0] (MemMov Small) [ALoc $ ATemp n'],
             ACtrl $ Call "_c0_calloc" [],
-            AAsm [loc] Nop [ALoc $ ARes]]
-  in (exp ++ aasm, n', l)
+            AAsm [ATemp (n'+1)] Nop [ALoc $ ARes]]
+    writeSize = case size of
+      4 -> [AAsm [Pt $ ATemp (n'+1)] (MemMov Small) [ALoc $ ATemp n]]
+      8 -> [AAsm [Pt $ ATemp (n'+1)] Nop [ALoc $ ATemp n]]
+    incr = [AAsm [loc] AddrAdd [ALoc $ ATemp (n'+1), AImm $ fromIntegral size]]
+  in (exp ++ aasm ++ writeSize ++ incr, n'+2, l')
 
-  -- begin 'temp -> register' translation
+-- 32 -> 32 Mov or (Lower half 64) -> 32 Mov
 translate regMap n (AAsm {aAssign = [dest], aOp = (MemMov Small), aArgs = [src]}) =
   let
-    s = regFind regMap src
+    s = fullReg $ regFind regMap src
     d = fullReg $ regFind regMap (ALoc dest)
   in
-   case (fullReg s, d) of
-     (Stk x, Loc(Stk y))  ->
-       [Movq (Stk y) (Reg R15),
-        Movq (Stk x) (Reg R14),
+   case (s,d) of
+     (Loc x, Loc y) ->
+       [Movq x (Reg R14),
+        Movq (Loc $ Reg R14) (Reg R14),
+        Movq y (Reg R15),
         Movl (Reg R14D) (Loc $ Reg R15)]
-     (Stk x, Stk y) ->
-       [Movq (fullReg s) (Reg R15),
-        Movl (Reg R15D) d]
-     (Reg (SpillArg i), _) ->
-       [Movq (Stk ((i+n+1)*8)) (Reg R15),
-        Movl (Reg R15D) d]
-     (Loc(Stk x), _) ->
-       [Movq (Stk x) (Reg R15),
-        Movq (Loc (Reg R15)) (Reg R15),
-        Movl (Reg R15D) d]
-     (_, Loc(Stk y)) ->
-       [Movq (Stk y) (Reg R15),
-        Movl s (Loc (Reg R15))]
+     (_, Loc y) ->
+       [Movq s (Reg R14),
+        Movq y (Reg R15),
+        Movl (Reg R14D) (Loc $ Reg R15)]
+     (Loc x, _) ->
+       [Movq x (Reg R15),
+        Movq (Loc $ Reg R15) (Reg R15),
+        Movl (Reg R15D) $ regFind regMap (ALoc dest)]
      _ ->
-       [Movl s d]
+       [Movq s (Reg R15),
+        Movl (Reg R15D) $ regFind regMap (ALoc dest)]
+-- 64 -> 64 Mov
 translate regMap n (AAsm {aAssign = [dest], aOp = Nop, aArgs = [src]}) =
   let
     s = fullReg $ regFind regMap src
     d = fullReg $ regFind regMap (ALoc dest)
   in
    case (s, d) of
-     (Stk x, Loc(Stk y))  ->
-       [Movq (Stk y) (Reg R15),
-        Movq (Stk x) (Reg R14),
+     (Loc x, Loc y) ->
+       [Movq x (Reg R14),
+        Movq (Loc $ Reg R14) (Reg R14),
+        Movq y (Reg R15),
         Movq (Reg R14) (Loc $ Reg R15)]
-     (Stk x, Stk y) ->
+     (_, Loc y) ->
+       [Movq s (Reg R14),
+        Movq y (Reg R15),
+        Movq (Reg R14) (Loc $ Reg R15)]
+     (Loc x, _) ->
+       [Movq x (Reg R15),
+        Movq (Loc $ Reg R15) (Reg R15),
+        Movq (Reg R15) d]
+     _ ->
        [Movq s (Reg R15),
         Movq (Reg R15) d]
-     (Reg (SpillArg i), _) ->
-       [Movq (Stk ((i+n+1)*8)) (Reg R15),
-        Movq (Reg R15) d]
-     (Loc(Stk x), _) ->
-       [Movq (Stk x) (Reg R15),
-        Movq (Loc (Reg R15)) (Reg R15),
-        Movq (Reg R15) d]
-     (_, Loc(Stk y)) ->
-       [Movq (Stk y) (Reg R15),
-        Movq s (Loc $ Reg R15)]
-     _ ->
-       [Movq s d]
+-- (64, 64) -> 64 addition
 translate regMap _ (AAsm {aAssign = [dest], aOp = AddrAdd, aArgs = [src1, src2]}) =
   let
-    dest' = fullReg $ regFind regMap (ALoc dest)
-    s = fullReg $ regFind regMap src1
+    d = fullReg $ regFind regMap (ALoc dest)
+    s1 = fullReg $ regFind regMap src1
     s2 = fullReg $ regFind regMap src2
-  in
-   case (s, s2) of
-     (Stk _, _) ->
-       [Movq s (Reg R15),
-        Addq s2 (Reg R15),
-        Movq (Reg R15) dest']
-     (_, Stk _) ->
-        [Movq s2 (Reg R15),
-        Addq s (Reg R15),
-        Movq (Reg R15) dest']
-     _ ->
-       if s == dest' then
-         [Movq s dest',
-          Addq s2 dest']
-       else
-         [Movq s2 dest',
-          Addq s dest']
+  in [Movq s1 (Reg R15),
+      Movq s2 (Reg R14),
+      Addq (Reg R14) (Reg R15),
+      Movq (Reg R15) d]
+-- (64, 64) -> 64 subtraction
+translate regMap _ (AAsm {aAssign = [dest], aOp = AddrSub, aArgs = [src1, src2]}) =
+  let
+    d = fullReg $ regFind regMap (ALoc dest)
+    s1 = fullReg $ regFind regMap src1
+    s2 = fullReg $ regFind regMap src2
+  in [Movq s1 (Reg R15),
+      Movq s2 (Reg R14),
+      Subq (Reg R14) (Reg R15),
+      Movq (Reg R15) d]
 translate regMap _ (AAsm {aAssign = [dest], aOp = Add, aArgs = [src1, src2]}) =
   let
     dest' = regFind regMap (ALoc dest)
@@ -547,9 +576,14 @@ translate regMap _ (AAsm {aAssign = [dest], aOp = Sub, aArgs = [src1, src2]}) =
           Subl (Reg R15D) dest']
 translate regMap _ (AAsm {aAssign = [dest], aOp = Mul, aArgs = [src1, src2]}) =
   let
-    dest' = regFind regMap (ALoc dest)
-    s = regFind regMap src1
+    d = fullReg $ regFind regMap (ALoc dest)
+    s1 = regFind regMap src1
     s2 = regFind regMap src2
+  in [Movl s1 (Reg R14D),
+      Movl s2 (Reg R15D),
+      Imull (Reg R14D) (Reg R15D),
+      Movq (Reg R15) d]
+    {-
     front = case (s, s2, dest') of
       (Stk _, _, Stk _) ->
         [Movl s (Reg R15D),
@@ -569,6 +603,11 @@ translate regMap _ (AAsm {aAssign = [dest], aOp = Mul, aArgs = [src1, src2]}) =
         [Movl s2 (Reg R15D),
          Imull s (Reg R15D),
          Movl (Reg R15D) dest']
+      (_, _, Stk _) ->
+        [Movl s2 (Reg R15D),
+         Imull s (Reg R15D),
+         Movl (Reg R15D) (Reg R15D),
+         Movq (Reg R15) dest']
       _ ->
         if s == dest' then
           [Movl s dest',
@@ -576,7 +615,7 @@ translate regMap _ (AAsm {aAssign = [dest], aOp = Mul, aArgs = [src1, src2]}) =
         else
           [Movl (regFind regMap src2) dest',
            Imull s dest']
-  in front
+  in front -}
 translate regMap _ (AAsm {aAssign = [dest], aOp = Div, aArgs = [src1, src2]}) =
   [Movl (regFind regMap src1) (Reg EAX),
    Cdq,
@@ -654,7 +693,7 @@ translate regMap n (ACtrl (Call s ts)) = let
   saves = concat l
   restores = map (\(Movl x y) -> Movl y x) (reverse saves)
   in if ((length ts)*8) > 0 then
-       saves ++ [Subb (Val $ (length ts)*8) (Reg RSP)] ++ [AsmCall s] ++ 
+       saves ++ [Subq (Val $ (length ts)*8) (Reg RSP)] ++ [AsmCall s] ++ 
        [Addq (Val $ (length ts)*8) (Reg RSP)] ++ restores
      else
        [AsmCall s]

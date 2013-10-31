@@ -32,7 +32,7 @@ liveVars aasm =
 -}
 labelLines aasm = labelLines' (reverse aasm) 0 Map.empty
 
-labelLines' [] _ m = m
+labelLines' [] _ m = Map.insert "mem" (-1) m
 labelLines' ((ACtrl (Lbl l)) : aasm) i m = let
   m' = Map.insert l i m
   in labelLines' aasm (i+1) m'

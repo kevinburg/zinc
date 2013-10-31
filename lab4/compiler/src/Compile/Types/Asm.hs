@@ -20,7 +20,7 @@ data Asm = AsmRet
          | Notl Arg
          | Idivl Arg
          | Push Arg
-         | Subb Arg Arg
+         | Subq Arg Arg
          | Mov Arg Arg | Pop Arg
          | Movslq Arg Arg
          | Sall Arg Arg
@@ -75,7 +75,7 @@ instance Show Asm where
   show (Orl e1 e2) = "\torl " ++ show e1 ++ ", " ++ show e2
   show (Xorl e1 e2) = "\txorl " ++ show e1 ++ ", " ++ show e2
   show (Subl e1 e2) = "\tsubl " ++ show e1 ++ ", " ++ show e2
-  show (Subb e1 e2) = "\tsub " ++ show e1 ++ ", " ++ show e2
+  show (Subq e1 e2) = "\tsubq " ++ show e1 ++ ", " ++ show e2
   show (Imull e1 e2) = "\timull " ++ show e1 ++ ", " ++ show e2
   show (Negl e) = "\tnegl " ++ show e
   show (Notl e) = "\tnotl " ++ show e

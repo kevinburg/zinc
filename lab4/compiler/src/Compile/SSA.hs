@@ -74,11 +74,15 @@ paramGoto :: Blocks -> Blocks
 paramGoto blocks = List.map (\(l,(live, aasm)) -> (l,(live, map f aasm))) blocks
   where f (ACtrl (Goto l)) = 
           let
-            Just (vs, _) = List.lookup l blocks
+            vs = case List.lookup l blocks of
+              Just (vs, _) -> vs
+              Nothing -> Set.empty
           in ACtrl $ GotoP l vs
         f (ACtrl (Ifz v l)) = 
           let
-            Just (vs, _) = List.lookup l blocks
+            vs = case List.lookup l blocks of
+              Just (vs, _) -> vs
+              Nothing -> Set.empty
           in ACtrl $ IfzP v l vs
         f s = s
 

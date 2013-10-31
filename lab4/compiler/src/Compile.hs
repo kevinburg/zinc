@@ -36,7 +36,9 @@ sourceWriter file obj = let
                             body = foldr (\x -> \y -> (show x) ++ "\n" ++ y) "" asm
                           in "\t.globl _c0_" ++ fun ++ "\n_c0_" ++ fun ++ ":\n" ++
                              body ++ "\n" ++ acc) "" obj
-  in liftIOE $ writeFile file $  funs
+  in liftIOE $ writeFile file $ (funs ++ ".mem:\n" ++
+                                 "\t movq $0, %rax\n" ++
+                                 "\t movq (%rax), %rax\n")
 
 compile :: Job -> IO ()
 compile job = do

@@ -18,6 +18,7 @@ data Type = Int
 data Op = Mul
         | Add
         | AddrAdd
+        | AddrSub
         | Sub
         | Div
         | Neg
@@ -115,4 +116,5 @@ instance Show Op where
   show Geq = ">="
   show Nop = "[nop]"
   show AddrAdd = "AddrAdd"
+  show AddrSub = "AddrSub"
   show (MemMov s) = "MemMov " ++ (show s)
