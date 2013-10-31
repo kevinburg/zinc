@@ -116,6 +116,15 @@ unroll (LArray l e) s = let
 unroll (LArrow l i) s = let
   l' = unroll l s
   in ExpBinOp Arrow l' (Ident i s) s
+unroll (LDot l i) s = let
+  l' = unroll l s
+  in ExpBinOp Dot l' (Ident i s) s
+
+roll (Ident i _) = LIdent i
+roll (ExpUnOp Deref e _) = LDeref (roll e)
+roll (Subscr a e _) = LArray (roll a) e
+roll (ExpBinOp Arrow e (Ident i _) _) = LArrow (roll e) i
+roll (ExpBinOp Dot e (Ident i _) _) = LDot (roll e) i
 
 getLvalAddr (LIdent _) _ n l _ = ([], n, l)
 getLvalAddr (LDeref (LIdent i)) t n l _ =
@@ -374,14 +383,15 @@ genExp (n,l) (ExpBinOp Arrow e (Ident f _) p) loc lens (ctx, smap) = let
           AAsm [loc] Nop [ALoc $ Pt $ ATemp n']]
   in (exp ++ aasm, n'+1, l')
 genExp (n,l) (ExpBinOp Dot e (Ident f _) p) loc lens (ctx, smap) = let
-  (exp, n', l') = genExp (n+1,l) e (ATemp n) lens (ctx, smap)
+  (compute, n', l') = getLvalAddr (roll e) (ATemp n) (n+1) l (ctx, smap)
   s = case typecheck e (ctx, smap) of
     (Struct i) -> i
   offset = case Map.lookup s smap of
     Just (_, m) -> case Map.lookup f m of
       Just (offset, _) -> offset
-  aasm = [AAsm [loc] AddrAdd [ALoc $ ATemp n, AImm $ fromIntegral offset]]
-  in (exp ++ aasm, n', l')
+  aasm = [AAsm [ATemp n'] AddrAdd [ALoc $ ATemp n, AImm $ fromIntegral offset],
+          AAsm [loc] Nop [ALoc $ Pt $ ATemp n']]
+  in (compute ++ aasm, n'+1, l')
 genExp (n,l) (ExpBinOp LAnd e1 e2 p) loc lens ctx =
   genExp (n,l) (ExpTernOp e1 e2 (FalseT p) p) loc lens ctx
 genExp (n,l) (ExpBinOp LOr e1 e2 p) loc lens ctx =
