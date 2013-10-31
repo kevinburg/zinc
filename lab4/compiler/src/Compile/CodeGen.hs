@@ -15,6 +15,9 @@ import Debug.Trace
 
 import Compile.SSA
 
+{- TODO: Our IR sucks pretty bad. I dont think we should need to use
+a typechecker in the cogen phase (we are now). A lot of information is
+being thrown out after elaboration. -}
 codeGen :: (Program, Map.Map String [Param]) -> Map.Map String [Asm]
 codeGen (Program gdecls, sdefn) =
   let
@@ -776,6 +779,11 @@ translate regMap _ (AAsm {aAssign = [dest], aOp = o, aArgs = [src1, src2]})
        [Movl s2 (Reg ECX),
         Movl s1 dest',
         asm (Reg CL) dest']
+{- TODO: we should think abou a better way to do this. In most (all?)
+cases its just zero testing. Find a way to use testl along with subtraction
+for inequalities. Cmpl is restrictive with no constants in the second
+argument and that makes me sad :(
+-}
 cmpOp (dest,src1,src2) op regMap = 
   let
     asm = case op of

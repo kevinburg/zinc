@@ -6,6 +6,10 @@ import qualified Data.Set as Set
 import qualified Data.List as List
 import Debug.Trace
 
+{- TODO: Look at that type. It's pretty ridiculous. We have serious
+scoping problems that I've decided to resolve up to now by just
+throwing more information on top of what we are tracking for each
+function definition. At some point this might affect our performance. -}
 -- Checks that the abstract syntax adheres to the static semantics
 checkAST :: (Map.Map String Type, [(String,
                                   (Type, [Param], S,
@@ -45,7 +49,6 @@ checkAST (typedef, fdefns, sdefns) =
       Left s -> Left s
       Right _ -> Right sdefns
        
-
 addHeader typedef = let
   funs = [("fadd", Map [Int, Int] Int),
           ("fsub", Map [Int, Int] Int),
@@ -65,7 +68,10 @@ fixTypes m (t, p, s) =
     p' = map (\(Param t1 s) -> Param (findType m t1) s) p
     s' = fixTypes' m s
   in (t', p', s') where
-   
+
+{- TODO: I feel like we run this fixTypes routine in a bunch of
+different places across the codebase under different names.
+Maybe unify them? -}
 fixTypes' m (ADeclare i t s) = ADeclare i (findType m t) (fixTypes' m s)
 fixTypes' m (AIf e s1 s2) = AIf (fixTypesE m e) (fixTypes' m s1) (fixTypes' m s2)
 fixTypes' m (AWhile e s) = AWhile (fixTypesE m e) (fixTypes' m s)
@@ -421,6 +427,7 @@ checkE (AllocArray t e _) ctx d smap =
           Nothing -> BadE "Struct definition not in map (checkE(Alloc...))"
           Just t' -> if length(t') == 0 then ValidE (Array (Struct s))
                      else BadE "Allocating array with large type"
+                     -- TODO: You can allocate an array of structs I'm dum
         _ -> ValidE (Array t)
       _ -> BadE "size for alloc_array not int"
 checkE (Subscr e1 e2 _) ctx d smap =

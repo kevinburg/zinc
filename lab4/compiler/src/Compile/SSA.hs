@@ -11,6 +11,13 @@ import Debug.Trace
 isTemp (ALoc _) = True
 isTemp _ = False
 
+{- TODO: We should at the very least figure out constant propogation.
+Save it for lab5?
+
+We also never did minimization. This is kind of a big deal because it
+affects our performance in register allocation.
+-}
+
 ssa :: [AAsm] -> String -> Blocks
 ssa aasm fun = let
   l = parameterize aasm fun
