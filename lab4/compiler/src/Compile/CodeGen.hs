@@ -142,15 +142,16 @@ roll (ExpBinOp Arrow e (Ident i _) _) = LArrow (roll e) i
 roll (ExpBinOp Dot e (Ident i _) _) = LDot (roll e) i
 roll (ExpTernOp _ e2 _ _) = roll e2
 
-getLvalAddr (LIdent _) _ n l _ = ([], n, l)
-getLvalAddr (LDeref (LIdent i)) t n l _ =
+getLvalAddr (LIdent _) _ n l _ _ = ([], n, l)
+getLvalAddr (LDeref (LIdent i)) t n l _  _ =
   ([AAsm [t] Nop [ALoc $ AVar i]], n, l)
-getLvalAddr (LDeref l) t n lbl ctx = let
-  (aasm, n', lbl') = getLvalAddr l (ATemp n) (n+1) lbl ctx
+getLvalAddr (LDeref l) t n lbl ctx typs = let
+  (aasm, n', lbl') = getLvalAddr l (ATemp n) (n+1) lbl ctx typs
   in (aasm ++ [AAsm [t] Nop [ALoc $ Pt $ ATemp n]], n', lbl')
-getLvalAddr (LArray (LIdent i) e) t n l (ctx, smap) = let
+getLvalAddr (LArray (LIdent i) e) t n l (ctx, smap) typs = let
   (exp, n', l') = genExp (n+1, l) e (ATemp n) [] (ctx, smap)
-  size = case typecheck (Ident i (newPos "x" 1 1)) (ctx, smap) of
+  (typs,size') = typecheck (Ident i (newPos "x" 1 1)) (ctx, smap) typs
+  size = case size' of
     (Array Int) -> 4
     (Array Bool) -> 4
     (Array (Struct s)) -> let
@@ -169,11 +170,12 @@ getLvalAddr (LArray (LIdent i) e) t n l (ctx, smap) = let
   aasm = [AAsm [ATemp (n'+5)] Mul [AImm $ fromIntegral size, ALoc $ ATemp n],
           AAsm [t] AddrAdd [ALoc $ AVar i, ALoc $ ATemp (n'+5)]]
   in (exp ++ checks ++ aasm, n'+6, l')
-getLvalAddr (LArray l e) t n lbl (ctx, smap) = let
-  (lvalAasm, n', lbl') = getLvalAddr l (ATemp n) (n+1) lbl (ctx, smap)
-  (exp, n'', lbl'') = genExp (n'+1, lbl') e (ATemp n') [] (ctx, smap)
+getLvalAddr (LArray l e) t n lbl (ctx, smap) typs = let
   e1 = unroll l (newPos "x" 1 1)
-  size = case typecheck e1 (ctx, smap) of
+--  (typs',size') = typecheck e1 (ctx, smap) typs
+  (lvalAasm, n', lbl') = getLvalAddr l (ATemp n) (n+1) lbl (ctx, smap) (tail typs)
+  (exp, n'', lbl'') = genExp (n'+1, lbl') e (ATemp n') [] (ctx, smap)
+  size = case head typs of -- size' of
     (Array Int) -> 4
     (Array Bool) -> 4
     (Array (Struct s)) -> let
@@ -194,7 +196,7 @@ getLvalAddr (LArray l e) t n lbl (ctx, smap) = let
           AAsm [ATemp (n''+6)] Nop [ALoc $ Pt $ ATemp n],
           AAsm [t] AddrAdd [ALoc $ ATemp (n''+6), ALoc $ ATemp (n''+5)]]
   in (lvalAasm ++ exp ++ checks ++ aasm, n''+8, lbl'')
-getLvalAddr (LArrow (LIdent s) i) t n lbl (ctx, smap) = let
+getLvalAddr (LArrow (LIdent s) i) t n lbl (ctx, smap) _ = let
   offset = case Map.lookup s ctx of
     Just (Pointer (Struct st)) -> case Map.lookup st smap of
       Just (_, m) -> case Map.lookup i m of
@@ -203,10 +205,11 @@ getLvalAddr (LArrow (LIdent s) i) t n lbl (ctx, smap) = let
           ACtrl $ Ifz (ALoc $ AVar s) "mem" True,
           AAsm [t] AddrAdd [ALoc $ AVar s, AImm $ fromIntegral offset]]
   in (aasm, n+1, lbl)
-getLvalAddr (LArrow l i) t n lbl (ctx, smap) = let
+getLvalAddr (LArrow l i) t n lbl (ctx, smap) typs = let
   e = unroll l (newPos "x" 1 1)
-  (lvalAasm, n', lbl') = getLvalAddr l (ATemp n) (n+1) lbl (ctx, smap)
-  s = case typecheck e (ctx, smap) of
+--  (typs',s') = typecheck e (ctx, smap) typs
+  (lvalAasm, n', lbl') = getLvalAddr l (ATemp n) (n+1) lbl (ctx, smap) (tail typs)
+  s = case head typs of -- s' of
     (Pointer (Struct i)) -> i
   offset = case Map.lookup s smap of
     Just (_, m) -> case Map.lookup i m of
@@ -214,10 +217,11 @@ getLvalAddr (LArrow l i) t n lbl (ctx, smap) = let
   aasm = [AAsm [ATemp n'] Nop [ALoc $ Pt $ ATemp n],
           AAsm [t] AddrAdd [ALoc $ ATemp n', AImm $ fromIntegral offset]]
   in (lvalAasm ++ aasm, (n'+1), lbl')
-getLvalAddr (LDot l i) t n lbl (ctx, smap) = let
+getLvalAddr (LDot l i) t n lbl (ctx, smap) typs = let
   e = unroll l (newPos "x" 1 1)
-  (lvalAasm, n', lbl') = getLvalAddr l (ATemp n) (n+1) lbl (ctx, smap)
-  s = case typecheck e (ctx, smap) of
+--  (typs',s') = typecheck e (ctx, smap) typs
+  (lvalAasm, n', lbl') = getLvalAddr l (ATemp n) (n+1) lbl (ctx, smap) (tail typs)
+  s = trace (show l) $ case head typs of -- s' of
     (Struct i) -> i
   offset = case Map.lookup s smap of
     Just (_, m) -> case Map.lookup i m of
@@ -247,32 +251,114 @@ lvalType (LDot l i) (ctx, smap) =
           case Map.lookup i fields of
             (Just (_, t)) -> t
      
-typecheck (Ident i _) (ctx, smap) = ctx Map.! i
-typecheck (ExpUnOp Deref e _) ctx =
-  case typecheck e ctx of
-    (Pointer t) -> t
-typecheck (App f _ _) (ctx, smap) = ctx Map.! f
-typecheck (ExpTernOp _ e2 e3 _) ctx = typecheck e2 ctx
-typecheck (Subscr e _ _) ctx = 
-  case typecheck e ctx of
-    (Array t) -> t
-typecheck (ExpBinOp Arrow e (Ident i _) _) (ctx, smap) =
-  case typecheck e (ctx, smap) of
+typecheck (Ident i p) (ctx, smap) typs = let t = ctx Map.! i
+                                             typs' = Map.insert (Ident i p) t typs
+                                         in (typs',t)
+typecheck (ExpUnOp Deref e _) ctx typs =
+  case Map.lookup e typs of
+    Just t' -> (typs,t')
+    Nothing -> case typecheck e ctx typs of
+      (typs',(Pointer t)) -> let typs'' = Map.insert e t typs in (typs'',t)
+typecheck (App f p sp) (ctx, smap) typs =
+  let t = ctx Map.! f
+      typs' = Map.insert (App f p sp) t typs
+  in (typs',t)
+typecheck (ExpTernOp _ e2 e3 _) ctx typs =
+  case Map.lookup e2 typs of
+    Just t' -> (typs,t')
+    Nothing -> let (typs',t) = typecheck e2 ctx typs
+                   typs'' = Map.insert e2 t typs'
+                   typs''' = Map.insert e3 t typs''
+               in
+                (typs''',t)
+typecheck (Subscr e _ _) ctx typs = 
+  case Map.lookup e typs of
+    Just t' -> (typs,t')
+    Nothing -> 
+      case typecheck e ctx typs of
+        (typs',(Array t)) -> let typs'' = Map.insert e t typs'
+                             in (typs'',t)
+typecheck (ExpBinOp Arrow e (Ident i _) _) (ctx, smap) typs =
+  case Map.lookup e typs of
+    Just t' -> (typs,t')
+    Nothing -> 
+      case typecheck e (ctx, smap) typs of
+        (typs',(Pointer (Struct s))) ->
+          case Map.lookup s smap of
+            Just (_, m) ->
+              case Map.lookup i m of
+                Just (_, t) -> let typs'' = Map.insert e t typs'
+                               in (typs'',t)
+typecheck (ExpBinOp Dot e (Ident i _) _) (ctx, smap) typs =
+  case Map.lookup e typs of
+    Just t' -> (typs,t')
+    Nothing -> 
+      case typecheck e (ctx, smap) typs of
+        (typs',(Struct s)) ->
+          case Map.lookup s smap of
+            Just (_, m) ->
+              case Map.lookup i m of
+                Just (_, t) -> let typs'' = Map.insert e t typs'
+                               in (typs'', t)
+typecheck (Alloc t _) ctx typs = (typs,Pointer t)
+typecheck (AllocArray t _ _) ctx typs = (typs,Array t)
+                                        
+------------------------
+
+typExpr (Ident i p) (ctx, smap) l = ctx Map.! i : l
+typExpr (ExpUnOp Deref e _) (ctx,smap) l =
+  let l' = typExpr e (ctx, smap) l
+  in case head l' of
+    (Pointer t) -> t : l' 
+typExpr (App f p sp) (ctx, smap) l = ctx Map.! f : l
+typExpr (ExpTernOp _ e2 e3 _) (ctx, smap) l =
+  typExpr e2 (ctx,smap) l
+typExpr (Subscr e _ _) (ctx, smap) l = 
+  let l' = typExpr e (ctx, smap) l
+  in case head l' of
+    (Array t) -> t : l'
+typExpr (ExpBinOp Arrow e (Ident i _) _) (ctx, smap) l =
+  let l' = typExpr e (ctx, smap) l
+  in case head l' of
     (Pointer (Struct s)) ->
       case Map.lookup s smap of
         Just (_, m) ->
           case Map.lookup i m of
-            Just (_, t) -> t
-typecheck (ExpBinOp Dot e (Ident i _) _) (ctx, smap) =
-  case typecheck e (ctx, smap) of
+            Just (_, t) -> t : l'
+typExpr (ExpBinOp Dot e (Ident i _) _) (ctx, smap) l =
+  let l' = typExpr e (ctx, smap) l
+  in case head l' of
     (Struct s) ->
       case Map.lookup s smap of
         Just (_, m) ->
           case Map.lookup i m of
-            Just (_, t) -> t
-typecheck (Alloc t _) ctx = Pointer t
-typecheck (AllocArray t _ _) ctx = Array t
+            Just (_, t) -> t : l' 
+typExpr (Alloc t _) (ctx, smap) l = (Pointer t) : l
+typExpr (AllocArray t _ _) (ctx, smap) l = (Array t) : l
 
+
+lvaltypes (LDot lval s) ctx smap l =
+  let
+    l' = lvaltypes lval ctx smap l
+  in
+   case head l' of
+     (Struct s') -> let (_,p) = smap Map.! s'
+                        (_,t) = p Map.! s
+                    in t:l'
+lvaltypes (LDeref lval) ctx smap l =
+  let
+    l' = lvaltypes lval ctx smap l
+  in
+   case head l' of
+     Pointer t -> t:l'
+lvaltypes (LArray lval e) ctx smap l =
+  let
+    l' = lvaltypes lval ctx smap l
+  in
+   case head l' of
+     Array t -> t : l'
+
+     
 genStmt acc [] _ _ = acc
 genStmt acc ((Simp (Decl t i Nothing _) _) : xs) lens (ctx, smap) =
   genStmt acc xs lens ((Map.insert i t ctx), smap)
@@ -282,7 +368,8 @@ genStmt (acc, n, l, ep) ((Simp (Decl t i (Just e) _) _) : xs) lens (ctx, smap) =
   in genStmt (acc ++ aasm, n', l', ep) xs lens ((Map.insert i t ctx), smap)
 genStmt (acc, n, l, ep) ((Simp (Asgn lval o e s) _) : xs) lens ctx =
   let
-    (compute, n', l') = getLvalAddr lval (ATemp n) (n+1) l ctx
+    typs = typExpr (unroll lval s) ctx []
+    (compute, n', l') = getLvalAddr lval (ATemp n) (n+1) l ctx (tail typs) -- Map.empty
     e1 = unroll lval s
     e' = case o of
       Nothing -> e
@@ -401,8 +488,9 @@ genExp (n,l) (TrueT _) loc _ _ = ([AAsm [loc] Nop [AImm 1]], n, l)
 genExp (n,l) (FalseT _) loc _ _ = ([AAsm [loc] Nop [AImm 0]], n, l)
 genExp (n,l) (Ident s _) loc _ _ = ([AAsm [loc] Nop [ALoc $ AVar s]], n, l)
 genExp (n,l) (ExpBinOp Arrow e (Ident f _) p) loc lens (ctx, smap) = let
+  (typs',s') = typecheck e (ctx, smap) Map.empty
   (exp, n', l') = genExp (n+1,l) e (ATemp n) lens (ctx, smap)
-  s = case typecheck e (ctx, smap) of
+  s = case s' of
     (Pointer (Struct i)) -> i
   offset = case Map.lookup s smap of
     Just (_, m) -> case Map.lookup f m of
@@ -411,8 +499,10 @@ genExp (n,l) (ExpBinOp Arrow e (Ident f _) p) loc lens (ctx, smap) = let
           AAsm [loc] Nop [ALoc $ Pt $ ATemp n']]
   in (exp ++ aasm, n'+1, l')
 genExp (n,l) (ExpBinOp Dot e (Ident f _) p) loc lens (ctx, smap) = let
-  (compute, n', l') = getLvalAddr (roll e) (ATemp n) (n+1) l (ctx, smap)
-  s = case typecheck e (ctx, smap) of
+--  (typs',s') = typecheck e (ctx, smap) Map.empty
+  typs = typExpr e (ctx, smap) []
+  (compute, n', l') = getLvalAddr (roll e) (ATemp n) (n+1) l (ctx, smap) (tail typs)
+  s = case head typs of
     (Struct i) -> i
   offset = case Map.lookup s smap of
     Just (_, m) -> case Map.lookup f m of
@@ -485,7 +575,8 @@ genExp (n, l) (App f es _) loc lens ctx =
       in (aasm, n', l')
 genExp (n, l) (Subscr e1 e2 _) loc lens ctx =
   let
-    size = case typecheck e1 ctx of
+    (typs',size') = typecheck e1 ctx Map.empty
+    size = case size' of
       (Array Int) -> 4
       (Array Bool) -> 4
       (Array _) -> 8

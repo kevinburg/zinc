@@ -49,8 +49,8 @@ data Expr = TempLoc Int
           | App String [Expr] SourcePos
           | Alloc Type SourcePos
           | AllocArray Type Expr SourcePos
-          | Subscr Expr Expr SourcePos
-data IntT = Hex | Dec deriving Show
+          | Subscr Expr Expr SourcePos deriving (Eq,Ord)
+data IntT = Hex | Dec deriving (Show,Eq,Ord)
 
 instance Show Program where
   show (Program b) = "Program\n" ++ (show b)
