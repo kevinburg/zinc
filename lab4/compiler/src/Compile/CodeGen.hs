@@ -47,7 +47,7 @@ structInfo sdefn =
 
 computeStruct s params sdefn m = foldl (addField sdefn) (0, 0, Map.empty, m) params
   
-addField sdefn = (\(largest, size, ps, m) -> \(Param t s) -> let
+addField sdefn = (\(constraint, size, ps, m) -> \(Param t s) -> let
                      (pSize, align, m') = case t of
                        Bool -> (4, 4, m)
                        Int -> (4, 4, m)
@@ -57,16 +57,16 @@ addField sdefn = (\(largest, size, ps, m) -> \(Param t s) -> let
                          Just (len, align, _) -> (len, align, m)
                          Nothing -> let
                            params = sdefn Map.! s
-                           (largest, size, ps, m') = computeStruct s params sdefn m
-                           size' = if largest == 0 then size else case mod size largest of
+                           (constraint, size, ps, m') = computeStruct s params sdefn m
+                           size' = if constraint == 0 then size else case mod size constraint of
                              0 -> size
-                             n -> size + largest - n
-                           m'' = Map.insert s (size', largest, ps) m'
-                           in (size', largest, m'')
+                             n -> size + constraint - n
+                           m'' = Map.insert s (size', constraint, ps) m'
+                           in (size', constraint, m'')
                      offset = if align == 0 then size else case mod size align of
                        0 -> size
                        n -> size + pSize - n
-                     in (max largest pSize, offset + pSize, Map.insert s (offset, t) ps, m'))
+                     in (max constraint align, offset + pSize, Map.insert s (offset, t) ps, m'))
         
 genFunction (fun,p,b) l lengths (c, smap) =
   let
@@ -181,7 +181,8 @@ getLvalAddr (LArray l e) t n lbl (ctx, smap) = let
   op = case size of
     4 -> MemMov Small
     _ -> Nop
-  checks = [AAsm [ATemp n''] AddrSub [ALoc $ ATemp n, AImm $ fromIntegral size],
+  checks = [AAsm [ATemp (n''+7)] Nop [ALoc $ Pt $ ATemp n],
+            AAsm [ATemp n''] AddrSub [ALoc $ ATemp (n''+7), AImm $ fromIntegral size],
             AAsm [ATemp (n''+1)] op [ALoc $ Pt (ATemp n'')],
             AAsm [ATemp (n''+2)] Nop [AImm $ fromIntegral 0],
             AAsm [ATemp (n''+3)] Geq [ALoc $ ATemp n', ALoc $ ATemp (n''+2)],
@@ -191,7 +192,7 @@ getLvalAddr (LArray l e) t n lbl (ctx, smap) = let
   aasm = [AAsm [ATemp (n''+5)] Mul [AImm $ fromIntegral size, ALoc $ ATemp n'],
           AAsm [ATemp (n''+6)] Nop [ALoc $ Pt $ ATemp n],
           AAsm [t] AddrAdd [ALoc $ ATemp (n''+6), ALoc $ ATemp (n''+5)]]
-  in (lvalAasm ++ exp ++ aasm, n''+7, lbl'')
+  in (lvalAasm ++ exp ++ checks ++ aasm, n''+8, lbl'')
 getLvalAddr (LArrow (LIdent s) i) t n lbl (ctx, smap) = let
   offset = case Map.lookup s ctx of
     Just (Pointer (Struct st)) -> case Map.lookup st smap of
@@ -772,9 +773,22 @@ translate regMap n (ACtrl (Call s ts)) = let
               s -> ([Movl s (Stk (-i*8))] : acc, i+1)) ([], 1) ts
   saves = concat l
   restores = map (\(Movl x y) -> Movl y x) (reverse saves)
-  in if ((length ts)*8) > 0 then
-       saves ++ [Subq (Val $ (length ts)*8) (Reg RSP)] ++ [AsmCall s] ++ 
-       [Addq (Val $ (length ts)*8) (Reg RSP)] ++ restores
+  in if (length ts) > 0 then
+       if (mod (length ts) 2) == 1 then let
+           (l, _) = 
+             foldr (\t -> \(acc, i) -> 
+                     case regFind regMap $ ALoc $ ATemp t of
+                       (Stk j) -> ([Movl (Stk (j+8)) (Reg R15D),
+                                    Movl (Reg R15D) (Stk (-i*8))] : acc, i+1)
+                       s -> ([Movl s (Stk (-i*8))] : acc, i+1)) ([], 1) ts
+           saves = concat l
+           restores = map (\(Movl x y) -> Movl y x) (reverse saves) in
+           [Subq (Val 8) (Reg RSP)] ++
+           saves ++ [Subq (Val $ (length ts)*8) (Reg RSP)] ++ [AsmCall s] ++ 
+           [Addq (Val $ (length ts)*8) (Reg RSP)] ++ restores ++ [Addq (Val 8) (Reg RSP)]
+       else
+         saves ++ [Subq (Val $ (length ts)*8) (Reg RSP)] ++ [AsmCall s] ++ 
+         [Addq (Val $ (length ts)*8) (Reg RSP)] ++ restores
      else
        [AsmCall s]
 translate regMap _ (ACtrl (Ret (ALoc loc))) =

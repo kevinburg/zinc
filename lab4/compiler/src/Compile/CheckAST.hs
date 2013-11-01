@@ -406,14 +406,13 @@ checkE (ExpTernOp e1 e2 e3 _) ctx d smap =
         (_,Struct _) -> BadE "Ternary op returns large type"
         _ -> case t1 of
           Int -> BadE "cond in ternary op not type bool"
-          Bool -> if t2 == t3 && (t2 /= Void) then ValidE t2
+          Bool -> if typeCompare(t2,t3) then ValidE t2
                   else BadE "ternary result type mismatch"
 checkE (App fun args _) ctx d smap =
   if Set.notMember fun d then BadE "undefined fun" else
     let
       ts = map (\e -> checkE e ctx d smap) args
       -- TODO better error propagation here
-      --
     in case any(\x -> case x of {BadE _ -> True; _ -> False}) ts of
       True -> BadE $ "Error in params to function call " ++ (show fun)
       False -> let ts' = map (\(ValidE t) -> t) ts
