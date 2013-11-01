@@ -37,7 +37,8 @@ data Ctrl = If Expr Stmt (Maybe Stmt) SourcePos
           | For (Maybe Simp) Expr (Maybe Simp) Stmt SourcePos
           | Return (Maybe Expr) SourcePos
           | Assert Expr SourcePos
-data Expr = ExpInt IntT Integer SourcePos            
+data Expr = TempLoc Int 
+          | ExpInt IntT Integer SourcePos            
           | TrueT SourcePos
           | FalseT SourcePos
           | Ident String SourcePos

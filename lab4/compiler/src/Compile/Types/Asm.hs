@@ -28,6 +28,7 @@ data Asm = AsmRet
          | Cdq
          | Jmp String
          | Testl Arg Arg
+         | Testq Arg Arg
          | Cmpl Arg Arg
          | Je String
          | AsmLbl String
@@ -85,6 +86,7 @@ instance Show Asm where
   show Cdq = "\tcdq"
   show (Jmp s) = "\tjmp ." ++ s
   show (Testl e1 e2) = "\ttest " ++ show e1 ++ ", " ++ show e2
+  show (Testq e1 e2) = "\ttestq " ++ show e1 ++ ", " ++ show e2
   show (Je s) = "\tje ." ++ s
   show (Cmpl e1 e2) = "\tcmpl " ++ show e1 ++ ", " ++ show e2
   show (AsmLbl s) = "." ++ s ++ ":"

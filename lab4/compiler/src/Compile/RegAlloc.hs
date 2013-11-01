@@ -84,7 +84,7 @@ liveVars' (stmt : aasm) i labels live m saturate =
           Just s -> s
         (m', changed) = update m i live'
       in liveVars' aasm (i+1) labels live' m' (saturate && not(changed))
-    ACtrl (Ifz (ALoc v) l) ->
+    ACtrl (Ifz (ALoc v) l _) ->
       let
         line = labels Map.! l
         live' = case Map.lookup line m of
@@ -153,7 +153,7 @@ genInter' (stmt : aasm) i live inter vars =
       newInter = Set.map (\x -> (loc, x)) vs
       inter' = Set.union inter newInter
       in genInter' aasm (i+1) live inter' vars'
-    ACtrl (Ifz (ALoc v) _) -> let
+    ACtrl (Ifz (ALoc v) _ _) -> let
       vars' = Set.insert v vars
       vs = case Map.lookup i live of
         Nothing -> Set.empty

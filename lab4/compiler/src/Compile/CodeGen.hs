@@ -160,9 +160,9 @@ getLvalAddr (LArray (LIdent i) e) t n l ctx = let
             AAsm [ATemp (n'+1)] op [ALoc $ Pt (ATemp n')],
             AAsm [ATemp (n'+2)] Nop [AImm $ fromIntegral 0],
             AAsm [ATemp (n'+3)] Geq [ALoc $ ATemp n, ALoc $ ATemp (n'+2)],
-            ACtrl $ Ifz (ALoc (ATemp (n'+3))) "mem",
+            ACtrl $ Ifz (ALoc (ATemp (n'+3))) "mem" False,
             AAsm [ATemp (n'+4)] Lt [ALoc $ ATemp n, ALoc $ ATemp (n'+1)],
-            ACtrl $ Ifz (ALoc (ATemp (n'+4))) "mem"]
+            ACtrl $ Ifz (ALoc (ATemp (n'+4))) "mem" False]
   aasm = [AAsm [ATemp (n'+5)] Mul [AImm $ fromIntegral size, ALoc $ ATemp n],
           AAsm [t] AddrAdd [ALoc $ AVar i, ALoc $ ATemp (n'+5)]]
   in (exp ++ checks ++ aasm, n'+6, l')
@@ -181,9 +181,9 @@ getLvalAddr (LArray l e) t n lbl ctx = let
             AAsm [ATemp (n''+1)] op [ALoc $ Pt (ATemp n'')],
             AAsm [ATemp (n''+2)] Nop [AImm $ fromIntegral 0],
             AAsm [ATemp (n''+3)] Geq [ALoc $ ATemp n', ALoc $ ATemp (n''+2)],
-            ACtrl $ Ifz (ALoc (ATemp (n''+3))) "mem",
+            ACtrl $ Ifz (ALoc (ATemp (n''+3))) "mem" False,
             AAsm [ATemp (n''+4)] Lt [ALoc $ ATemp n', ALoc $ ATemp (n''+1)],
-            ACtrl $ Ifz (ALoc (ATemp (n''+4))) "mem"]
+            ACtrl $ Ifz (ALoc (ATemp (n''+4))) "mem" False]
   aasm = [AAsm [ATemp (n''+5)] Mul [AImm $ fromIntegral size, ALoc $ ATemp n'],
           AAsm [ATemp (n''+6)] Nop [ALoc $ Pt $ ATemp n],
           AAsm [t] AddrAdd [ALoc $ ATemp (n''+6), ALoc $ ATemp (n''+5)]]
@@ -193,7 +193,9 @@ getLvalAddr (LArrow (LIdent s) i) t n lbl (ctx, smap) = let
     Just (Pointer (Struct st)) -> case Map.lookup st smap of
       Just (_, m) -> case Map.lookup i m of
         Just (offset, _) -> offset
-  aasm = [AAsm [t] AddrAdd [ALoc $ AVar s, AImm $ fromIntegral offset]]
+  aasm = [AAsm [ATemp n] Nop [AImm $ fromIntegral 1],
+          ACtrl $ Ifz (ALoc $ AVar s) "mem" True,
+          AAsm [t] AddrAdd [ALoc $ AVar s, AImm $ fromIntegral offset]]
   in (aasm, n+1, lbl)
 getLvalAddr (LArrow l i) t n lbl (ctx, smap) = let
   e = unroll l (newPos "x" 1 1)
@@ -272,10 +274,16 @@ genStmt (acc, n, l, ep) ((Simp (Decl t i (Just e) _) _) : xs) lens (ctx, smap) =
   let
     (aasm, n', l') = genExp (n, l) e (AVar i) lens (ctx, smap)
   in genStmt (acc ++ aasm, n', l', ep) xs lens ((Map.insert i t ctx), smap)
-genStmt (acc, n, l, ep) ((Simp (Asgn lval Nothing e s) _) : xs) lens ctx = 
+genStmt (acc, n, l, ep) ((Simp (Asgn lval o e s) _) : xs) lens ctx =
   let
     (compute, n', l') = getLvalAddr lval (ATemp n) (n+1) l ctx
-    (aasm, n'', l'') = genExp (n'+1, l') e (ATemp n') lens ctx
+    e1 = unroll lval s
+    e' = case o of
+      Nothing -> e
+      Just op -> case compute of
+        [] -> ExpBinOp op e1 e s
+        _ -> ExpBinOp op (TempLoc n) e s
+    (aasm, n'', l'') = genExp (n'+1, l') e' (ATemp n') lens ctx
     post = case compute of
       [] -> case lval of
         (LIdent i) -> [AAsm [AVar i] Nop [ALoc $ ATemp n']]
@@ -289,27 +297,6 @@ genStmt (acc, n, l, ep) ((Simp (Asgn lval Nothing e s) _) : xs) lens ctx =
           Small -> [AAsm [Pt $ ATemp n] (MemMov size) [ALoc $ ATemp n']]
           Large -> [AAsm [Pt $ ATemp n] Nop [ALoc $ ATemp n']]
   in genStmt (acc ++ compute ++ aasm ++ post, n'', l'', ep) xs lens ctx
-genStmt (acc, n, l, ep) ((Simp (Asgn lval (Just op) e s) _) : xs) lens ctx = 
-  let
-    (compute, n', l') = getLvalAddr lval (ATemp n) (n+1) l ctx
-    (aasm, n'', l'') = genExp (n'+1, l') e (ATemp n') lens ctx
-    post = case compute of
-      [] -> case lval of
-        (LIdent i) -> [AAsm [AVar i] op [ALoc $ AVar i, ALoc $ ATemp n']]
-      _ ->
-        let
-          size = case lvalType lval ctx of
-            Int -> Small
-            Bool -> Small
-            _ -> Large
-        in case size of
-          Small -> [AAsm [ATemp n''] (MemMov size) [ALoc $ Pt $ ATemp n],
-                    AAsm [ATemp (n''+1)] op [ALoc $ ATemp n'', ALoc $ ATemp n'],
-                    AAsm [Pt $ ATemp n] (MemMov size) [ALoc $ ATemp (n''+1)]]
-          Large -> [AAsm [ATemp n''] Nop [ALoc $ Pt $ ATemp n],
-                    AAsm [ATemp (n''+1)] op [ALoc $ ATemp n'', ALoc $ ATemp n'],
-                    AAsm [Pt $ ATemp n] Nop [ALoc $ ATemp (n''+1)]]
-  in genStmt (acc ++ compute ++ aasm ++ post, n''+2, l'', ep) xs lens ctx
 genStmt (acc, n, l, ep) ((Simp (PostOp o lval s) _) : xs) lens ctx =
   let
     op = case o of
@@ -342,7 +329,7 @@ genStmt (acc, n, l, ep) ((Ctrl (If e s Nothing _) _) : xs) lens ctx =
   let
     (aasme, n', l') = genExp (n + 1, l) e (ATemp n) lens ctx
     (aasms, n'', l'', ep') = genStmt ([], n', l', ep) [s] lens ctx
-    aasm = [ACtrl $ Ifz (ALoc (ATemp n)) (show $ l''+2),
+    aasm = [ACtrl $ Ifz (ALoc (ATemp n)) (show $ l''+2) False,
             ACtrl $ Goto (show $ l''+1),
             ACtrl $ Lbl (show $ l''+1)]
     aasm' = aasme ++ aasm ++ aasms ++
@@ -356,7 +343,7 @@ genStmt (acc, n, l, ep) ((Ctrl (If e s1 (Just s2) _) _) : xs) lens ctx =
      (aasme, n1, l1) = genExp (n+1, l) e (ATemp n) lens ctx
      (aasms1, n2, l2, ep2) = genStmt ([], n1, l1, ep) [s1] lens ctx
      (aasms2, n3, l3, ep3) = genStmt ([], n2, l2, ep2) [s2] lens ctx
-     aasm = [ACtrl $ Ifz (ALoc (ATemp n)) (show $ l3+2),
+     aasm = [ACtrl $ Ifz (ALoc (ATemp n)) (show $ l3+2) False,
              ACtrl $ Goto (show $ l3+1),
              ACtrl $ Lbl (show $ l3+1)]
      aasm' = aasme ++ aasm ++ aasms1 ++
@@ -370,7 +357,7 @@ genStmt (acc, n, l, ep) ((Ctrl (While e s _) _) : xs) lens ctx =
       let
         (aasme, n1, l1) = genExp (n+1, l) e (ATemp n) lens ctx
         (aasms, n2, l2, ep') = genStmt ([], n1, l1, ep) [s] lens ctx
-        aasm = [ACtrl $ Ifz (ALoc (ATemp n)) (show $ l2+3),
+        aasm = [ACtrl $ Ifz (ALoc (ATemp n)) (show $ l2+3) False,
                 ACtrl $ Goto (show $ l2+2),
                 ACtrl $ Lbl (show $ l2+2)]
         aasm' = [ACtrl $ Goto (show $ l2+1), ACtrl $ Lbl (show $ l2+1)] ++
@@ -378,27 +365,30 @@ genStmt (acc, n, l, ep) ((Ctrl (While e s _) _) : xs) lens ctx =
                 [ACtrl $ Goto (show $ l2+1), ACtrl $ Lbl (show $ l2+3)]
       in genStmt (acc ++ aasm', n2, l2+3, ep') xs lens ctx
 --TODO: add possible variable declaration in for loop to context
-genStmt (acc, n, l, ep) ((Ctrl (For ms1 e ms2 s3 p) _) : xs) lens ctx =
+genStmt (acc, n, l, ep) ((Ctrl (For ms1 e ms2 s3 p) _) : xs) lens (ctx, smap) =
   let
-    (init, n1, l1, ep1) = case ms1 of
-      Nothing -> ([], n, l, ep)
-      (Just s1) -> genStmt ([], n, l, ep) [Simp s1 p] lens ctx
-    (aasme, n2, l2) = genExp (n1+1, l1) e (ATemp n1) lens ctx
+    ((init, n1, l1, ep1), ctx') = case ms1 of
+      Nothing -> (([], n, l, ep), ctx)
+      (Just s1) -> case s1 of
+        (Decl t s _ _) -> (genStmt ([], n, l, ep) [Simp s1 p] lens (ctx, smap), (Map.insert s t ctx))
+        _ -> (genStmt ([], n, l, ep) [Simp s1 p] lens (ctx, smap), ctx)
+    (aasme, n2, l2) = genExp (n1+1, l1) e (ATemp n1) lens (ctx', smap)
     (step, n3, l3, ep2) = case ms2 of
       Nothing -> ([], n2, l2, ep1)
-      (Just s2) -> genStmt ([], n2, l2, ep1) [Simp s2 p] lens ctx
-    (body, n4, l4, ep3) = genStmt ([], n3, l3, ep2) [s3] lens ctx
+      (Just s2) -> genStmt ([], n2, l2, ep1) [Simp s2 p] lens (ctx', smap)
+    (body, n4, l4, ep3) = genStmt ([], n3, l3, ep2) [s3] lens (ctx', smap)
     aasm = init ++ [ACtrl $ Goto (show $ l4+1), ACtrl $ Lbl (show $ l4+1)] ++ aasme ++
-           [ACtrl $ Ifz (ALoc (ATemp n1)) (show $ l4+3),
+           [ACtrl $ Ifz (ALoc (ATemp n1)) (show $ l4+3) False,
             ACtrl $ Goto (show $ l4+2),
             ACtrl $ Lbl (show $ l4+2)] ++ body ++ step ++
            [ACtrl $ Goto (show $ l4+1),
             ACtrl $ Lbl (show $ l4+3)]
-  in genStmt (acc ++ aasm, n4, l4+3, ep3) xs lens ctx
+  in genStmt (acc ++ aasm, n4, l4+3, ep3) xs lens (ctx', smap)
 genStmt acc ((Ctrl (Assert e _) p) : xs) lens ctx = let
   s = Ctrl (If (ExpUnOp LNot e p) (Simp (Expr (App "_c0_abort" [] p) p) p) Nothing p) p
   in genStmt acc (s : xs) lens ctx
-     
+
+genExp (n,l) (TempLoc i) loc _ _ = ([AAsm [loc] Nop [ALoc $ Pt $ ATemp i]], n, l)
 genExp (n,l) (ExpInt _ i _) loc _ _ = ([AAsm [loc] Nop [AImm $ fromIntegral i]], n, l)
 genExp (n,l) (Null _) loc _ _ = ([AAsm [loc] Nop [AImm 0]], n, l)
 genExp (n,l) (TrueT _) loc _ _ = ([AAsm [loc] Nop [AImm 1]], n, l)
@@ -461,7 +451,7 @@ genExp (n, l) (ExpTernOp e1 e2 e3 _) loc lens ctx =
         (i1, n1, l1) = genExp (n+1, l) e1 (ATemp n) lens ctx
         (i2, n2, l2) = genExp (n1+1, l1) e2 loc lens ctx
         (i3, n3, l3) = genExp (n2+1, l2) e3 loc lens ctx
-        aasm = i1 ++ [ACtrl $ Ifz (ALoc (ATemp n)) (show $ l3+2),
+        aasm = i1 ++ [ACtrl $ Ifz (ALoc (ATemp n)) (show $ l3+2) False,
                       ACtrl $ Goto (show $ l3+1),
                       ACtrl $ Lbl (show $ l3+1)] ++
                i2 ++ [ACtrl $ Goto (show $ l3+3),
@@ -500,9 +490,9 @@ genExp (n, l) (Subscr e1 e2 _) loc lens ctx =
               AAsm [ATemp (n2+1)] op [ALoc $ Pt (ATemp n2)],
               AAsm [ATemp (n2+2)] Nop [AImm $ fromIntegral 0],
               AAsm [ATemp (n2+3)] Geq [ALoc $ ATemp n1, ALoc $ ATemp (n2+2)],
-              ACtrl $ Ifz (ALoc (ATemp (n2+3))) "mem",
+              ACtrl $ Ifz (ALoc (ATemp (n2+3))) "mem" False,
               AAsm [ATemp (n2+4)] Lt [ALoc $ ATemp n1, ALoc $ ATemp (n2+1)],
-              ACtrl $ Ifz (ALoc (ATemp (n2+4))) "mem"]
+              ACtrl $ Ifz (ALoc (ATemp (n2+4))) "mem" False]
     aasm = [AAsm [ATemp (n2+5)] Mul [AImm $ fromIntegral size, ALoc $ ATemp n1],
             AAsm [ATemp (n2+6)] AddrAdd [ALoc $ ATemp (n2+5), ALoc $ ATemp n],
             AAsm [loc] Nop [ALoc $ Pt $ ATemp (n2+6)]]
@@ -530,7 +520,10 @@ genExp (n, l) (AllocArray t e _) loc lens ctx =
       (Array _) -> 8
       (Struct _) -> 8
     (exp, n', l') = genExp (n+1, l) e (ATemp n) lens ctx
-    aasm = [AAsm [ATemp n'] AddrAdd [ALoc $ ATemp n, AImm $ fromIntegral 1],
+    aasm = [AAsm [ATemp (n'+2)] Nop [AImm $ fromIntegral 0],
+            AAsm [ATemp (n'+3)] Geq [ALoc $ ATemp n, ALoc $ ATemp (n'+2)],
+            ACtrl $ Ifz (ALoc (ATemp (n'+3))) "mem" False,
+            AAsm [ATemp n'] AddrAdd [ALoc $ ATemp n, AImm $ fromIntegral 1],
             AAsm [AArg 1] Nop [AImm $ fromIntegral size],
             AAsm [AArg 0] (MemMov Small) [ALoc $ ATemp n'],
             ACtrl $ Call "_c0_calloc" [],
@@ -539,7 +532,7 @@ genExp (n, l) (AllocArray t e _) loc lens ctx =
       4 -> [AAsm [Pt $ ATemp (n'+1)] (MemMov Small) [ALoc $ ATemp n]]
       8 -> [AAsm [Pt $ ATemp (n'+1)] Nop [ALoc $ ATemp n]]
     incr = [AAsm [loc] AddrAdd [ALoc $ ATemp (n'+1), AImm $ fromIntegral size]]
-  in (exp ++ aasm ++ writeSize ++ incr, n'+2, l')
+  in (exp ++ aasm ++ writeSize ++ incr, n'+4, l')
 
 -- 32 -> 32 Mov or (Lower half 64) -> 32 Mov
 translate regMap n (AAsm {aAssign = [dest], aOp = (MemMov Small), aArgs = [src]}) =
@@ -784,7 +777,7 @@ translate regMap _ (ACtrl (Lbl l)) =
   [AsmLbl l]
 translate regMap _ (ACtrl (Goto l)) = 
   [Jmp l]
-translate regMap _ (ACtrl (Ifz v l)) =
+translate regMap _ (ACtrl (Ifz v l False)) =
   let
     v' = regFind regMap v
   in 
@@ -794,6 +787,15 @@ translate regMap _ (ACtrl (Ifz v l)) =
                  Testl (Reg R15D) (Reg R15D), 
                  Je l]
      _ -> [Movzbl (lowerReg v') v', Testl v' v', Je l]
+translate regMap _ (ACtrl (Ifz v l True)) =
+  let
+    v' = fullReg $ regFind regMap v
+  in 
+   case v' of
+     (Stk _) -> [Movq v' (Reg R15), 
+                 Testq (Reg R15) (Reg R15), 
+                 Je l]
+     _ -> [Testl v' v', Je l]
 translate regMap _ (AAsm {aAssign = [dest], aOp = o, aArgs = [src1, src2]})
   | o == SShl || o == SShr =
   let
@@ -814,6 +816,8 @@ translate regMap _ (AAsm {aAssign = [dest], aOp = o, aArgs = [src1, src2]})
        [Movl s2 (Reg ECX),
         Movl s1 dest',
         asm (Reg CL) dest']
+translate _ _ x = trace (show x) []
+       
 {- TODO: we should think abou a better way to do this. In most (all?)
 cases its just zero testing. Find a way to use testl along with subtraction
 for inequalities. Cmpl is restrictive with no constants in the second

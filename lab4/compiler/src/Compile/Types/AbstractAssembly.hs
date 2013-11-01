@@ -23,11 +23,11 @@ data AAsm = AAsm {aAssign :: [ALoc]
           | AComment String deriving (Ord, Eq, Show)
 
 data COp = Ret AVal
-         | Ifz AVal String -- If (!AVal) goto lbl
+         | Ifz AVal String Bool -- If (!AVal) goto lbl
          | Goto String
          | Lbl String
          | GotoP String (Set.Set ALoc)
-         | IfzP AVal String (Set.Set ALoc)
+         | IfzP AVal String Bool (Set.Set ALoc)
          | Call String [Int]
          deriving (Show, Ord, Eq)
 
@@ -50,11 +50,11 @@ instance NFData AAsm where
 
 instance NFData COp where
   rnf (Ret aval) = aval `seq` ()
-  rnf (Ifz aval str) = aval `seq` str `seq` ()
+  rnf (Ifz aval str _) = aval `seq` str `seq` ()
   rnf (Goto str) = str `seq` ()
   rnf (Lbl str) = str `seq` ()
   rnf (GotoP str vals) = str `seq` vals `seq` ()
-  rnf (IfzP aval str vals) = aval `seq` str `seq` vals `seq` ()
+  rnf (IfzP aval str _ vals) = aval `seq` str `seq` vals `seq` ()
 
 instance NFData AVal where
   rnf (ALoc aloc) = aloc `seq` ()

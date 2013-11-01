@@ -85,12 +85,12 @@ paramGoto blocks = List.map (\(l,(live, aasm)) -> (l,(live, map f aasm))) blocks
               Just (vs, _) -> vs
               Nothing -> Set.empty
           in ACtrl $ GotoP l vs
-        f (ACtrl (Ifz v l)) = 
+        f (ACtrl (Ifz v l b)) = 
           let
             vs = case List.lookup l blocks of
               Just (vs, _) -> vs
               Nothing -> Set.empty
-          in ACtrl $ IfzP v l vs
+          in ACtrl $ IfzP v l b vs
         f s = s
 
 varGeneration blocks = let
@@ -135,10 +135,10 @@ gen2 (ACtrl (GotoP i s)) m = let
   s' = Set.filter isVar s
   res = ACtrl (GotoP i (Set.map (updateGen m) s'))
   in (res, m)
-gen2 (ACtrl (IfzP (ALoc v) l s)) m = let
+gen2 (ACtrl (IfzP (ALoc v) l b s)) m = let
   [v'] = map (updateGen m) [v]
   s' = Set.map (updateGen m) s
-  res = ACtrl (IfzP (ALoc v') l s')
+  res = ACtrl (IfzP (ALoc v') l b s')
   in (res, m)
 gen2 x m = (x,m)
 
@@ -179,7 +179,7 @@ mapBlocks :: Blocks -> Lblmap
 mapBlocks blocks = Map.fromList $ zipmap $ grpby $ concat (map (\(lbl,(vals,aasm)) -> (map (\x -> f(lbl,x)) aasm)) blocks)
   where grpby l = List.groupBy (\(x,y)-> \(a,b)-> x==a) $ List.filter (\(x,y)-> x=="") l
         zipmap l = zip (map (\x -> fst (head x)) l) (map (\x -> map (snd) x) l)
-        f (lbl, (ACtrl(IfzP aval goto s))) = (lbl, (goto, s)) --possibly flip goto and lbl here
+        f (lbl, (ACtrl(IfzP aval goto _ s))) = (lbl, (goto, s)) --possibly flip goto and lbl here
         f (lbl, (ACtrl(GotoP goto s))) = (lbl, (goto, s))
         f (lbl, x) = ("",("",Set.empty)) 
  
@@ -267,7 +267,7 @@ deSSA blocks = let bmap = Map.fromList blocks
               assigns = map (\(x,y) -> AAsm{aAssign=[y],aOp=Nop,aArgs=[ALoc x]}) valpairs'
           in
            assigns ++ [ACtrl $ Goto goto]
-        f bmap (ACtrl(IfzP val goto valset)) =
+        f bmap (ACtrl(IfzP val goto b valset)) =
           let (gvals,_) = bmap Map.! goto
               --gvals' = filter (\x -> case x of {(ATemp _) -> False; _-> True}) $ Set.toAscList gvals
               gvals' = filter (\x -> case x of {(AVarG _ _) -> True; _-> False}) $ Set.toAscList gvals
@@ -279,8 +279,8 @@ deSSA blocks = let bmap = Map.fromList blocks
               assigns = map (\(x,y) -> AAsm{aAssign=[y],aOp=Nop,aArgs=[ALoc x]}) valpairs'
               stmt = case val of
                 ALoc(AVarG s i) ->
-                  ACtrl(Ifz(ALoc(AVar (s ++ (show i)))) goto)
-                t -> ACtrl(Ifz t goto)
+                  ACtrl(Ifz(ALoc(AVar (s ++ (show i)))) goto b)
+                t -> ACtrl(Ifz t goto b)
           in
            assigns ++ [stmt]
         f bmap (ACtrl(Ret(ALoc(AVarG s i)))) = [ACtrl(Ret(ALoc(AVar (s ++ (show i)))))]
