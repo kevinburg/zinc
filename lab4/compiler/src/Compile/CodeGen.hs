@@ -146,7 +146,7 @@ getLvalAddr (LIdent _) _ n l _ _ = ([], n, l)
 getLvalAddr (LDeref (LIdent i)) t n l _  _ =
   ([AAsm [t] Nop [ALoc $ AVar i]], n, l)
 getLvalAddr (LDeref l) t n lbl ctx typs = let
-  (aasm, n', lbl') = getLvalAddr l (ATemp n) (n+1) lbl ctx typs
+  (aasm, n', lbl') = getLvalAddr l (ATemp n) (n+1) lbl ctx (tail typs)
   in (aasm ++ [AAsm [t] Nop [ALoc $ Pt $ ATemp n]], n', lbl')
 getLvalAddr (LArray (LIdent i) e) t n l (ctx, smap) typs = let
   (exp, n', l') = genExp (n+1, l) e (ATemp n) [] (ctx, smap)
@@ -221,7 +221,7 @@ getLvalAddr (LDot l i) t n lbl (ctx, smap) typs = let
   e = unroll l (newPos "x" 1 1)
 --  (typs',s') = typecheck e (ctx, smap) typs
   (lvalAasm, n', lbl') = getLvalAddr l (ATemp n) (n+1) lbl (ctx, smap) (tail typs)
-  s = trace (show l) $ case head typs of -- s' of
+  s = case head typs of -- s' of
     (Struct i) -> i
   offset = case Map.lookup s smap of
     Just (_, m) -> case Map.lookup i m of
@@ -642,10 +642,7 @@ translate regMap n (AAsm {aAssign = [dest], aOp = (MemMov Small), aArgs = [src]}
     d = fullReg $ regFind regMap (ALoc dest)
   in 
    case (s,d) of
-     (Reg (SpillArg i), _) ->
-       [Movq (Stk ((i+n+1)*8)) (Reg R15),
-        Movl (Reg R15D) $ regFind regMap (ALoc dest)] 
-     (Reg _, Reg _) -> 
+{-     (Reg _, Reg _) -> 
        [Movq s d]
      (Stk i, Reg y) -> 
        [Movq (Stk i) (Reg y)]
@@ -653,7 +650,7 @@ translate regMap n (AAsm {aAssign = [dest], aOp = (MemMov Small), aArgs = [src]}
        [Movq (Reg x) (Stk i)]
      (Stk i, Stk j) -> 
        [Movq (Stk i) (Reg R15),
-        Movq (Reg R15) (Stk j)]
+        Movq (Reg R15) (Stk j)] -}
      (Loc x, Loc y) ->
        [Movq x (Reg R14),
         Movq (Loc $ Reg R14) (Reg R14),
@@ -667,6 +664,9 @@ translate regMap n (AAsm {aAssign = [dest], aOp = (MemMov Small), aArgs = [src]}
        [Movq x (Reg R15),
         Movq (Loc $ Reg R15) (Reg R15),
         Movl (Reg R15D) $ regFind regMap (ALoc dest)]
+     (Reg (SpillArg i), _) ->
+       [Movq (Stk ((i+n+1)*8)) (Reg R15),
+        Movl (Reg R15D) $ regFind regMap (ALoc dest)] 
      _ ->
        [Movq s (Reg R15),
         Movl (Reg R15D) $ regFind regMap (ALoc dest)]
@@ -677,10 +677,7 @@ translate regMap n (AAsm {aAssign = [dest], aOp = Nop, aArgs = [src]}) =
     d = fullReg $ regFind regMap (ALoc dest)
   in
    case (s, d) of
-     (Reg (SpillArg i), _) ->
-       [Movq (Stk ((i+n+1)*8)) (Reg R15),
-        Movq (Reg R15) d]
-     (Reg _, Reg _) -> 
+{-     (Reg _, Reg _) -> 
        [Movq s d]
      (Stk i, Reg y) -> 
        [Movq (Stk i) (Reg y)]
@@ -688,7 +685,7 @@ translate regMap n (AAsm {aAssign = [dest], aOp = Nop, aArgs = [src]}) =
        [Movq (Reg x) (Stk i)]
      (Stk i, Stk j) -> 
        [Movq (Stk i) (Reg R15),
-        Movq (Reg R15) (Stk j)]
+        Movq (Reg R15) (Stk j)] -}
      (Loc x, Loc y) ->
        [Movq x (Reg R14),
         Movq (Loc $ Reg R14) (Reg R14),
@@ -701,6 +698,9 @@ translate regMap n (AAsm {aAssign = [dest], aOp = Nop, aArgs = [src]}) =
      (Loc x, _) ->
        [Movq x (Reg R15),
         Movq (Loc $ Reg R15) (Reg R15),
+        Movq (Reg R15) d]
+     (Reg (SpillArg i), _) ->
+       [Movq (Stk ((i+n+1)*8)) (Reg R15),
         Movq (Reg R15) d]
      _ ->
        [Movq s (Reg R15),
@@ -712,7 +712,7 @@ translate regMap _ (AAsm {aAssign = [dest], aOp = AddrAdd, aArgs = [src1, src2]}
     s1 = fullReg $ regFind regMap src1
     s2 = fullReg $ regFind regMap src2
   in case (s1,s2) of
-    (Reg x, Reg y) -> if s2 == d then [Addq s1 s2]
+{-    (Reg x, Reg y) -> if s2 == d then [Addq s1 s2]
                       else if s1 == d then [Addq s2 s1]
                            else [Movq s2 d, Addq s1 d]
     (Stk i, Reg y) -> if s1 == d then [Addq s2 s1]
@@ -723,7 +723,7 @@ translate regMap _ (AAsm {aAssign = [dest], aOp = AddrAdd, aArgs = [src1, src2]}
                            else [Movq s2 (Reg R15), Movq (Reg R15) d, Addq s1 d]
     (Stk i, Stk j) -> if s1 == d then [Movq s2 (Reg R15), Addq (Reg R15) s1]
                       else if s2 == d then [Movq s1 (Reg R15), Addq (Reg R15) s2]
-                           else [Movq s1 (Reg R15), Addq s2 (Reg R15), Movq (Reg R15) d]
+                           else [Movq s1 (Reg R15), Addq s2 (Reg R15), Movq (Reg R15) d] -}
     _ ->
       [Movq s1 (Reg R15),
       Movq s2 (Reg R14),
@@ -736,7 +736,7 @@ translate regMap _ (AAsm {aAssign = [dest], aOp = AddrSub, aArgs = [src1, src2]}
     s1 = fullReg $ regFind regMap src1
     s2 = fullReg $ regFind regMap src2
   in case (s1,s2) of
-    (Reg _, Reg _) | s1 == d -> [Subq s2 s1]
+{-    (Reg _, Reg _) | s1 == d -> [Subq s2 s1]
     (Reg _, Reg _) | s2 == d -> [Movq s1 (Reg R15), Subq s2 (Reg R15), Movq (Reg R15) d]
     (Reg _, Reg _) -> [Movq s1 (Reg R15), Subq s2 (Reg R15), Movq (Reg R15) d]
     (Reg _, Stk _) | s1 == d -> [Subq s2 s1]
@@ -747,7 +747,7 @@ translate regMap _ (AAsm {aAssign = [dest], aOp = AddrSub, aArgs = [src1, src2]}
     (Stk _, Reg _) -> [Movq s1 (Reg R15), Subq s2 (Reg R15), Movq (Reg R15) d]
     (Stk _, Stk _) | s1 == d -> [Movq s2 (Reg R15), Subq (Reg R15) s1]
     (Stk _, Stk _) | s2 == d -> [Movq s1 (Reg R15), Subq s2 (Reg R15), Movq (Reg R15) d]
-    (Stk _, Stk _) -> [Movq s1 (Reg R15), Subq s2 (Reg R15), Movq (Reg R15) d]
+    (Stk _, Stk _) -> [Movq s1 (Reg R15), Subq s2 (Reg R15), Movq (Reg R15) d] -}
     _ ->
       [Movq s1 (Reg R15),
        Movq s2 (Reg R14),
