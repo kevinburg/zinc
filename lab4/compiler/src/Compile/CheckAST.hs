@@ -85,6 +85,8 @@ fixTypes' m x = x
 fixTypesE m (Alloc t p) = Alloc (findType m t) p
 fixTypesE m (AllocArray t e p) = AllocArray (findType m t) e p
 fixTypesE m (ExpBinOp Arrow e i p) = ExpBinOp Arrow (fixTypesE m e) i p
+fixTypesE m (App s e p) = let e' = map (fixTypesE m) e
+                          in App s e' p
 fixTypesE m x = x
 
 findType m (Type s) = let
@@ -418,8 +420,9 @@ checkE (App fun args _) ctx d smap =
                in
                 case Map.lookup fun ctx of
                   (Just (Map input output)) ->
-                    if all typeCompare $ zip ts' input then ValidE output
-                    else BadE "function input type mismatch"
+                    if length(ts') /= length(input) then BadE "Too many arguments to function call"
+                    else if all typeCompare $ zip ts' input then ValidE output
+                      else BadE "function input type mismatch"
                   _ -> BadE "undefined function call"
 checkE (Null _) ctx d smap =
   ValidE (Pointer Void) -- Placeholder for Type Any

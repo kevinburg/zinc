@@ -101,9 +101,20 @@ partProgram ((FDefn t s p b _) : xs) (typedef, fdecl, fdefn, sdefn) =
                 "print_fpt","print_int","print_hex"] of
      True -> Left "defining external function"
      False -> Right ()) >>= \_ ->
-  case check (t, s, p) (typedef, fdecl, fdefn) of
-    Left err -> Left err
-    Right () -> partProgram xs (typedef, fdecl, (s, (t,p,b,typedef,fdecl,sdefn)) : fdefn, sdefn)
+  (let p' = map (\(Param t i) -> case t of
+                   Type s' -> Map.lookup s' typedef
+                   _ -> Just Int) p
+   in case any (\x -> case x of {Nothing -> True; _->False}) p' of
+     True -> Left "type not in typedef context"
+     False -> Right()) >>= \_->
+  let
+    p' = map (\(Param t i) -> case t of
+                 Type s' -> Param (typedef Map.! s') i
+                 _ -> Param t i) p
+  in
+   case check (t, s, p') (typedef, fdecl, fdefn) of
+     Left err -> Left err
+     Right () -> partProgram xs (typedef, fdecl, (s, (t,p',b,typedef,fdecl,sdefn)) : fdefn, sdefn)
 partProgram ((SDecl _ _) : xs) acc =
   partProgram xs acc
 partProgram ((SDefn s f _) : xs) (typedef, fdecl, fdefn, sdefn) =
