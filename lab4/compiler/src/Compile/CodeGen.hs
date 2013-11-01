@@ -140,6 +140,7 @@ roll (ExpUnOp Deref e _) = LDeref (roll e)
 roll (Subscr a e _) = LArray (roll a) e
 roll (ExpBinOp Arrow e (Ident i _) _) = LArrow (roll e) i
 roll (ExpBinOp Dot e (Ident i _) _) = LDot (roll e) i
+roll (ExpTernOp _ e2 _ _) = roll e2
 
 getLvalAddr (LIdent _) _ n l _ = ([], n, l)
 getLvalAddr (LDeref (LIdent i)) t n l _ =
@@ -443,6 +444,8 @@ genExp (n,l) (ExpBinOp op e1 e2 _) loc lens ctx =
 genExp (n,l) (ExpUnOp Deref e _) loc lens ctx = let
   (aasm, n', l') = genExp (n+1, l) e (ATemp n) lens ctx
   in (aasm ++ [AAsm [loc] Nop [ALoc $ Pt $ ATemp n]], n', l')
+genExp (n,l) (ExpUnOp BNot (ExpUnOp BNot e _) _) loc lens ctx = 
+  genExp (n,l) e loc lens ctx  -- twiddle-stress :D
 genExp (n,l) (ExpUnOp op e _) loc lens ctx = let
   (i1, n', l') = genExp (n + 1, l) e (ATemp n) lens ctx
   aasm = [AAsm [loc] op [ALoc $ ATemp n]]

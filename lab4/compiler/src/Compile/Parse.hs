@@ -115,7 +115,12 @@ block = do
    <?> "block"
 
 stmt :: C0Parser Stmt
-stmt = try (do 
+stmt = try (do
+               pos <- getPosition
+               stmt <- simp
+               semi
+               return $ Simp stmt pos) <|>
+       try (do 
                pos <- getPosition
                dest <- lvalue
                op <- postOp
@@ -123,11 +128,6 @@ stmt = try (do
                case op of
                  Just o -> return $ Simp (PostOp o dest pos) pos
                  Nothing -> Text.ParserCombinators.Parsec.unexpected "asdfdsf") <|>
-       try (do
-               pos <- getPosition
-               stmt <- simp
-               semi
-               return $ Simp stmt pos) <|>
        try (do
                pos <- getPosition
                stmt <- ctrl
@@ -261,7 +261,6 @@ simpOpt = try (do
                   return Nothing)
                <?> "simpOpt"
 
-
 typeParse :: C0Parser Type
 typeParse = do
   t <- simpleType
@@ -270,16 +269,15 @@ typeParse = do
   <?> "type"
 
 typeEnd = try (do
-                  reservedOp "*"
-                  f <- typeEnd
-                  return (\x -> f $ Pointer x)) <|>
-          try (do
                   reservedOp "["
                   reservedOp "]"
                   f <- typeEnd
                   return (\x -> f $ Array x)) <|>
           try (do
-                  return (\x -> x)) 
+                  reservedOp "*"
+                  f <- typeEnd
+                  return (\x -> f $ Pointer x)) <|>
+          (do return (\x -> x)) 
           <?> "typeEnd"
 
 simpleType = try (do
@@ -378,6 +376,14 @@ termFront = do
   parens expr <|>
     try (do
             p <- getPosition
+            n <- hexadecimal
+            return $ ExpInt Hex n p) <|>
+    try (do
+            p <- getPosition
+            n <- natural
+            return $ ExpInt Dec n p) <|>
+    try (do
+            p <- getPosition
             reserved "alloc_array"
             (t, e) <- parens (do
                                  t <- typeParse
@@ -406,16 +412,8 @@ termFront = do
        return $ FalseT p) <|>
    (do p <- getPosition
        reserved "NULL"
-       return $ Null p) <|>
-   try (do
-           p <- getPosition
-           n <- hexadecimal
-           return $ ExpInt Hex n p) <|>
-   try (do
-           p <- getPosition
-           n <- natural
-           return $ ExpInt Dec n p)
-   <?> "term"
+       return $ Null p)
+     <?> "term"
 
 lvalue = do
   l <- lvalueFront
@@ -443,6 +441,10 @@ lvalueFront = try (do parens lvalue) <|>
               <?> "lvalueFront"
 
 lvalueEnd = try (do
+                    e <- brackets $ expr
+                    f <- lvalueEnd
+                    return $ (\l -> f $ LArray l e)) <|>
+            try (do
                     reservedOp "->"
                     i <- identifier
                     f <- lvalueEnd
@@ -452,10 +454,6 @@ lvalueEnd = try (do
                     i <- identifier
                     f <- lvalueEnd
                     return $ (\l -> f $ LDot l i)) <|>
-            try (do
-                    e <- brackets $ expr
-                    f <- lvalueEnd
-                    return $ (\l -> f $ LArray l e)) <|>
             (do return (\l -> l))
                     
 c0Def :: GenLanguageDef ByteString [String] Identity

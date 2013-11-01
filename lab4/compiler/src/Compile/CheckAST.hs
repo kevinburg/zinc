@@ -228,8 +228,8 @@ checkS (ADeclare i t' s) ctx m d t smap =
             case checkE e ctx d smap of
               BadE s -> BadS s
               ValidE t2 -> if t' == t2 then checkS s2 (Map.insert i t' ctx) m d t smap
-                              else BadS $ i ++ " declared with type " ++ (show t') ++ 
-                                " assigned with type " ++ (show t2)
+                              else BadS $ i ++ " declared with type " ++ "no" ++ --(show t') ++ 
+                                " assigned with type " ++ "no" --(show t2)
           _ -> checkS s (Map.insert i t' ctx) m d t smap
         Just _ -> BadS $ "Redeclaring " ++ i
         Nothing -> checkS s (Map.insert i t' ctx) m d t smap
@@ -258,8 +258,8 @@ checkS (AAssign l e) ctx m d _ smap =
       case checkE e ctx d smap of
         BadE s -> BadS s
         ValidE t2 -> if (t1 == t2 && asnStrct(t2)) || ptrAny(t1,t2) then ValidS
-                     else BadS $ (show l) ++ " declared with type " ++ (show t1) ++ 
-                          " assigned with type " ++ (show t2)
+                     else BadS $ (show l) ++ " declared with type " ++ "no" ++ --(show t1) ++ 
+                          " assigned with type " ++ "no" --(show t2)
           where ptrAny(t1,t2) = case (t1,t2) of
                   (Pointer _, Pointer Void) -> True
                   _ -> False
