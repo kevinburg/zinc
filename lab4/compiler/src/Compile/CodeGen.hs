@@ -147,15 +147,17 @@ getLvalAddr (LDeref (LIdent i)) t n l _ =
 getLvalAddr (LDeref l) t n lbl ctx = let
   (aasm, n', lbl') = getLvalAddr l (ATemp n) (n+1) lbl ctx
   in (aasm ++ [AAsm [t] Nop [ALoc $ Pt $ ATemp n]], n', lbl')
-getLvalAddr (LArray (LIdent i) e) t n l ctx = let
-  (exp, n', l') = genExp (n+1, l) e (ATemp n) [] ctx
-  size = case typecheck (Ident i (newPos "x" 1 1))  ctx of
+getLvalAddr (LArray (LIdent i) e) t n l (ctx, smap) = let
+  (exp, n', l') = genExp (n+1, l) e (ATemp n) [] (ctx, smap)
+  size = case typecheck (Ident i (newPos "x" 1 1)) (ctx, smap) of
     (Array Int) -> 4
     (Array Bool) -> 4
-    (Array _) -> 8
+    (Array (Struct s)) -> let
+      (size, _) = smap Map.! s in size
+    _ -> 8                             
   op = case size of
     4 -> MemMov Small
-    8 -> Nop
+    _ -> Nop
   checks = [AAsm [ATemp n'] AddrSub [ALoc $ AVar i, AImm $ fromIntegral size],
             AAsm [ATemp (n'+1)] op [ALoc $ Pt (ATemp n')],
             AAsm [ATemp (n'+2)] Nop [AImm $ fromIntegral 0],
@@ -166,17 +168,19 @@ getLvalAddr (LArray (LIdent i) e) t n l ctx = let
   aasm = [AAsm [ATemp (n'+5)] Mul [AImm $ fromIntegral size, ALoc $ ATemp n],
           AAsm [t] AddrAdd [ALoc $ AVar i, ALoc $ ATemp (n'+5)]]
   in (exp ++ checks ++ aasm, n'+6, l')
-getLvalAddr (LArray l e) t n lbl ctx = let
-  (lvalAasm, n', lbl') = getLvalAddr l (ATemp n) (n+1) lbl ctx
-  (exp, n'', lbl'') = genExp (n'+1, lbl') e (ATemp n') [] ctx
+getLvalAddr (LArray l e) t n lbl (ctx, smap) = let
+  (lvalAasm, n', lbl') = getLvalAddr l (ATemp n) (n+1) lbl (ctx, smap)
+  (exp, n'', lbl'') = genExp (n'+1, lbl') e (ATemp n') [] (ctx, smap)
   e1 = unroll l (newPos "x" 1 1)
-  size = case typecheck e1 ctx of
+  size = case typecheck e1 (ctx, smap) of
     (Array Int) -> 4
     (Array Bool) -> 4
-    (Array _) -> 8
+    (Array (Struct s)) -> let
+      (size, _) = smap Map.! s in size
+    _ -> 8                             
   op = case size of
     4 -> MemMov Small
-    8 -> Nop
+    _ -> Nop
   checks = [AAsm [ATemp n''] AddrSub [ALoc $ ATemp n, AImm $ fromIntegral size],
             AAsm [ATemp (n''+1)] op [ALoc $ Pt (ATemp n'')],
             AAsm [ATemp (n''+2)] Nop [AImm $ fromIntegral 0],
@@ -511,26 +515,28 @@ genExp (n, l) (Alloc t _) loc lens (ctx, smap) =
             ACtrl $ Call "_c0_calloc" [],
             AAsm [loc] Nop [ALoc $ ARes]]
   in (aasm, n, l)
-genExp (n, l) (AllocArray t e _) loc lens ctx =
+genExp (n, l) (AllocArray t e _) loc lens (ctx, smap) =
   let
     size = case t of
       Int -> 4
       Bool -> 4
       (Pointer _) -> 8
       (Array _) -> 8
-      (Struct _) -> 8
-    (exp, n', l') = genExp (n+1, l) e (ATemp n) lens ctx
+      (Struct s) -> let
+        (size, _) = smap Map.! s in size
+    (exp, n', l') = genExp (n+1, l) e (ATemp n) lens (ctx, smap)
     aasm = [AAsm [ATemp (n'+2)] Nop [AImm $ fromIntegral 0],
             AAsm [ATemp (n'+3)] Geq [ALoc $ ATemp n, ALoc $ ATemp (n'+2)],
             ACtrl $ Ifz (ALoc (ATemp (n'+3))) "mem" False,
-            AAsm [ATemp n'] AddrAdd [ALoc $ ATemp n, AImm $ fromIntegral 1],
+            --AAsm [ATemp n'] AddrAdd [ALoc $ ATemp n, AImm $ fromIntegral 1],
             AAsm [AArg 1] Nop [AImm $ fromIntegral size],
-            AAsm [AArg 0] (MemMov Small) [ALoc $ ATemp n'],
+            AAsm [AArg 0] (MemMov Small) [ALoc $ ATemp n],
+            AAsm [AArg 0] AddrAdd [ALoc $ AArg 0, AImm $ fromIntegral 1],
             ACtrl $ Call "_c0_calloc" [],
             AAsm [ATemp (n'+1)] Nop [ALoc $ ARes]]
     writeSize = case size of
       4 -> [AAsm [Pt $ ATemp (n'+1)] (MemMov Small) [ALoc $ ATemp n]]
-      8 -> [AAsm [Pt $ ATemp (n'+1)] Nop [ALoc $ ATemp n]]
+      _ -> [AAsm [Pt $ ATemp (n'+1)] Nop [ALoc $ ATemp n]]
     incr = [AAsm [loc] AddrAdd [ALoc $ ATemp (n'+1), AImm $ fromIntegral size]]
   in (exp ++ aasm ++ writeSize ++ incr, n'+4, l')
 
