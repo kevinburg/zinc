@@ -192,10 +192,10 @@ getLvalAddr (LArray l e) t n lbl (ctx, smap) typs = let
             ACtrl $ Ifz (ALoc (ATemp (n''+3))) "mem" False,
             AAsm [ATemp (n''+4)] Lt [ALoc $ ATemp n', ALoc $ ATemp (n''+1)],
             ACtrl $ Ifz (ALoc (ATemp (n''+4))) "mem" False]
+  addr = [AAsm [ATemp (n''+6)] Nop [ALoc $ Pt $ ATemp n]]
   aasm = [AAsm [ATemp (n''+5)] Mul [AImm $ fromIntegral size, ALoc $ ATemp n'],
-          AAsm [ATemp (n''+6)] Nop [ALoc $ Pt $ ATemp n],
           AAsm [t] AddrAdd [ALoc $ ATemp (n''+6), ALoc $ ATemp (n''+5)]]
-  in (lvalAasm ++ exp ++ checks ++ aasm, n''+8, lbl'')
+  in (lvalAasm ++ addr ++ exp ++ checks ++ aasm, n''+8, lbl'')
 getLvalAddr (LArrow (LIdent s) i) t n lbl (ctx, smap) _ = let
   offset = case Map.lookup s ctx of
     Just (Pointer (Struct st)) -> case Map.lookup st smap of
