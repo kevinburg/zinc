@@ -37,11 +37,16 @@ argTable = [
   Option ['o'] ["out"] (ReqArg setOut "out.S") "Redirects output of the compiler to a particular target file. Will attempt to autodetect output type. - represents stdout.",
   Option ['S'] ["asm"] (NoArg (setOF Asm)) "Sets the output target to be assembly type.",
   Option ['c'] ["obj"] (NoArg (setOF Obj)) "Sets the output target to be an elf intermediate object.",
-  Option ['E'] ["pretty"] (NoArg (setOF C0)) "Sets the output type to be C0 (act as a pretty printer).",
-  Option ['e'] ["elf"] (NoArg (setOF ELF)) "Produces a full fledged ELF executable, ready to run."]
+  Option ['E'] ["pretty"] (NoArg (setOF C0))
+  "Sets the output type to be C0 (act as a pretty printer).",
+  Option ['e'] ["elf"] (NoArg (setOF ELF)) "Produces a full fledged ELF executable, ready to run.",
+  Option ['s'] ["safe"] (NoArg (setSafe True)) "Enables safe mode (default)",
+  Option ['u'] ["unsafe"] (NoArg (setSafe False)) "Enables unsafe mode"]
 
 setOF :: OF -> Job -> Job
 setOF outFormat j = j {jobOutFormat = outFormat}
+
+setSafe s j = j {jobSafe = s}
 
 extTable :: [(String, OF)]
 extTable = [(".s", Asm), (".o", Obj), (".c", C0), ("", ELF)]

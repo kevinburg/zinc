@@ -10,6 +10,7 @@ data Job = Job
   { jobOut       :: FilePath
   , jobSource    :: FilePath
   , jobOutFormat :: OF
+  , jobSafe      :: Bool
   } deriving Show
 
 data OF = C0
@@ -20,4 +21,6 @@ data OF = C0
 defaultJob :: Job
 defaultJob = Job {jobOut       = "",
                   jobSource    = "",
-                  jobOutFormat = ELF}
+                  jobOutFormat = ELF,
+                  jobSafe      = True
+                 }
