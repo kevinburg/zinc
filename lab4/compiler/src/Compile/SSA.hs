@@ -24,25 +24,20 @@ ssa aasm fun = let
   opt = map (\(fun, (s, aasm)) -> (fun, (s, optimize aasm))) l
   in opt
   
-optimize p = p
-  {-
+optimize p = p {-
   let
-    (copyProp, _) = 
+    (constProp, _) = 
       foldl (\(aasm, m) -> \inst ->
               case inst of
-                (AAsm {aAssign = [loc], aOp = Nop, aArgs = [ALoc l]}) | loc /= ARes -> let
-                  m' = Map.insert (ALoc loc) (ALoc l) m
+                (AAsm {aAssign = [loc], aOp = Nop, aArgs = [AImm i]}) | loc /= ARes -> let
+                  m' = Map.insert (ALoc loc) (AImm i) m
                   in (aasm, m')
                 (AAsm {aAssign = [loc], aOp = o, aArgs = srcs}) -> let
                   srcs' = map (copy m) srcs
                   in (aasm ++ [AAsm {aAssign = [loc], aOp = o, aArgs = srcs'}], m)
-                (ACtrl (GotoP l s)) -> let
-                  s' = Set.map (\x -> case copy m $ ALoc x of
-                                   ALoc loc -> loc) s
-                  in (aasm ++ [ACtrl (GotoP l s')], m)
                 x -> (aasm ++ [x], m)
             ) ([], Map.empty) p
-  in copyProp
+  in constProp
      where copy m x =
              case Map.lookup x m of
                (Just c) -> c

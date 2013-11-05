@@ -682,8 +682,7 @@ translate regMap n (AAsm {aAssign = [dest], aOp = Nop, aArgs = [src]}) =
     d = fullReg $ regFind regMap (ALoc dest)
   in
    case (s, d) of
-{-     (Reg _, Reg _) -> 
-       [Movq s d]
+     {-
      (Stk i, Reg y) -> 
        [Movq (Stk i) (Reg y)]
      (Reg x, Stk i) -> 

@@ -122,7 +122,7 @@ genInter' (stmt : aasm) i live inter vars =
   case stmt of
     APush loc -> let
       vars' = Set.insert loc vars
-      vs = case Map.lookup i live of
+      vs = case Map.lookup (i-1) live of
         Nothing -> Set.empty
         Just s -> s
       newInter = Set.map (\x -> (loc, x)) vs
@@ -130,7 +130,7 @@ genInter' (stmt : aasm) i live inter vars =
       in genInter' aasm (i+1) live inter' vars'
     APop loc -> let
       vars' = Set.insert loc vars
-      vs = case Map.lookup i live of
+      vs = case Map.lookup (i-1) live of
         Nothing -> Set.empty
         Just s -> s
       newInter = Set.map (\x -> (loc, x)) vs
@@ -139,7 +139,7 @@ genInter' (stmt : aasm) i live inter vars =
     ACtrl (Call f ts) -> let
       ler = [AReg EAX, AReg EDI, AReg ESI, AReg EDX, AReg ECX,
              AReg R8D, AReg R9D, AReg R10D, AReg R11D]
-      vs = case Map.lookup i live of
+      vs = case Map.lookup (i-1) live of
         Nothing -> Set.empty
         Just s -> s
       newInter = Set.fromList [(a,b) | a <- ler, b <- (Set.toList vs)]
@@ -147,7 +147,7 @@ genInter' (stmt : aasm) i live inter vars =
       in genInter' aasm (i+1) live inter' vars
     ACtrl (Ret (ALoc loc)) -> let
       vars' = Set.insert loc vars
-      vs = case Map.lookup i live of
+      vs = case Map.lookup (i-1) live of
         Nothing -> Set.empty
         Just s -> s
       newInter = Set.map (\x -> (loc, x)) vs
@@ -155,7 +155,7 @@ genInter' (stmt : aasm) i live inter vars =
       in genInter' aasm (i+1) live inter' vars'
     ACtrl (Ifz (ALoc v) _ _) -> let
       vars' = Set.insert v vars
-      vs = case Map.lookup i live of
+      vs = case Map.lookup (i-1) live of
         Nothing -> Set.empty
         Just s -> s
       newInter = Set.map (\x -> (v, x)) vs
@@ -165,7 +165,7 @@ genInter' (stmt : aasm) i live inter vars =
     AAsm {aAssign = [dest], aOp = o, aArgs = srcs} | o == SShl || o == SShr -> let
       srcs' = isTemp srcs
       vars' = Set.insert dest (Set.union vars (Set.fromList $ isTemp srcs))
-      vs = case Map.lookup i live of
+      vs = case Map.lookup (i-1) live of
         Nothing -> Set.empty
         Just s -> s
       newInter = Set.map (\x -> (dest, x)) vs -- (Set.difference vs (Set.fromList srcs'))
@@ -175,7 +175,7 @@ genInter' (stmt : aasm) i live inter vars =
     AAsm {aAssign = [dest], aOp = o, aArgs = srcs} | o == Div || o == Mod -> let
       srcs' = isTemp srcs
       vars' = Set.insert dest (Set.union vars (Set.fromList $ isTemp srcs))
-      vs = case Map.lookup i live of
+      vs = case Map.lookup (i-1) live of
         Nothing -> Set.empty
         Just s -> s
       newInter = Set.map (\x -> (dest, x)) vs -- (Set.difference vs (Set.fromList srcs'))
@@ -186,7 +186,7 @@ genInter' (stmt : aasm) i live inter vars =
     AAsm {aAssign = [dest], aOp = _, aArgs = srcs} -> let
       srcs' = isTemp srcs
       vars' = Set.insert dest (Set.union vars (Set.fromList $ isTemp srcs))
-      vs = case Map.lookup i live of
+      vs = case Map.lookup (i-1) live of
         Nothing -> Set.empty
         Just s -> s
       newInter = Set.map (\x -> (dest, x)) vs -- (Set.difference vs (Set.fromList srcs'))
