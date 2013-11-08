@@ -1,0 +1,5 @@
+bin/
+dist/
+*.out
+l4rt.c
+report.html
