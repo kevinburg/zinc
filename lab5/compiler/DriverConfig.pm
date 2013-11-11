@@ -17,7 +17,7 @@ use vars qw($LAB $COMPILER $COMPILER_EXEC $COMPILER_ARGS @LEXTS $GCC $RUNTIME
             $BENCH_SUITE $BENCH_LINK $BENCH_LEXT @BENCH_FLAGS @BENCH_SAFES
             $BENCH_EPSILON $BENCH_RUN_TIMEOUT $BENCH_OUTLYING);
 
-our $LAB            = 4;
+our $LAB            = 5;
 
 my $rt_stem = "l${LAB}rt";
 
@@ -25,7 +25,7 @@ our $COMPILER       = "l${LAB}c";                       # name of compiler to ge
 our $COMPILER_EXEC  = "bin/$COMPILER";                  # compiler executable
 our $COMPILER_ARGS  = "-l 15411.h0";
 our @LEXTS          = reverse map {"l$_"} (1 .. $LAB);  # source filename extensions
-our $GCC            = "gcc -m64";     # gcc executable and default flags
+our $GCC            = "/usr/local/bin/gcc-4.8 -m64";     # gcc executable and default flags
 our $RUNTIME        = "15411.c $rt_stem.c";   # runtime system for linking against asm file
 
 my $c0_level = 6 - $LAB;

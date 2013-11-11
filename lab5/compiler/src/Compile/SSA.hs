@@ -171,6 +171,180 @@ updateGen' _ x = x
 --build blockX calls blockY with params Set.Set AVal
 -- builds Map of Block String of Label -> Block String of Code -> Params from Code
 --
+
+type GMap = Map.Map String [(Set.Set ALoc, String)]
+type LMap = Map.Map String (Set.Set ALoc)
+
+gotosMap :: Blocks -> GMap -> GMap
+gotosMap b m =
+  let
+    m' = map (\(x,(y,z)) -> gotosMap' z x m) b
+    m'' = foldl (\x -> \y -> Map.unionWith(\v1 -> \v2 -> v1 ++ v2) x y) Map.empty m'
+  in
+   --trace "GotoMap:\n" $ 
+   --trace (foldl (++) "" (map(\x -> (show x)++"\n") $ zip (Map.keys m'') (Map.elems m''))) $
+   --trace "------------\n" $
+   m''
+
+gotosMap' :: [AAsm] -> String -> GMap -> GMap
+gotosMap' aasm l m =
+  if (length aasm) == 0 then m
+  else case head aasm of
+    (ACtrl(GotoP s set)) ->
+      let
+        m' = Map.alter(\x -> case x of
+                          Just x' -> Just ((set,l) : x')
+                          Nothing -> Just [(set,l)]) s m
+      in
+       gotosMap' (tail aasm) l m'
+    (ACtrl(IfzP _ s _ set)) ->
+      let
+        m' = Map.alter(\x -> case x of
+                          Just x' -> Just ((set,l) : x')
+                          Nothing -> Just [(set,l)]) s m
+      in
+       gotosMap' (tail aasm) l m'
+    _ -> gotosMap' (tail aasm) l m
+
+labelsMap :: Blocks -> LMap
+labelsMap b = let b' = map(\(x,(y,z)) -> (x,y)) b
+              in Map.fromList b'
+
+--minimize - Minimize the SSA
+minimize blocks =
+  let gotoMap = gotosMap blocks Map.empty
+      lblmap = labelsMap blocks
+      lbls = (Map.keys gotoMap) List.\\ ["mem"]
+      varMap = Map.unions $ map(\x -> let g = gotoMap Map.! x
+                                          g' = map(\(x,y) -> x) g
+                                          l = lblmap Map.! x 
+                                      in if length(g') == 1 then createVarMap l (head g')
+                                         else Map.empty) lbls 
+      blocks' = cmpLbls lbls gotoMap lblmap blocks varMap
+      b = map(\(x,(y,z)) -> case Map.lookup x lblmap of
+                 Just y' -> (x,(y',z))
+                 Nothing -> (x,(y,z))) blocks'
+  in
+   --trace (show lbls) $ 
+   --trace (foldl (++) "" (map (\(x,(y,z)) -> "1: "++(show x)++" - "++(show y)++"\n"
+   --                                              ++(foldl (++) "" (map (\a->"1: "++(show a)++"\n") z))
+   --                                              ++"\n") b)) $
+   blocks'
+
+--cmpLbls - compares gotos to block labels and tries to reduce the number of variables
+-- that are passed from goto to label
+-- This is the <3 of the minimization 
+cmpLbls :: [String] -> GMap -> LMap -> Blocks -> Map.Map ALoc ALoc -> Blocks 
+cmpLbls lbls g l b vm =
+  if length lbls == 0
+  then b
+  else
+    let lbl = head lbls
+        gotos = g Map.! lbl -- [(goto vars, label of block goto is in)]
+        gvars = map(\(x,y) -> x) gotos
+        lvars = l Map.! lbl
+        (bool, g', l', b') = cmpSets gotos lvars b vm
+    in
+     if bool
+     then let
+       Just(_,aasm) = List.lookup lbl b'
+       varmap = createVarMap lvars g'
+       (aasm',lbls') = --trace ((show lbl)++"\n"++(show vm)++"\n--------\n") $
+         updateVars aasm vm lbls 
+       l'' = Map.adjust (\v -> l') lbl l
+       ylbl = l'' Map.! lbl
+       b'' = map(\(x,(y,z)) -> if x == lbl then (x,(ylbl,aasm')) else (x,(y,z))) b'
+       g'' = Map.adjust (\v -> map(\(x,s)-> (x Set.\\ g', s)) v) lbl g
+       in
+        cmpLbls (tail lbls') g'' l'' b'' vm
+     else
+       cmpLbls (tail lbls) g l b vm
+      
+cmpSets :: [(Set.Set ALoc, String)] -> Set.Set ALoc -> Blocks -> Map.Map ALoc ALoc
+           -> (Bool, Set.Set ALoc, Set.Set ALoc, Blocks)
+cmpSets g l b vm =
+  let (gvars, glbls) = unzip g
+  in
+   if length(g) == 1 then
+     let l' = (Set.map(\x->case Map.lookup x vm of
+                         Just x' -> x'
+                         Nothing -> x) l) --Set.\\ (head gvars)
+         l'' = Set.filter (\x-> Set.member x (head gvars)) l'
+     in
+      (True, head gvars, l'', b) -- removing params, set of params to remove, new lbl params, new blocks
+   else
+     (False, head gvars, l, b) 
+
+createVarMap s1 s2 =
+  let l1 = filter (\x -> case x of {AVarG _ _ -> True; _ -> False}) $ Set.toAscList s1
+      l2 = filter (\x -> case x of {AVarG _ _ -> True; _ -> False}) $ Set.toAscList s2
+  in
+   if length(l1) /= length (l2)
+   then trace (":( what do i do now?\n" ++ (show l1)++"\n"++(show l2)) $ (Map.empty) Map.! 0
+   else
+     let l = map(\(AVarG st1 _, AVarG st2 _) -> if (st1 == st2) then True else False) $ zip l1 l2
+     in
+      if any(\x -> not x) l
+      then  trace ("Things not == :(\n" ++ (show l1)++"\n"++(show l2)) $ (Map.empty) Map.! 0
+      else Map.fromList $ zip l1 l2
+
+updateVars aasm varmap l =
+  if length(aasm) == 0 then (aasm,l)
+  else
+    let
+      aasm' = map (\x -> updateVars' x varmap l) aasm
+      aasm'' = map(\(x,y)->x)aasm'
+      l' = last (map(\(x,y)->y)aasm')
+    in
+     --trace (foldl (++) "" (map (\x -> "0: "++(show x)++"\n") aasm)) $ 
+     --trace (foldl (++) "" (map (\x -> "1: "++(show x)++"\n") aasm')) $
+     --trace "--------------" $
+     (aasm'',l')
+
+updateVars'(AAsm {aAssign = alocs, aOp = o, aArgs = args}) vm l = 
+  let
+    alocs' = map(\x -> case Map.lookup x vm of
+                    Just v' -> --trace ("AAsm - alocs: "++(show x)++" -> "++(show v')) $
+                      v'
+                    Nothing -> x) alocs
+    args' = map(\x -> case x of
+                   AImm i -> AImm i
+                   ALoc v -> case Map.lookup v vm of
+                     Just v' -> --trace ("AAsm - avars: "++(show v)++" -> "++(show v')) $
+                       ALoc v'
+                     Nothing -> ALoc v) args
+  in
+   (AAsm {aAssign=alocs', aOp=o, aArgs=args'}, l)
+updateVars'(ACtrl(Ret(ALoc v))) vm l = --trace ("\tRet:"++(show vm)) $
+  case Map.lookup v vm of
+    Just v' -> (ACtrl(Ret(ALoc v')),l)
+    Nothing -> (ACtrl(Ret(ALoc v)),l)
+updateVars'(ACtrl(IfzP(ALoc v) s b set)) vm l = --trace ("\tIfzP:"++(show vm)) $
+  let
+    set' = Set.map (\a -> case Map.lookup a vm of
+                       Just a' -> a'
+                       Nothing -> a) set
+  in
+   case Map.lookup v vm of
+     Just v' -> (ACtrl (IfzP(ALoc v') s b set'),l++[s])
+     Nothing -> (ACtrl(IfzP(ALoc v) s b set'),l++[s])
+updateVars'(APush v) vm l = --trace "APush" $
+  case Map.lookup v vm of
+    Just v' -> (APush v',l)
+    Nothing -> (APush v,l)
+updateVars'(APop v) vm l = --trace "APop" $
+  case Map.lookup v vm of
+    Just v' -> (APop v',l)
+    Nothing -> (APush v,l)
+updateVars'(ACtrl(GotoP s set)) vm l =
+  let
+    set' = Set.map (\v -> case Map.lookup v vm of
+                       Just v' -> v'
+                       Nothing -> v) set
+  in
+   (ACtrl(GotoP s set'), l ++ [s])
+updateVars' v _ l= (v,l)
+
 {-
 type Lblmap = Map.Map String [(String, Set.Set ALoc)]
   

@@ -19,7 +19,7 @@ data GDecl = TypeDef Type String SourcePos
            | SDecl String SourcePos
            | SDefn String [Param] SourcePos deriving Show
 data Param = Param Type String deriving (Show, Eq)
-data Block = Block [Stmt] SourcePos
+data Block = Block [Stmt] SourcePos 
 data Simp = Decl Type String (Maybe Expr) SourcePos
           | Asgn LValue (Maybe Op) Expr SourcePos
           | PostOp Op LValue SourcePos

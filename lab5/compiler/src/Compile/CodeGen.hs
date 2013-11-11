@@ -83,8 +83,13 @@ genFunction (fun,p,b) l lengths (c, smap) safe =
                    ACtrl $ Ret $ ALoc ARes]
     aasm' = prefix ++ aasm ++ cleanup
     s = ssa aasm' fun
-    unssa = deSSA s
-    (regMap, used) = allocateRegisters unssa
+    s' = minimize s
+    unssa = --trace (foldl (++) "" (map (\(x,(y,z)) -> "1: "++(show x)++" - "++(show y)++"\n"
+            --                                         ++(foldl (++) "" (map (\a->"1: "++(show a)++"\n") z))
+            --                                         ++"\n") s')) $
+            deSSA s'
+    (regMap, used) = trace (foldl (++) "" (map (\x -> "2: "++(show x)++"\n") unssa)) $
+      allocateRegisters unssa
     program = foldr (\x -> \acc -> (show x) ++ "\n" ++ acc) "" unssa
     code = 
       case used of
