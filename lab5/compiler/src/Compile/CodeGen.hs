@@ -83,11 +83,10 @@ genFunction (fun,p,b) l lengths (c, smap) safe =
                    ACtrl $ Ret $ ALoc ARes]
     aasm' = prefix ++ aasm ++ cleanup
     s = ssa aasm' fun
-    s' = minimize s
     unssa = --trace (foldl (++) "" (map (\(x,(y,z)) -> "1: "++(show x)++" - "++(show y)++"\n"
-            --                                         ++(foldl (++) "" (map (\a->"1: "++(show a)++"\n") z))
-            --                                         ++"\n") s')) $
-            deSSA s'
+            --                                       ++(foldl (++) "" (map (\a->"1: "++(show a)++"\n") z))
+            --                                       ++"\n") s)) $
+            deSSA s
     (regMap, used) = --trace (foldl (++) "" (map (\x -> "2: "++(show x)++"\n") unssa)) $
       allocateRegisters unssa
     program = foldr (\x -> \acc -> (show x) ++ "\n" ++ acc) "" unssa
@@ -692,7 +691,7 @@ translate regMap n (AAsm {aAssign = [dest], aOp = Nop, aArgs = [src]}) =
      (Reg (SpillArg i), _) ->
        [Movq (Stk ((i+n+1)*8)) (Reg R15),
         Movq (Reg R15) d]
-     (_, Reg _) ->
+     (Reg _, Reg _) ->
        [Movq s d]
      {-
      (Stk i, Reg y) -> 

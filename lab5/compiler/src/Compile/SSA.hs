@@ -22,7 +22,7 @@ ssa :: [AAsm] -> String -> Blocks
 ssa aasm fun = let
   l = parameterize aasm fun
   opt = map (\(fun, (s, aasm)) -> (fun, (s, optimize aasm))) l
-  in opt
+  in minimize l
   
 optimize p =
   let
@@ -193,15 +193,15 @@ gotosMap' aasm l m =
     (ACtrl(GotoP s set)) ->
       let
         m' = Map.alter(\x -> case x of
-                          Just x' -> Just ((set,l) : x')
-                          Nothing -> Just [(set,l)]) s m
+                          Just x' -> Just ((Set.fromList $ map fst set,l) : x')
+                          Nothing -> Just [(Set.fromList $ map fst set,l)]) s m
       in
        gotosMap' (tail aasm) l m'
     (ACtrl(IfzP _ s _ set)) ->
       let
         m' = Map.alter(\x -> case x of
-                          Just x' -> Just ((set,l) : x')
-                          Nothing -> Just [(set,l)]) s m
+                          Just x' -> Just ((Set.fromList $ map fst set,l) : x')
+                          Nothing -> Just [(Set.fromList $ map fst set,l)]) s m
       in
        gotosMap' (tail aasm) l m'
     _ -> gotosMap' (tail aasm) l m
@@ -321,9 +321,9 @@ updateVars'(ACtrl(Ret(ALoc v))) vm l = --trace ("\tRet:"++(show vm)) $
     Nothing -> (ACtrl(Ret(ALoc v)),l)
 updateVars'(ACtrl(IfzP(ALoc v) s b set)) vm l = --trace ("\tIfzP:"++(show vm)) $
   let
-    set' = Set.map (\a -> case Map.lookup a vm of
-                       Just a' -> a'
-                       Nothing -> a) set
+    set' = map (\(a,av) -> case Map.lookup a vm of
+                   Just a' -> (a',av)
+                   Nothing -> (a,av)) set
   in
    case Map.lookup v vm of
      Just v' -> (ACtrl (IfzP(ALoc v') s b set'),l++[s])
@@ -338,9 +338,9 @@ updateVars'(APop v) vm l = --trace "APop" $
     Nothing -> (APush v,l)
 updateVars'(ACtrl(GotoP s set)) vm l =
   let
-    set' = Set.map (\v -> case Map.lookup v vm of
-                       Just v' -> v'
-                       Nothing -> v) set
+    set' = map (\(v,av) -> case Map.lookup v vm of
+                   Just v' -> (v',av)
+                   Nothing -> (v,av)) set
   in
    (ACtrl(GotoP s set'), l ++ [s])
 updateVars' v _ l= (v,l)
@@ -431,7 +431,7 @@ deSSA :: Blocks -> [AAsm]
 deSSA blocks = let bmap = Map.fromList blocks
                in concat $ map (\(lbl,(vals,aasm)) -> [ACtrl(Lbl lbl)] ++ (concat $ map (\x -> f bmap x) aasm)) blocks
   where f bmap (ACtrl(GotoP goto valList)) = let
-          (gvals, _) = bmap Map.! goto
+          (gvals, _) = if goto == "mem" then (Set.empty,[]) else bmap Map.! goto
           assigns = concat $ Set.toList $ Set.map
                     (\x -> let
                         var = case x of
@@ -441,10 +441,12 @@ deSSA blocks = let bmap = Map.fromList blocks
                                               _ -> False) valList of
                              (Just (y, p)) -> case p of
                                Just (ALoc v) -> [AAsm [unGen x] Nop [ALoc $ unGen v]]
-                               Just const -> [AAsm [unGen x] Nop [const]]) gvals
+                               Just const -> [AAsm [unGen x] Nop [const]]
+                               Nothing -> [AAsm [unGen x] Nop [ALoc $ unGen y]]
+                             Nothing -> []) gvals
           in assigns ++ [ACtrl $ Goto goto]
         f bmap (ACtrl(IfzP val goto b valList)) = let
-          (gvals, _) = bmap Map.! goto
+          (gvals, _) = if goto == "mem" then (Set.empty,[]) else bmap Map.! goto
           assigns = concat $ Set.toList $ Set.map
                     (\x -> let
                         var = case x of
@@ -454,7 +456,9 @@ deSSA blocks = let bmap = Map.fromList blocks
                                               _ -> False) valList of
                              (Just (y, p)) -> case p of
                                Just (ALoc v) -> [AAsm [unGen x] Nop [ALoc $ unGen v]]
-                               Just const -> [AAsm [unGen x] Nop [const]]) gvals
+                               Just const -> [AAsm [unGen x] Nop [const]]
+                               Nothing -> [AAsm [unGen x] Nop [ALoc $ unGen y]]
+                             Nothing -> []) gvals
           stmt = case val of
             ALoc(AVarG s i) -> ACtrl(Ifz(ALoc(AVar (s ++ (show i)))) goto b)
             t -> ACtrl(Ifz t goto b)
