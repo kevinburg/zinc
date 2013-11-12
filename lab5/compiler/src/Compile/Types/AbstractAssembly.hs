@@ -23,11 +23,11 @@ data AAsm = AAsm {aAssign :: [ALoc]
           | AComment String deriving (Ord, Eq, Show)
 
 data COp = Ret AVal
-         | Ifz AVal String Bool -- If (!AVal) goto lbl
+         | Ifz AVal String Bool
          | Goto String
          | Lbl String
-         | GotoP String (Set.Set ALoc)
-         | IfzP AVal String Bool (Set.Set ALoc)
+         | GotoP String [(ALoc, Maybe AVal)]
+         | IfzP AVal String Bool [(ALoc, Maybe AVal)]
          | Call String [Int]
          deriving (Show, Ord, Eq)
 

@@ -24,7 +24,7 @@ ssa aasm fun = let
   opt = map (\(fun, (s, aasm)) -> (fun, (s, optimize aasm))) l
   in opt
   
-optimize p = p {-
+optimize p =
   let
     (constProp, _) = 
       foldl (\(aasm, m) -> \inst ->
@@ -35,6 +35,12 @@ optimize p = p {-
                 (AAsm {aAssign = [loc], aOp = o, aArgs = srcs}) -> let
                   srcs' = map (copy m) srcs
                   in (aasm ++ [AAsm {aAssign = [loc], aOp = o, aArgs = srcs'}], m)
+                (ACtrl (GotoP lbl l)) -> let
+                  l' = map (\(var, _) -> (var, Just $ copy m (ALoc var))) l
+                  in (aasm ++ [ACtrl $ GotoP lbl l'], m)
+                (ACtrl (IfzP v lbl b l)) -> let
+                  l' = map (\(var, _) -> (var, Just $ copy m (ALoc var))) l
+                  in (aasm ++ [ACtrl $ IfzP (copy m v) lbl b l'], m)
                 x -> (aasm ++ [x], m)
             ) ([], Map.empty) p
   in constProp
@@ -42,7 +48,6 @@ optimize p = p {-
              case Map.lookup x m of
                (Just c) -> c
                _ -> x
--}
 
 {- The abstract assembly is group by label. Each label contains the set of variables that
    are live at the time of entering the label and the code that follows. The set of live
@@ -54,7 +59,6 @@ parameterize :: [AAsm] -> String -> Blocks
 parameterize aasm fun = let
   live = RA.liveVars aasm
   p = parameterize' (reverse aasm) live 0 [] [] fun
-  program = foldr (\x -> \y -> (show x) ++ "\n" ++ y) "" aasm
   p1 = paramGoto p
   p2 = varGeneration p1
   in p2
@@ -79,13 +83,13 @@ paramGoto blocks = List.map (\(l,(live, aasm)) -> (l,(live, map f aasm))) blocks
             vs = case List.lookup l blocks of
               Just (vs, _) -> vs
               Nothing -> Set.empty
-          in ACtrl $ GotoP l vs
+          in ACtrl $ GotoP l $ map (\x -> (x, Nothing)) (Set.toList vs)
         f (ACtrl (Ifz v l b)) = 
           let
             vs = case List.lookup l blocks of
               Just (vs, _) -> vs
               Nothing -> Set.empty
-          in ACtrl $ IfzP v l b vs
+          in ACtrl $ IfzP v l b $ map (\x -> (x, Nothing)) (Set.toList vs)
         f s = s
 
 varGeneration blocks = let
@@ -127,12 +131,12 @@ gen2 (AAsm {aAssign = [dest], aOp = o, aArgs = srcs}) m = let
   srcs' = map (updateGen' m) srcs
   in (AAsm {aAssign = [dest], aOp = o, aArgs = srcs'}, m)
 gen2 (ACtrl (GotoP i s)) m = let
-  s' = Set.filter isVar s
-  res = ACtrl (GotoP i (Set.map (updateGen m) s'))
+  s' = filter (\(x, _) -> isVar x) s
+  res = ACtrl (GotoP i (map (\(x,y) -> (updateGen m x, y)) s'))
   in (res, m)
 gen2 (ACtrl (IfzP (ALoc v) l b s)) m = let
   [v'] = map (updateGen m) [v]
-  s' = Set.map (updateGen m) s
+  s' = map (\(x,y) -> (updateGen m x, y)) s
   res = ACtrl (IfzP (ALoc v') l b s')
   in (res, m)
 gen2 x m = (x,m)
@@ -167,7 +171,7 @@ updateGen' _ x = x
 --build blockX calls blockY with params Set.Set AVal
 -- builds Map of Block String of Label -> Block String of Code -> Params from Code
 --
-
+{-
 type Lblmap = Map.Map String [(String, Set.Set ALoc)]
   
 mapBlocks :: Blocks -> Lblmap
@@ -177,7 +181,7 @@ mapBlocks blocks = Map.fromList $ zipmap $ grpby $ concat (map (\(lbl,(vals,aasm
         f (lbl, (ACtrl(IfzP aval goto _ s))) = (lbl, (goto, s)) --possibly flip goto and lbl here
         f (lbl, (ACtrl(GotoP goto s))) = (lbl, (goto, s))
         f (lbl, x) = ("",("",Set.empty)) 
- 
+-}
 {- 
 mapBlocks blocks lblmap = let bmap = map (\(lbl,(vals,aasm)) -> Map.insert lbl vals empty) blocks
                               lbls = map (\x -> )blocks
@@ -252,32 +256,35 @@ unGen x = x
 deSSA :: Blocks -> [AAsm]
 deSSA blocks = let bmap = Map.fromList blocks
                in concat $ map (\(lbl,(vals,aasm)) -> [ACtrl(Lbl lbl)] ++ (concat $ map (\x -> f bmap x) aasm)) blocks
-  where f bmap (ACtrl(GotoP goto valset)) =
-          let (gvals,_) = bmap Map.! goto
-              gvals' = Set.toAscList gvals
-              valset' = Set.toAscList valset
-              valpairs = zip valset' gvals'
-              --valpairs' = map (\(AVarG s1 i1,AVarG s2 i2)->(AVar(s1++(show i1)),AVar(s2++(show i2)))) valpairs 
-              valpairs' = map (\(x,y) -> (unGen x, unGen y)) valpairs 
-              assigns = map (\(x,y) -> AAsm{aAssign=[y],aOp=Nop,aArgs=[ALoc x]}) valpairs'
-          in
-           assigns ++ [ACtrl $ Goto goto]
-        f bmap (ACtrl(IfzP val goto b valset)) =
-          let (gvals,_) = bmap Map.! goto
-              --gvals' = filter (\x -> case x of {(ATemp _) -> False; _-> True}) $ Set.toAscList gvals
-              gvals' = filter (\x -> case x of {(AVarG _ _) -> True; _-> False}) $ Set.toAscList gvals
-              --valset' = filter (\x-> case x of {(ATemp _) -> False; _-> True}) $ Set.toAscList valset
-              valset' = filter (\x-> case x of {(AVarG _ _) -> True; _-> False}) $ Set.toAscList valset
-              valpairs = zip valset' gvals'
-              --valpairs' = map (\(AVarG s1 i1,AVarG s2 i2)->(AVar(s1++(show i1)),AVar(s2++(show i2)))) valpairs
-              valpairs' = map (\(x,y) -> (unGen x, unGen y)) valpairs 
-              assigns = map (\(x,y) -> AAsm{aAssign=[y],aOp=Nop,aArgs=[ALoc x]}) valpairs'
-              stmt = case val of
-                ALoc(AVarG s i) ->
-                  ACtrl(Ifz(ALoc(AVar (s ++ (show i)))) goto b)
-                t -> ACtrl(Ifz t goto b)
-          in
-           assigns ++ [stmt]
+  where f bmap (ACtrl(GotoP goto valList)) = let
+          (gvals, _) = bmap Map.! goto
+          assigns = concat $ Set.toList $ Set.map
+                    (\x -> let
+                        var = case x of
+                          (AVarG s _) -> s
+                        in case List.find (\(key, _) -> case key of
+                                              (AVarG s' _) -> var == s'
+                                              _ -> False) valList of
+                             (Just (y, p)) -> case p of
+                               Just (ALoc v) -> [AAsm [unGen x] Nop [ALoc $ unGen v]]
+                               Just const -> [AAsm [unGen x] Nop [const]]) gvals
+          in assigns ++ [ACtrl $ Goto goto]
+        f bmap (ACtrl(IfzP val goto b valList)) = let
+          (gvals, _) = bmap Map.! goto
+          assigns = concat $ Set.toList $ Set.map
+                    (\x -> let
+                        var = case x of
+                          (AVarG s _) -> s
+                        in case List.find (\(key, _) -> case key of
+                                              (AVarG s' _) -> var == s'
+                                              _ -> False) valList of
+                             (Just (y, p)) -> case p of
+                               Just (ALoc v) -> [AAsm [unGen x] Nop [ALoc $ unGen v]]
+                               Just const -> [AAsm [unGen x] Nop [const]]) gvals
+          stmt = case val of
+            ALoc(AVarG s i) -> ACtrl(Ifz(ALoc(AVar (s ++ (show i)))) goto b)
+            t -> ACtrl(Ifz t goto b)
+          in assigns ++ [stmt]
         f bmap (ACtrl(Ret(ALoc(AVarG s i)))) = [ACtrl(Ret(ALoc(AVar (s ++ (show i)))))]
         f bmap AAsm{aAssign=locs, aOp = o, aArgs = vals} =
           let locs' = map (\x -> case x of

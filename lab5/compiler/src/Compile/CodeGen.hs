@@ -682,6 +682,13 @@ translate regMap n (AAsm {aAssign = [dest], aOp = Nop, aArgs = [src]}) =
     d = fullReg $ regFind regMap (ALoc dest)
   in
    case (s, d) of
+     (Reg (SpillArg i), Reg _) ->
+       [Movq (Stk ((i+n+1)*8)) d]
+     (Reg (SpillArg i), _) ->
+       [Movq (Stk ((i+n+1)*8)) (Reg R15),
+        Movq (Reg R15) d]
+     (_, Reg _) ->
+       [Movq s d]
      {-
      (Stk i, Reg y) -> 
        [Movq (Stk i) (Reg y)]
@@ -702,9 +709,6 @@ translate regMap n (AAsm {aAssign = [dest], aOp = Nop, aArgs = [src]}) =
      (Loc x, _) ->
        [Movq x (Reg R15),
         Movq (Loc $ Reg R15) (Reg R15),
-        Movq (Reg R15) d]
-     (Reg (SpillArg i), _) ->
-       [Movq (Stk ((i+n+1)*8)) (Reg R15),
         Movq (Reg R15) d]
      _ ->
        [Movq s (Reg R15),
@@ -842,10 +846,19 @@ translate regMap _ (AAsm {aAssign = [dest], aOp = Mul, aArgs = [src1, src2]}) =
            Imull s dest']
   in front -}
 translate regMap _ (AAsm {aAssign = [dest], aOp = Div, aArgs = [src1, src2]}) =
-  [Movl (regFind regMap src1) (Reg EAX),
-   Cdq,
-   Idivl (regFind regMap src2),
-   Movl (Reg EAX) (regFind regMap (ALoc dest))]
+  let
+    s2 = regFind regMap src2
+    s2' = case s2 of
+      (Val _) -> Reg R15D
+      x -> x
+    stuff =
+      [Movl (regFind regMap src1) (Reg EAX),
+       Cdq,
+       Idivl s2',
+       Movl (Reg EAX) (regFind regMap (ALoc dest))]
+  in case s2 of
+    (Val _) -> [Movl s2 (Reg R15D)] ++ stuff
+    _ -> stuff
 translate regMap _ (AAsm {aAssign = [dest], aOp = Mod, aArgs = [src1, src2]}) =
   [Movl (regFind regMap src1) (Reg EAX),
    Cdq,
@@ -999,28 +1012,34 @@ cmpOp (dest,src1,src2) op regMap =
     dest' = regFind  regMap (ALoc dest)
     s1 = regFind regMap src1
     s2 = regFind regMap src2
-  in
-   case (dest', s1, s2) of
-     (Stk _, Stk _, Stk _) ->
-       [Movl s1 (Reg R15D),
-        Cmpl (Reg R15D) s2,
-        asm (Reg R15B),
-        Movzbl (Reg R15B) (Reg R15D),
-        Movl (Reg R15D) dest']
-     (Stk _, _, _) ->
-       [Cmpl s1 s2,
-        asm (Reg R15B),
-        Movzbl (Reg R15B) (Reg R15D),
-        Movl (Reg R15D) dest']
-     (_, Stk _, Stk _) ->
-       [Movl s1 (Reg R15D),
-        Cmpl (Reg R15D) s2,
-        asm (Reg R15B),
-        Movzbl (Reg R15B) dest']
-     _ ->
-       [Cmpl s1 s2,
-        asm (Reg R15B),
-        Movzbl (Reg R15B) dest']
+    s2' = case s2 of
+      (Val _) -> Reg R14D
+      _ -> s2
+    stuff = 
+      case (dest', s1, s2') of
+        (Stk _, Stk _, Stk _) ->
+          [Movl s1 (Reg R15D),
+           Cmpl (Reg R15D) s2',
+           asm (Reg R15B),
+           Movzbl (Reg R15B) (Reg R15D),
+           Movl (Reg R15D) dest']
+        (Stk _, _, _) ->
+          [Cmpl s1 s2',
+           asm (Reg R15B),
+           Movzbl (Reg R15B) (Reg R15D),
+           Movl (Reg R15D) dest']
+        (_, Stk _, Stk _) ->
+          [Movl s1 (Reg R15D),
+           Cmpl (Reg R15D) s2',
+           asm (Reg R15B),
+           Movzbl (Reg R15B) dest']
+        _ ->
+          [Cmpl s1 s2',
+           asm (Reg R15B),
+           Movzbl (Reg R15B) dest']
+  in case s2 of
+    (Val _) -> [Movl s2 (Reg R14D)] ++ stuff
+    _ -> stuff
 
 binOp (dest,src1,src2) op regMap =
   let
