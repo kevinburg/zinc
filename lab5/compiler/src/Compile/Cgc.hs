@@ -112,8 +112,9 @@ color g m s =  let
 mex :: [ Int ] -> Int
 mex [] = 0
 mex l = let 
-  l' = [0..((List.maximum l)+2)] 
-  m = List.minimum(l' List.\\ l)
+  l' = [0..((List.maximum l)+2)]
+  l'' = l' List.\\ l
+  m = if length l'' == 0 then 0 else List.minimum(l'')
   in m
 
 -- Orders the registers in the order we want to use them (ESP, EBP for stack)

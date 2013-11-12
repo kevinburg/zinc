@@ -88,7 +88,7 @@ genFunction (fun,p,b) l lengths (c, smap) safe =
             --                                         ++(foldl (++) "" (map (\a->"1: "++(show a)++"\n") z))
             --                                         ++"\n") s')) $
             deSSA s'
-    (regMap, used) = trace (foldl (++) "" (map (\x -> "2: "++(show x)++"\n") unssa)) $
+    (regMap, used) = --trace (foldl (++) "" (map (\x -> "2: "++(show x)++"\n") unssa)) $
       allocateRegisters unssa
     program = foldr (\x -> \acc -> (show x) ++ "\n" ++ acc) "" unssa
     code = 
@@ -795,6 +795,14 @@ translate regMap _ (AAsm {aAssign = [dest], aOp = Sub, aArgs = [src1, src2]}) =
     s2 = regFind regMap src2
   in
    case (s, s2) of
+     (Stk _, _) ->
+       [Movl s (Reg R15D),
+        Subl s2 (Reg R15D),
+        Movl (Reg R15D) dest']
+     (_, Stk _) ->
+       [Movl s (Reg R15D),
+        Subl s2 (Reg R15D),
+        Movl (Reg R15D) dest']
      _ ->
        if s2 == dest' then
          if s == s2 then
@@ -863,12 +871,26 @@ translate regMap _ (AAsm {aAssign = [dest], aOp = Div, aArgs = [src1, src2]}) =
        Movl (Reg EAX) (regFind regMap (ALoc dest))]
   in case s2 of
     (Val _) -> [Movl s2 (Reg R15D)] ++ stuff
+    Reg EAX -> [Movl (Reg EAX) (Reg R15D),
+                Movl (regFind regMap src1) (Reg EAX),
+                Cdq,
+                Idivl (Reg R15D),
+                Movl (Reg EAX) (regFind regMap (ALoc dest)),
+                Movl (Reg R15D) (Reg EAX)]
     _ -> stuff
 translate regMap _ (AAsm {aAssign = [dest], aOp = Mod, aArgs = [src1, src2]}) =
-  [Movl (regFind regMap src1) (Reg EAX),
-   Cdq,
-   Idivl (regFind regMap src2),
-   Movl (Reg EDX) (regFind regMap (ALoc dest))]
+  case regFind regMap src2 of
+    Reg EAX -> [Movl (Reg EAX) (Reg R15D),
+                Movl (regFind regMap src1) (Reg EAX),
+                Cdq,
+                Idivl (Reg R15D),
+                Movl (Reg EDX) (regFind regMap (ALoc dest)),
+                Movl (Reg R15D) (Reg EAX)]
+    _ ->
+      [Movl (regFind regMap src1) (Reg EAX),
+       Cdq,
+       Idivl (regFind regMap src2),
+       Movl (Reg EDX) (regFind regMap (ALoc dest))]
 translate regMap _ (AAsm {aAssign = [dest], aOp = Neg, aArgs = [src]}) =
   let
     dest' = regFind regMap (ALoc dest)
