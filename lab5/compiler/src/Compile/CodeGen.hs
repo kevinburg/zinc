@@ -18,8 +18,8 @@ import Compile.SSA
 {- TODO: Our IR sucks pretty bad. I dont think we should need to use
 a typechecker in the cogen phase (we are now). A lot of information is
 being thrown out after elaboration. -}
-codeGen :: (Program, Map.Map String [Param], Bool) -> Map.Map String [Asm]
-codeGen (Program gdecls, sdefn, safe) =
+codeGen :: (Program, Map.Map String [Param], Bool, Int) -> Map.Map String [Asm]
+codeGen (Program gdecls, sdefn, safe, opt) =
   let
     smap = Map.map (\(a,b,c) -> (a,c)) $ structInfo sdefn
     fdefns = concatMap (\x -> case x of
@@ -30,7 +30,7 @@ codeGen (Program gdecls, sdefn, safe) =
                     (FDefn t s _ _ _) -> Map.insert s t acc
                     _ -> acc) Map.empty gdecls
     (res, _) = foldr (\f -> \(m, l) -> let
-                    (s, aasm, l') = genFunction f l lengths (ctx, smap) safe
+                    (s, aasm, l') = genFunction f l lengths (ctx, smap) safe opt
                     in (Map.insert s aasm m, l')) (Map.empty,0) fdefns
   in res
 
@@ -68,7 +68,7 @@ addField sdefn = (\(constraint, size, ps, m) -> \(Param t s) -> let
                        n -> size + pSize - n
                      in (max constraint align, offset + pSize, Map.insert s (offset, t) ps, m'))
         
-genFunction (fun,p,b) l lengths (c, smap) safe =
+genFunction (fun,p,b) l lengths (c, smap) safe opt =
   let
     ctx = foldr (\(Param t i) -> \acc -> Map.insert i t acc) c p
     (aasm, _, l', ep) = genStmt ([], length(p), l, Nothing) b lengths (ctx, smap) safe
@@ -82,7 +82,7 @@ genFunction (fun,p,b) l lengths (c, smap) safe =
       Just ep' -> [ACtrl $ Lbl (show ep'),
                    ACtrl $ Ret $ ALoc ARes]
     aasm' = prefix ++ aasm ++ cleanup
-    s = ssa aasm' fun
+    s = ssa aasm' fun opt
     unssa = --trace (foldl (++) "" (map (\(x,(y,z)) -> "1: "++(show x)++" - "++(show y)++"\n"
             --                                       ++(foldl (++) "" (map (\a->"1: "++(show a)++"\n") z))
             --                                       ++"\n") s)) $
@@ -164,16 +164,21 @@ getLvalAddr (LArray (LIdent i) e) t n l (ctx, smap) typs safe = let
   op = case size of
     4 -> MemMov Small
     _ -> Nop
-  checks = [AAsm [ATemp n'] AddrSub [ALoc $ AVar i, AImm $ fromIntegral size],
-            AAsm [ATemp (n'+1)] op [ALoc $ Pt (ATemp n')],
-            AAsm [ATemp (n'+2)] Nop [AImm $ fromIntegral 0],
-            AAsm [ATemp (n'+3)] Geq [ALoc $ ATemp n, ALoc $ ATemp (n'+2)],
-            ACtrl $ Ifz (ALoc (ATemp (n'+3))) "mem" False,
-            AAsm [ATemp (n'+4)] Lt [ALoc $ ATemp n, ALoc $ ATemp (n'+1)],
-            ACtrl $ Ifz (ALoc (ATemp (n'+4))) "mem" False]
-  aasm = [AAsm [ATemp (n'+5)] Mul [AImm $ fromIntegral size, ALoc $ ATemp n],
-          AAsm [t] AddrAdd [ALoc $ AVar i, ALoc $ ATemp (n'+5)]]
-  in (exp ++ checks ++ aasm, n'+6, l')
+  in if safe then let
+    checks = [AAsm [ATemp n'] AddrSub [ALoc $ AVar i, AImm $ fromIntegral size],
+              AAsm [ATemp (n'+1)] op [ALoc $ Pt (ATemp n')],
+              AAsm [ATemp (n'+2)] Nop [AImm $ fromIntegral 0],
+              AAsm [ATemp (n'+3)] Geq [ALoc $ ATemp n, ALoc $ ATemp (n'+2)],
+              ACtrl $ Ifz (ALoc (ATemp (n'+3))) "mem" False,
+              AAsm [ATemp (n'+4)] Lt [ALoc $ ATemp n, ALoc $ ATemp (n'+1)],
+              ACtrl $ Ifz (ALoc (ATemp (n'+4))) "mem" False]
+    aasm = [AAsm [ATemp (n'+5)] Mul [AImm $ fromIntegral size, ALoc $ ATemp n],
+            AAsm [t] AddrAdd [ALoc $ AVar i, ALoc $ ATemp (n'+5)]]
+    in (exp ++ checks ++ aasm, n'+6, l')
+     else let
+       aasm = [AAsm [ATemp n'] Mul [AImm $ fromIntegral size, ALoc $ ATemp n],
+               AAsm [t] AddrAdd [ALoc $ AVar i, ALoc $ ATemp n']]
+       in (exp ++ aasm, n'+1, l')
 getLvalAddr (LArray l e) t n lbl (ctx, smap) typs safe = let
   e1 = unroll l (newPos "x" 1 1)
   (lvalAasm, n', lbl') = getLvalAddr l (ATemp n) (n+1) lbl (ctx, smap) (tail typs) safe
@@ -187,18 +192,24 @@ getLvalAddr (LArray l e) t n lbl (ctx, smap) typs safe = let
   op = case size of
     4 -> MemMov Small
     _ -> Nop
-  checks = [AAsm [ATemp (n''+7)] Nop [ALoc $ Pt $ ATemp n],
-            AAsm [ATemp n''] AddrSub [ALoc $ ATemp (n''+7), AImm $ fromIntegral size],
-            AAsm [ATemp (n''+1)] op [ALoc $ Pt (ATemp n'')],
-            AAsm [ATemp (n''+2)] Nop [AImm $ fromIntegral 0],
-            AAsm [ATemp (n''+3)] Geq [ALoc $ ATemp n', ALoc $ ATemp (n''+2)],
-            ACtrl $ Ifz (ALoc (ATemp (n''+3))) "mem" False,
-            AAsm [ATemp (n''+4)] Lt [ALoc $ ATemp n', ALoc $ ATemp (n''+1)],
-            ACtrl $ Ifz (ALoc (ATemp (n''+4))) "mem" False]
-  addr = [AAsm [ATemp (n''+6)] Nop [ALoc $ Pt $ ATemp n]]
-  aasm = [AAsm [ATemp (n''+5)] Mul [AImm $ fromIntegral size, ALoc $ ATemp n'],
-          AAsm [t] AddrAdd [ALoc $ ATemp (n''+6), ALoc $ ATemp (n''+5)]]
-  in (lvalAasm ++ addr ++ exp ++ checks ++ aasm, n''+8, lbl'')
+  in if safe then let
+    checks = [AAsm [ATemp (n''+7)] Nop [ALoc $ Pt $ ATemp n],
+              AAsm [ATemp n''] AddrSub [ALoc $ ATemp (n''+7), AImm $ fromIntegral size],
+              AAsm [ATemp (n''+1)] op [ALoc $ Pt (ATemp n'')],
+              AAsm [ATemp (n''+2)] Nop [AImm $ fromIntegral 0],
+              AAsm [ATemp (n''+3)] Geq [ALoc $ ATemp n', ALoc $ ATemp (n''+2)],
+              ACtrl $ Ifz (ALoc (ATemp (n''+3))) "mem" False,
+              AAsm [ATemp (n''+4)] Lt [ALoc $ ATemp n', ALoc $ ATemp (n''+1)],
+              ACtrl $ Ifz (ALoc (ATemp (n''+4))) "mem" False]
+    addr = [AAsm [ATemp (n''+6)] Nop [ALoc $ Pt $ ATemp n]]
+    aasm = [AAsm [ATemp (n''+5)] Mul [AImm $ fromIntegral size, ALoc $ ATemp n'],
+            AAsm [t] AddrAdd [ALoc $ ATemp (n''+6), ALoc $ ATemp (n''+5)]]
+    in (lvalAasm ++ addr ++ exp ++ checks ++ aasm, n''+8, lbl'')
+     else let
+       addr = [AAsm [ATemp n''] Nop [ALoc $ Pt $ ATemp n]]
+       aasm = [AAsm [ATemp (n''+1)] Mul [AImm $ fromIntegral size, ALoc $ ATemp n'],
+               AAsm [t] AddrAdd [ALoc $ ATemp n'', ALoc $ ATemp (n''+1)]]
+       in (lvalAasm ++ addr ++ exp ++ aasm, n''+2, lbl'')
 getLvalAddr (LArrow (LIdent s) i) t n lbl (ctx, smap) _ _ = let
   offset = case Map.lookup s ctx of
     Just (Pointer (Struct st)) -> case Map.lookup st smap of
@@ -870,26 +881,33 @@ translate regMap _ (AAsm {aAssign = [dest], aOp = Div, aArgs = [src1, src2]}) =
        Movl (Reg EAX) (regFind regMap (ALoc dest))]
   in case s2 of
     (Val _) -> [Movl s2 (Reg R15D)] ++ stuff
-    Reg EAX -> [Movl (Reg EAX) (Reg R15D),
+    {-Reg EAX -> [Movl (Reg EAX) (Reg R15D),
                 Movl (regFind regMap src1) (Reg EAX),
                 Cdq,
                 Idivl (Reg R15D),
                 Movl (Reg EAX) (regFind regMap (ALoc dest)),
-                Movl (Reg R15D) (Reg EAX)]
+                Movl (Reg R15D) (Reg EAX)]-}
     _ -> stuff
 translate regMap _ (AAsm {aAssign = [dest], aOp = Mod, aArgs = [src1, src2]}) =
-  case regFind regMap src2 of
-    Reg EAX -> [Movl (Reg EAX) (Reg R15D),
+  let
+    s2 = regFind regMap src2
+    s2' = case s2 of
+      (Val _) -> Reg R15D
+      x -> x
+    stuff =
+      [Movl (regFind regMap src1) (Reg EAX),
+       Cdq,
+       Idivl s2',
+       Movl (Reg EDX) (regFind regMap (ALoc dest))]
+  in case s2 of
+    (Val _) -> [Movl s2 (Reg R15D)] ++ stuff
+    {-Reg EAX -> [Movl (Reg EAX) (Reg R15D),
                 Movl (regFind regMap src1) (Reg EAX),
                 Cdq,
                 Idivl (Reg R15D),
-                Movl (Reg EDX) (regFind regMap (ALoc dest)),
-                Movl (Reg R15D) (Reg EAX)]
-    _ ->
-      [Movl (regFind regMap src1) (Reg EAX),
-       Cdq,
-       Idivl (regFind regMap src2),
-       Movl (Reg EDX) (regFind regMap (ALoc dest))]
+                Movl (Reg EAX) (regFind regMap (ALoc dest)),
+                Movl (Reg R15D) (Reg EAX)]-}
+    _ -> stuff
 translate regMap _ (AAsm {aAssign = [dest], aOp = Neg, aArgs = [src]}) =
   let
     dest' = regFind regMap (ALoc dest)
@@ -1020,7 +1038,8 @@ translate regMap _ (AAsm {aAssign = [dest], aOp = o, aArgs = [src1, src2]})
         Movl s1 dest',
         asm (Reg CL) dest']
 translate _ _ x = trace (show x) []
-       
+
+                
 {- TODO: we should think abou a better way to do this. In most (all?)
 cases its just zero testing. Find a way to use testl along with subtraction
 for inequalities. Cmpl is restrictive with no constants in the second

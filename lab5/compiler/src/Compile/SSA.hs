@@ -18,20 +18,29 @@ We also never did minimization. This is kind of a big deal because it
 affects our performance in register allocation.
 -}
 
-ssa :: [AAsm] -> String -> Blocks
-ssa aasm fun = let
+ssa :: [AAsm] -> String -> Int -> Blocks
+ssa aasm fun opt = let
   l = parameterize aasm fun
-  opt = map (\(fun, (s, aasm)) -> (fun, (s, optimize aasm))) l
-  in minimize l
+  in if opt == 0 then
+       minimize l
+     else let
+       opt = map (\(fun, (s, aasm)) -> (fun, (s, optimize aasm))) l
+       in minimize opt
   
 optimize p =
   let
     (constProp, _) = 
       foldl (\(aasm, m) -> \inst ->
               case inst of
-                (AAsm {aAssign = [loc], aOp = Nop, aArgs = [AImm i]}) | loc /= ARes -> let
-                  m' = Map.insert (ALoc loc) (AImm i) m
-                  in (aasm, m')
+                (AAsm {aAssign = [loc], aOp = Nop, aArgs = [AImm i]}) ->
+                  case loc of
+                    (ATemp _) -> let
+                      m' = Map.insert (ALoc loc) (AImm i) m
+                      in (aasm, m')
+                    (AVarG _ _) -> let
+                      m' = Map.insert (ALoc loc) (AImm i) m
+                      in (aasm, m')
+                    _ -> (aasm ++ [inst], m)
                 (AAsm {aAssign = [loc], aOp = o, aArgs = srcs}) -> let
                   srcs' = map (copy m) srcs
                   in (aasm ++ [AAsm {aAssign = [loc], aOp = o, aArgs = srcs'}], m)
@@ -322,7 +331,7 @@ updateVars'(ACtrl(Ret(ALoc v))) vm l = --trace ("\tRet:"++(show vm)) $
 updateVars'(ACtrl(IfzP(ALoc v) s b set)) vm l = --trace ("\tIfzP:"++(show vm)) $
   let
     set' = map (\(a,av) -> case Map.lookup a vm of
-                   Just a' -> (a',av)
+                   Just a' -> (a', Just (ALoc a'))
                    Nothing -> (a,av)) set
   in
    case Map.lookup v vm of
@@ -339,7 +348,7 @@ updateVars'(APop v) vm l = --trace "APop" $
 updateVars'(ACtrl(GotoP s set)) vm l =
   let
     set' = map (\(v,av) -> case Map.lookup v vm of
-                   Just v' -> (v',av)
+                   Just v' -> (v', Just (ALoc v'))
                    Nothing -> (v,av)) set
   in
    (ACtrl(GotoP s set'), l ++ [s])

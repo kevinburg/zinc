@@ -2,4 +2,8 @@ bin/
 dist/
 *.out
 l4rt.c
+l5rt.c
+tests/
 report.html
+a.result
+bench

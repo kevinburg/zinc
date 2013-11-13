@@ -11,6 +11,7 @@ import System.Console.GetOpt
 import Util
 import Data.Maybe
 import System.FilePath
+import Data.Char
 
 import Debug.Trace
 
@@ -34,6 +35,7 @@ parseArgs initialJob args = let
 argTable :: [OptDescr (Job -> Job)]
 argTable = [
   Option ['l'] ["l"] (ReqArg nothing "lol") "lol",
+  Option ['O'] ["opt"] (ReqArg setOptimize "0") "set optimize level",
   Option ['o'] ["out"] (ReqArg setOut "out.S") "Redirects output of the compiler to a particular target file. Will attempt to autodetect output type. - represents stdout.",
   Option ['S'] ["asm"] (NoArg (setOF Asm)) "Sets the output target to be assembly type.",
   Option ['c'] ["obj"] (NoArg (setOF Obj)) "Sets the output target to be an elf intermediate object.",
@@ -58,6 +60,8 @@ nothing :: FilePath -> Job -> Job
 nothing out j = let
   out' = out
   in j
+
+setOptimize o j = j {jobOptimize = (digitToInt (o !! 0))}
 
 setOut :: FilePath -> Job -> Job
 setOut out j = let

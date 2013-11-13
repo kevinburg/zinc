@@ -19,11 +19,11 @@
 #define KBEST 12
 #define EPSILON 0.01		/* KBEST samples should be within EPSILON */
 
-/* extern int _c0_main(); */    /* unused here */
-extern void* _c0_init(int param);
-extern void _c0_prepare(void* data, int param);
-extern void _c0_run(void* data, int param);
-extern void _c0_checksum(void* data, int param);
+/* extern int c0_main(); */    /* unused here */
+extern void* c0_init(int param);
+extern void c0_prepare(void* data, int param);
+extern void c0_run(void* data, int param);
+extern void c0_checksum(void* data, int param);
 
 /* Other globals */
 static int debug_level = 0;
@@ -111,12 +111,12 @@ int main(int argc, char *argv[]) {
   samplecount = 0;
 
   /* One run to warm up cache */
-  data = _c0_init(param);
-  _c0_prepare(data, param);
+  data = c0_init(param);
+  c0_prepare(data, param);
   time_run(data, param);
   /* Timing runs */
   for (i = 0; i < MAXITERS; i++) {
-    _c0_prepare(data, param);
+    c0_prepare(data, param);
     cycles = time_run(data, param);
     if (add_sample(cycles)) {
       i++; break;
@@ -150,7 +150,7 @@ unsigned long time_run(void* data, int param) {
   /* no input, so no need to rewind */
   /* rewind(stdin); */
   start_counter();
-  _c0_run(data, param);
+  c0_run(data, param);
   cycles = get_counter();
   if (debug_level >= 2) fprintf(stderr, "%lu cycles\n", cycles);
   return cycles;

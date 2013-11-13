@@ -46,10 +46,9 @@ compile job = do
     ast <- parseAST $ jobSource job
     (elab, ast') <- liftEIO $ elaborate ast
     smap <- liftEIO $ checkAST elab
-    --safe <- jobSafe job
     if jobOutFormat job == C0
       then writer (jobOut job) ast
-      else let asm = codeGen (ast', smap, jobSafe job) in
+      else let asm = codeGen (ast', smap, jobSafe job, jobOptimize job) in
              if jobOutFormat job == Asm
                 then sourceWriter (jobOut job) asm
                 else do writer asmFile ast
