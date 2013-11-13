@@ -760,7 +760,7 @@ translate regMap _ (AAsm {aAssign = [dest], aOp = AddrAdd, aArgs = [src1, src2]}
     s1 = fullReg $ regFind regMap src1
     s2 = fullReg $ regFind regMap src2
   in case (s1,s2) of
-{-    (Reg x, Reg y) -> if s2 == d then [Addq s1 s2]
+    (Reg x, Reg y) -> if s2 == d then [Addq s1 s2]
                       else if s1 == d then [Addq s2 s1]
                            else [Movq s2 d, Addq s1 d]
     (Stk i, Reg y) -> if s1 == d then [Addq s2 s1]
@@ -771,7 +771,7 @@ translate regMap _ (AAsm {aAssign = [dest], aOp = AddrAdd, aArgs = [src1, src2]}
                            else [Movq s2 (Reg R15), Movq (Reg R15) d, Addq s1 d]
     (Stk i, Stk j) -> if s1 == d then [Movq s2 (Reg R15), Addq (Reg R15) s1]
                       else if s2 == d then [Movq s1 (Reg R15), Addq (Reg R15) s2]
-                           else [Movq s1 (Reg R15), Addq s2 (Reg R15), Movq (Reg R15) d] -}
+                           else [Movq s1 (Reg R15), Addq s2 (Reg R15), Movq (Reg R15) d]
     _ ->
       [Movq s1 (Reg R15),
       Movq s2 (Reg R14),
