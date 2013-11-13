@@ -580,14 +580,17 @@ genExp (n, l) (ExpTernOp e1 e2 e3 _) loc lens ctx safe =
     _ ->
       let
         (i1, n1, l1) = genExp (n+1, l) e1 (ATemp n) lens ctx safe
-        (i2, n2, l2) = genExp (n1+1, l1) e2 loc lens ctx safe
-        (i3, n3, l3) = genExp (n2+1, l2) e3 loc lens ctx safe
+        (i2, n2, l2) = genExp (n1+1, l1) e2 (ATemp n1) lens ctx safe
+        (i3, n3, l3) = genExp (n2+1, l2) e3 (ATemp n2) lens ctx safe
         aasm = i1 ++ [ACtrl $ Ifz (ALoc (ATemp n)) (show $ l3+2) False,
                       ACtrl $ Goto (show $ l3+1),
                       ACtrl $ Lbl (show $ l3+1)] ++
-               i2 ++ [ACtrl $ Goto (show $ l3+3),
+               i2 ++ [AAsm [loc] NoTouch [ALoc $ ATemp n1],
+                      -- No touching!
+                      ACtrl $ Goto (show $ l3+3),
                       ACtrl $ Lbl (show $ l3+2)] ++
-               i3 ++ [ACtrl $ Goto (show $ l3+3),
+               i3 ++ [AAsm [loc] NoTouch [ALoc $ ATemp n2],
+                      ACtrl $ Goto (show $ l3+3),
                       ACtrl $ Lbl (show $ l3+3)]
       in (aasm, n3, l3+3)
 genExp (n, l) (App f es _) loc lens ctx safe =
@@ -715,7 +718,8 @@ translate regMap n (AAsm {aAssign = [dest], aOp = (MemMov Small), aArgs = [src]}
        [Movq s (Reg R15),
         Movl (Reg R15D) $ regFind regMap (ALoc dest)]
 -- 64 -> 64 Mov
-translate regMap n (AAsm {aAssign = [dest], aOp = Nop, aArgs = [src]}) =
+translate regMap n (AAsm {aAssign = [dest], aOp = op, aArgs = [src]}) | op == Nop ||
+                                                                        op == NoTouch =
   let
     s = fullReg $ regFind regMap src
     d = fullReg $ regFind regMap (ALoc dest)

@@ -24,8 +24,8 @@ ssa aasm fun opt = let
   in if opt == 0 then
        minimize l
      else let
-       opt = map (\(fun, (s, aasm)) -> (fun, (s, optimize aasm))) l
-       in minimize opt
+       opt = map (\(fun, (s, aasm)) -> (fun, (s, optimize aasm))) (minimize l)
+       in opt
   
 optimize p =
   let

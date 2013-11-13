@@ -36,6 +36,7 @@ data Op = Mul
         | SShl
         | SShr
         | Nop
+        | NoTouch
         | Eq
         | Neq
         | BNot
@@ -115,6 +116,7 @@ instance Show Op where
   show Gt = ">"
   show Geq = ">="
   show Nop = "[nop]"
+  show NoTouch = "NoTouch"
   show AddrAdd = "AddrAdd"
   show AddrSub = "AddrSub"
   show (MemMov s) = "MemMov " ++ (show s)
