@@ -111,7 +111,26 @@ genFunction (fun,p,b) l lengths (c, smap) safe opt =
           add = [Addq (Val ((n - (mod x 2) + 1)*8)) (Reg RSP)]
           in setup ++ save ++ sub ++ front ++ add ++ restore ++ back
     code' = removeRedundant code
-  in (fun, code', l')
+  in case opt >= 2 of
+    False -> (fun, code', l')
+    True -> (fun, asmOptimize code', l')
+
+asmOptimize code = let
+  opt = pairFold foldFun code
+  in opt
+  where foldFun acc (Jmp l1) (AsmLbl l2) = 
+          if l1 == l2 then (Nothing, (AsmLbl l2) : acc)
+          else (Just (Jmp l1), (AsmLbl l2) : acc)
+        foldFun acc x y = (Just x, y : acc)
+
+pairFold f l = let
+  (front, l') =
+    foldr (\x -> \(y, acc) -> case (x,y) of
+              (arg1, Just arg2) -> f acc arg1 arg2
+              (_, Nothing) -> (Just x, acc)) (Nothing, []) l
+  in case front of
+    Just x -> x : l'
+    Nothing -> l'
 
 removeRedundant code = 
   filter (\inst -> case inst of
@@ -640,15 +659,20 @@ genExp (n, l) (AllocArray t e _) loc lens (ctx, smap) safe =
       (Struct s) -> let
         (size, _) = smap Map.! s in size
     (exp, n', l') = genExp (n+1, l) e (ATemp n) lens (ctx, smap) safe
-    aasm = [AAsm [ATemp (n'+2)] Nop [AImm $ fromIntegral 0],
-            AAsm [ATemp (n'+3)] Geq [ALoc $ ATemp n, ALoc $ ATemp (n'+2)],
-            ACtrl $ Ifz (ALoc (ATemp (n'+3))) "mem" False,
-            --AAsm [ATemp n'] AddrAdd [ALoc $ ATemp n, AImm $ fromIntegral 1],
-            AAsm [AArg 1] Nop [AImm $ fromIntegral size],
-            AAsm [AArg 0] (MemMov Small) [ALoc $ ATemp n],
-            AAsm [AArg 0] AddrAdd [ALoc $ AArg 0, AImm $ fromIntegral 1],
-            ACtrl $ Call "_c0_calloc" [],
-            AAsm [ATemp (n'+1)] Nop [ALoc $ ARes]]
+    aasm = case safe of
+      True -> [AAsm [ATemp (n'+2)] Nop [AImm $ fromIntegral 0],
+               AAsm [ATemp (n'+3)] Geq [ALoc $ ATemp n, ALoc $ ATemp (n'+2)],
+               ACtrl $ Ifz (ALoc (ATemp (n'+3))) "mem" False,
+               AAsm [AArg 1] Nop [AImm $ fromIntegral size],
+               AAsm [AArg 0] (MemMov Small) [ALoc $ ATemp n],
+               AAsm [AArg 0] AddrAdd [ALoc $ AArg 0, AImm $ fromIntegral 1],
+               ACtrl $ Call "_c0_calloc" [],
+               AAsm [ATemp (n'+1)] Nop [ALoc $ ARes]]
+      False -> [AAsm [AArg 1] Nop [AImm $ fromIntegral size],
+                AAsm [AArg 0] (MemMov Small) [ALoc $ ATemp n],
+                AAsm [AArg 0] AddrAdd [ALoc $ AArg 0, AImm $ fromIntegral 1],
+                ACtrl $ Call "_c0_calloc" [],
+                AAsm [ATemp (n'+1)] Nop [ALoc $ ARes]]
     writeSize = case size of
       4 -> [AAsm [Pt $ ATemp (n'+1)] (MemMov Small) [ALoc $ ATemp n]]
       _ -> [AAsm [Pt $ ATemp (n'+1)] Nop [ALoc $ ATemp n]]
