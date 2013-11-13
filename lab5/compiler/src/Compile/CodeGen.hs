@@ -905,12 +905,18 @@ translate regMap _ (AAsm {aAssign = [dest], aOp = Div, aArgs = [src1, src2]}) =
        Movl (Reg EAX) (regFind regMap (ALoc dest))]
   in case s2 of
     (Val _) -> [Movl s2 (Reg R15D)] ++ stuff
-    {-Reg EAX -> [Movl (Reg EAX) (Reg R15D),
+    Reg EAX -> [Movl (Reg EAX) (Reg R15D),
                 Movl (regFind regMap src1) (Reg EAX),
                 Cdq,
                 Idivl (Reg R15D),
                 Movl (Reg EAX) (regFind regMap (ALoc dest)),
-                Movl (Reg R15D) (Reg EAX)]-}
+                Movl (Reg R15D) (Reg EAX)]
+    Reg EDX -> [Movl (Reg EDX) (Reg R15D),
+                Movl (regFind regMap src1) (Reg EAX),
+                Cdq,
+                Idivl (Reg R15D),
+                Movl (Reg EAX) (regFind regMap (ALoc dest)),
+                Movl (Reg R15D) (Reg EDX)]
     _ -> stuff
 translate regMap _ (AAsm {aAssign = [dest], aOp = Mod, aArgs = [src1, src2]}) =
   let
@@ -925,12 +931,18 @@ translate regMap _ (AAsm {aAssign = [dest], aOp = Mod, aArgs = [src1, src2]}) =
        Movl (Reg EDX) (regFind regMap (ALoc dest))]
   in case s2 of
     (Val _) -> [Movl s2 (Reg R15D)] ++ stuff
-    {-Reg EAX -> [Movl (Reg EAX) (Reg R15D),
+    Reg EAX -> [Movl (Reg EAX) (Reg R15D),
                 Movl (regFind regMap src1) (Reg EAX),
                 Cdq,
                 Idivl (Reg R15D),
-                Movl (Reg EAX) (regFind regMap (ALoc dest)),
-                Movl (Reg R15D) (Reg EAX)]-}
+                Movl (Reg EDX) (regFind regMap (ALoc dest)),
+                Movl (Reg R15D) (Reg EAX)]
+    Reg EDX -> [Movl (Reg EDX) (Reg R15D),
+                Movl (regFind regMap src1) (Reg EAX),
+                Cdq,
+                Idivl (Reg R15D),
+                Movl (Reg EDX) (regFind regMap (ALoc dest)),
+                Movl (Reg R15D) (Reg EDX)]
     _ -> stuff
 translate regMap _ (AAsm {aAssign = [dest], aOp = Neg, aArgs = [src]}) =
   let
