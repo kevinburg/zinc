@@ -170,7 +170,8 @@ genInter' (stmt : aasm) i live inter vars =
         Just s -> s
       newInter = Set.map (\x -> (dest, x)) vs -- (Set.difference vs (Set.fromList srcs'))
       inter' = Set.union inter newInter
-      inter'' = Set.union inter' (Set.fromList [(a, AReg ECX) | a <- (Set.toList vs) ++ [dest]])
+      inter'' = Set.union inter' (Set.fromList [(a, AReg ECX) | a <- (Set.toList vs) ++
+                                                                     [dest] ++ srcs'])
       in genInter' aasm (i+1) live inter'' vars'
     AAsm {aAssign = [dest], aOp = o, aArgs = srcs} | o == Div || o == Mod -> let
       srcs' = isTemp srcs
@@ -180,7 +181,7 @@ genInter' (stmt : aasm) i live inter vars =
         Just s -> s
       newInter = Set.map (\x -> (dest, x)) vs -- (Set.difference vs (Set.fromList srcs'))
       inter' = Set.union inter newInter
-      inter'' = Set.union inter' (Set.fromList [(a, b) | a <- Set.toList vs,
+      inter'' = Set.union inter' (Set.fromList [(a, b) | a <- (Set.toList vs) ++ [dest] ++ srcs',
                                                 b <- [AReg EAX, AReg EDX]])
       in genInter' aasm (i+1) live inter'' vars'
     AAsm {aAssign = [dest], aOp = _, aArgs = srcs} -> let

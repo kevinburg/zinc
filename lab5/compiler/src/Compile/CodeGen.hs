@@ -135,6 +135,7 @@ pairFold f l = let
 removeRedundant code = 
   filter (\inst -> case inst of
              (Movl a1 a2) -> (a1 /= a2) || (a1 == (Reg R15D)) || (a1 == (Reg R14D))
+             (Movq a1 a2) -> (a1 /= a2)
              _ -> True) code
 
 -- updates the abstract assembly at a label
@@ -229,15 +230,18 @@ getLvalAddr (LArray l e) t n lbl (ctx, smap) typs safe = let
        aasm = [AAsm [ATemp (n''+1)] Mul [AImm $ fromIntegral size, ALoc $ ATemp n'],
                AAsm [t] AddrAdd [ALoc $ ATemp n'', ALoc $ ATemp (n''+1)]]
        in (lvalAasm ++ addr ++ exp ++ aasm, n''+2, lbl'')
-getLvalAddr (LArrow (LIdent s) i) t n lbl (ctx, smap) _ _ = let
+getLvalAddr (LArrow (LIdent s) i) t n lbl (ctx, smap) _ safe = let
   offset = case Map.lookup s ctx of
     Just (Pointer (Struct st)) -> case Map.lookup st smap of
       Just (_, m) -> case Map.lookup i m of
         Just (offset, _) -> offset
-  aasm = [AAsm [ATemp n] Nop [AImm $ fromIntegral 1],
-          ACtrl $ Ifz (ALoc $ AVar s) "mem" True,
-          AAsm [t] AddrAdd [ALoc $ AVar s, AImm $ fromIntegral offset]]
-  in (aasm, n+1, lbl)
+  in if safe then let
+    aasm = [ACtrl $ Ifz (ALoc $ AVar s) "mem" True,
+            AAsm [t] AddrAdd [ALoc $ AVar s, AImm $ fromIntegral offset]]
+    in (aasm, n, lbl)
+     else let
+       aasm = [AAsm [t] AddrAdd [ALoc $ AVar s, AImm $ fromIntegral offset]]
+       in (aasm, n, lbl)
 getLvalAddr (LArrow l i) t n lbl (ctx, smap) typs safe = let
   e = unroll l (newPos "x" 1 1)
   (lvalAasm, n', lbl') = getLvalAddr l (ATemp n) (n+1) lbl (ctx, smap) (tail typs) safe
@@ -547,14 +551,20 @@ genExp (n,l) (ExpBinOp LAnd e1 e2 p) loc lens ctx safe =
   genExp (n,l) (ExpTernOp e1 e2 (FalseT p) p) loc lens ctx safe
 genExp (n,l) (ExpBinOp LOr e1 e2 p) loc lens ctx safe =
   genExp (n,l) (ExpTernOp e1 (TrueT p) e2 p) loc lens ctx safe
-genExp (n,l) (ExpBinOp op e1 e2 p) loc lens ctx safe | op == Shl || op == Shr = let
-  div = ExpBinOp Div (ExpInt Dec 1 p) (ExpInt Dec 0 p) p
-  cond = ExpBinOp LOr (ExpBinOp Gt e2 (ExpInt Dec 31 p) p)
-         (ExpBinOp Lt e2 (ExpInt Dec 0 p) p) p
-  sop = case op of
-    Shl -> SShl
-    Shr -> SShr
-  in genExp (n,l) (ExpTernOp cond div (ExpBinOp sop e1 e2 p) p) loc lens ctx safe
+genExp (n,l) (ExpBinOp op e1 e2 p) loc lens ctx safe | op == Shl || op == Shr =
+  if safe then let
+    div = ExpBinOp Div (ExpInt Dec 1 p) (ExpInt Dec 0 p) p
+    cond = ExpBinOp LOr (ExpBinOp Gt e2 (ExpInt Dec 31 p) p)
+           (ExpBinOp Lt e2 (ExpInt Dec 0 p) p) p
+    sop = case op of
+      Shl -> SShl
+      Shr -> SShr
+    in genExp (n,l) (ExpTernOp cond div (ExpBinOp sop e1 e2 p) p) loc lens ctx safe
+  else let
+    sop = case op of
+      Shl -> SShl
+      Shr -> SShr
+    in genExp (n,l) (ExpBinOp sop e1 e2 p) loc lens ctx safe
 genExp (n,l) (ExpBinOp op e1 e2 _) loc lens ctx safe = 
   case (op, e1, e2) of
     (Add, ExpInt _ i1 _, ExpInt _ i2 _) ->
@@ -689,15 +699,6 @@ translate regMap n (AAsm {aAssign = [dest], aOp = (MemMov Small), aArgs = [src]}
     d = fullReg $ regFind regMap (ALoc dest)
   in 
    case (s,d) of
-{-     (Reg _, Reg _) -> 
-       [Movq s d]
-     (Stk i, Reg y) -> 
-       [Movq (Stk i) (Reg y)]
-     (Reg x, Stk i) -> 
-       [Movq (Reg x) (Stk i)]
-     (Stk i, Stk j) -> 
-       [Movq (Stk i) (Reg R15),
-        Movq (Reg R15) (Stk j)] -}
      (Loc x, Loc y) ->
        [Movq x (Reg R14),
         Movq (Loc $ Reg R14) (Reg R14),
@@ -732,14 +733,10 @@ translate regMap n (AAsm {aAssign = [dest], aOp = op, aArgs = [src]}) | op == No
         Movq (Reg R15) d]
      (Reg _, Reg _) ->
        [Movq s d]
-     {-
      (Stk i, Reg y) -> 
        [Movq (Stk i) (Reg y)]
      (Reg x, Stk i) -> 
        [Movq (Reg x) (Stk i)]
-     (Stk i, Stk j) -> 
-       [Movq (Stk i) (Reg R15),
-        Movq (Reg R15) (Stk j)] -}
      (Loc x, Loc y) ->
        [Movq x (Reg R14),
         Movq (Loc $ Reg R14) (Reg R14),

@@ -49,7 +49,7 @@ seo' g weights l =
 -- Vertex paired with Int, which represents color
 coloring :: Graph -> (Map.Map Vertex Arg, Int)
 coloring g = let size = Map.size g
-                 bound = 350
+                 bound = 10000
                  m = Map.map (\x-> -1) g
                  preColoring = [(ARes, 0)] ++
                                [(AReg EAX, 0), (AReg EDI, 1), (AReg ESI, 2),
