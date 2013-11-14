@@ -28,8 +28,9 @@ ssa aasm fun opt = let
                             (code, m') = optimize aasm m
                             in (m', acc ++ [(fun, (s, code))]))
                   (Map.empty, []) (minimize l)
-       in opt
-  
+       opt1 = map (\(fun, (s, aasm)) -> (fun, (s, cse aasm))) opt
+       in opt1
+          
 optimize p m =
   let
     (constProp, m1) = 
@@ -154,6 +155,22 @@ optimize p m =
            constantFold Leq [AImm i, AImm j] = Just (AImm (if i <= j then 1 else 0), Nop)
            constantFold Lt [AImm i, AImm j] = Just (AImm (if i < j then 1 else 0), Nop)
            constantFold _ _ = Nothing
+
+cse code = let
+  res = foldl (\(aasm, m) -> \inst ->
+                case inst of
+                  (AAsm [loc] Mul [s1, s2]) ->
+                    case Map.lookup (Mul, (s1, s2)) m of
+                      Just var -> let
+                        inst' = [AAsm [loc] Nop [var]]
+                        in (aasm ++ inst', m)
+                      Nothing -> let
+                        m' = Map.insert (Mul, (s1, s2)) (ALoc loc) m
+                        in (aasm ++ [inst], m')
+                  y -> (aasm ++ [y], m)) ([], Map.empty) code
+  (code', _) = res
+  in code'
+                     
 
 {- The abstract assembly is group by label. Each label contains the set of variables that
    are live at the time of entering the label and the code that follows. The set of live
