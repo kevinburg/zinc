@@ -726,6 +726,8 @@ translate regMap n (AAsm {aAssign = [dest], aOp = op, aArgs = [src]}) | op == No
     d = fullReg $ regFind regMap (ALoc dest)
   in
    case (s, d) of
+     (Val _, Reg _) ->
+       [Movq s d]
      (Reg (SpillArg i), Reg _) ->
        [Movq (Stk ((i+n+1)*8)) d]
      (Reg (SpillArg i), _) ->
@@ -1044,6 +1046,7 @@ translate regMap _ (ACtrl (Ifz v l False)) =
                  Movzbl (Reg R15B) (Reg R15D),
                  Testl (Reg R15D) (Reg R15D), 
                  Je l]
+     (Val i) -> [Movl v' (Reg R15D), Testl (Reg R15D) (Reg R15D), Je l]
      _ -> [Movzbl (lowerReg v') v', Testl v' v', Je l]
 translate regMap _ (ACtrl (Ifz v l True)) =
   let
@@ -1053,6 +1056,7 @@ translate regMap _ (ACtrl (Ifz v l True)) =
      (Stk _) -> [Movq v' (Reg R15), 
                  Testq (Reg R15) (Reg R15), 
                  Je l]
+     (Val i) -> [Movl v' (Reg R15), Testq (Reg R15) (Reg R15), Je l]
      _ -> [Testl v' v', Je l]
 translate regMap _ (AAsm {aAssign = [dest], aOp = o, aArgs = [src1, src2]})
   | o == SShl || o == SShr =

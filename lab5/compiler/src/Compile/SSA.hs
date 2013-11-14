@@ -24,12 +24,15 @@ ssa aasm fun opt = let
   in if opt == 0 then
        minimize l
      else let
-       opt = map (\(fun, (s, aasm)) -> (fun, (s, optimize aasm))) (minimize l)
+       (_, opt) = foldl (\(m, acc) -> \(fun, (s, aasm)) -> let
+                            (code, m') = optimize aasm m
+                            in (m', acc ++ [(fun, (s, code))]))
+                  (Map.empty, []) (minimize l)
        in opt
   
-optimize p =
+optimize p m =
   let
-    (constProp, _) = 
+    (constProp, m1) = 
       foldl (\(aasm, m) -> \inst ->
               case inst of
                 (AAsm {aAssign = [loc], aOp = Nop, aArgs = [AImm i]}) ->
@@ -43,7 +46,19 @@ optimize p =
                     _ -> (aasm ++ [inst], m)
                 (AAsm {aAssign = [loc], aOp = o, aArgs = srcs}) -> let
                   srcs' = map (copy m) srcs
-                  in (aasm ++ [AAsm {aAssign = [loc], aOp = o, aArgs = srcs'}], m)
+                  in case constantFold o srcs' of
+                    Nothing -> (aasm ++ [AAsm {aAssign = [loc], aOp = o, aArgs = srcs'}], m)
+                    Just (val, op) ->
+                      case loc of
+                        (ATemp _) -> let
+                          m' = Map.insert (ALoc loc) val m
+                          in (aasm, m')
+                        (AVarG _ _) -> let
+                          m' = Map.insert (ALoc loc) val m
+                          in (aasm, m')
+                        _ -> let
+                          inst = [AAsm [loc] op [val]]
+                          in (aasm ++ inst, m)
                 (ACtrl (GotoP lbl l)) -> let
                   l' = map (\(var, _) -> (var, Just $ copy m (ALoc var))) l
                   in (aasm ++ [ACtrl $ GotoP lbl l'], m)
@@ -51,12 +66,94 @@ optimize p =
                   l' = map (\(var, _) -> (var, Just $ copy m (ALoc var))) l
                   in (aasm ++ [ACtrl $ IfzP (copy m v) lbl b l'], m)
                 x -> (aasm ++ [x], m)
-            ) ([], Map.empty) p
-  in constProp
+            ) ([], m) p
+    (copyProp, m2) = constProp `seq`
+      foldl (\(aasm, m) -> \inst ->
+              case inst of
+                (AAsm {aAssign = [loc], aOp = op, aArgs = [s]}) | op == Nop || op == MemMov Small ->
+                  case (loc, s) of
+                    (ARes, _) -> let
+                      s' = copyPt m s
+                      inst' = [AAsm [loc] op [s']]
+                      in (aasm ++ inst', m)
+                    (AArg _, _) -> let
+                      s' = copyPt m s
+                      inst' = [AAsm [loc] op [s']]
+                      in (aasm ++ inst', m)
+                    (Register _, _) -> let
+                      s' = copyPt m s
+                      inst' = [AAsm [loc] op [s']]
+                      in (aasm ++ inst', m)
+                    (Pt l, _) -> let
+                      s' = copyPt m s
+                      ALoc l' = copyPt m (ALoc l)
+                      inst' = [AAsm [Pt l'] op [s']]
+                      in (aasm ++ inst', m)
+                    (_, ALoc (Pt x)) -> let
+                      ALoc x' = copyPt m (ALoc x)
+                      inst' = [AAsm [loc] op [ALoc (Pt x')]]
+                      in (aasm ++ inst', m)
+                    (_, (AImm _)) -> let
+                      ALoc loc' = copyPt m (ALoc loc)
+                      inst' = [AAsm [loc'] op [s]]
+                      in (aasm ++ inst', m)
+                    (_, (ALoc (AArg _))) -> let
+                      ALoc loc' = copyPt m (ALoc loc)
+                      inst' = [AAsm [loc'] op [s]]
+                      in (aasm ++ inst', m)
+                    (_, (ALoc ARes)) -> let
+                      ALoc loc' = copyPt m (ALoc loc)
+                      inst' = [AAsm [loc'] op [s]]
+                      in (aasm ++ inst', m)
+                    (_, (ALoc (Register _))) -> let
+                      ALoc loc' = copyPt m (ALoc loc)
+                      inst' = [AAsm [loc'] op [s]]
+                      in (aasm ++ inst', m)
+                    _ -> let
+                      s' = copyPt m s
+                      m' = copyInsert (ALoc loc) s' m
+                      in (aasm, m')
+                (AAsm {aAssign = [loc], aOp = o, aArgs = srcs}) -> let
+                  ALoc loc' = copyPt m (ALoc loc)
+                  srcs' = map (copyPt m) srcs
+                  inst = [AAsm [loc'] o srcs']
+                  in (aasm ++ inst, m)
+                (ACtrl (GotoP lbl l)) -> let
+                  l' = map (\(var, _) -> (var, Just $ copyPt m (ALoc var))) l
+                  in (aasm ++ [ACtrl $ GotoP lbl l'], m)
+                (ACtrl (IfzP v lbl b l)) -> let
+                  l' = map (\(var, _) -> (var, Just $ copyPt m (ALoc var))) l
+                  in (aasm ++ [ACtrl $ IfzP (copy m v) lbl b l'], m)
+                x -> (aasm ++ [x], m)
+            ) ([], m1) constProp
+    string = copyProp `seq` ((show constProp) ++ "\n" ++ (show copyProp) ++ "\n\n")
+  in (copyProp, m2)
      where copy m x =
              case Map.lookup x m of
                (Just c) -> c
                _ -> x
+           copyPt m (ALoc (Pt x)) =
+             case Map.lookup (ALoc x) m of
+               (Just (ALoc c)) -> ALoc $ Pt c
+               _ -> ALoc $ Pt x
+           copyPt m x = copy m x
+           copyInsert k v m =
+             case Map.lookup v m of
+               Just v' -> copyInsert k v' m
+               Nothing -> Map.insert k v m
+           constantFold Div _ = Nothing
+           constantFold Mod _ = Nothing
+           constantFold Nop [AImm i] = Just (AImm i, Nop)
+           constantFold Add [AImm i, AImm j] = Just (AImm (mod (i+j) $ 2^32), Nop)
+           constantFold Add [s, AImm 0] = Just (s, Nop)
+           constantFold Mul [AImm i, AImm j] = Just (AImm (mod (i*j) $ 2^32), Nop)
+           constantFold Mul [s, AImm 0] = Just (AImm 0, Nop)
+           constantFold Mul [s, AImm 1] = Just (s, Nop)
+           constantFold Geq [AImm i, AImm j] = Just (AImm (if i >= j then 1 else 0), Nop)
+           constantFold Gt [AImm i, AImm j] = Just (AImm (if i > j then 1 else 0), Nop)
+           constantFold Leq [AImm i, AImm j] = Just (AImm (if i <= j then 1 else 0), Nop)
+           constantFold Lt [AImm i, AImm j] = Just (AImm (if i < j then 1 else 0), Nop)
+           constantFold _ _ = Nothing
 
 {- The abstract assembly is group by label. Each label contains the set of variables that
    are live at the time of entering the label and the code that follows. The set of live

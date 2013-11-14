@@ -92,6 +92,14 @@ liveVars' (stmt : aasm) i labels live m saturate =
           Just s -> Set.union (Set.insert v s) live
         (m', changed) = update m i live'
       in liveVars' aasm (i+1) labels live' m' (saturate && not(changed))
+    ACtrl (Ifz (AImm _) l _) ->
+      let
+        line = labels Map.! l
+        live' = case Map.lookup line m of
+          Nothing -> live
+          Just s -> Set.union s live
+        (m', changed) = update m i live'
+      in liveVars' aasm (i+1) labels live' m' (saturate && not(changed))
     AAsm {aAssign = [dest], aOp = _, aArgs = srcs} ->
       let
         srcs' = isTemp srcs
@@ -99,7 +107,7 @@ liveVars' (stmt : aasm) i labels live m saturate =
         live' = Set.union (Set.delete dest live) (Set.fromList newLive)
         (m', changed) = update m i live'
       in liveVars' aasm (i+1) labels live' m' (saturate && not(changed))
-
+    
 ptlive (Pt x) srcs = x : (ptlive' srcs)
 ptlive _ srcs = ptlive' srcs
 
@@ -186,10 +194,15 @@ genInter' (stmt : aasm) i live inter vars =
       in genInter' aasm (i+1) live inter'' vars'
     AAsm {aAssign = [dest], aOp = _, aArgs = srcs} -> let
       srcs' = isTemp srcs
+      ptrs = pointers srcs'
       vars' = Set.insert dest (Set.union vars (Set.fromList $ isTemp srcs))
       vs = case Map.lookup (i-1) live of
         Nothing -> Set.empty
         Just s -> s
-      newInter = Set.map (\x -> (dest, x)) vs -- (Set.difference vs (Set.fromList srcs'))
+      newInter = Set.map (\x -> (dest, x)) (Set.union vs (Set.fromList ptrs))
       inter' = Set.union inter newInter
       in genInter' aasm (i+1) live inter' vars'
+
+pointers [] = []
+pointers ((Pt x) : xs) = x : (pointers xs)
+pointers (_ : xs) = pointers xs
