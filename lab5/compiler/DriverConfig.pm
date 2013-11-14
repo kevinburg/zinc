@@ -26,7 +26,7 @@ our $COMPILER_EXEC  = "bin/$COMPILER";                  # compiler executable
 our $COMPILER_ARGS  = "-l 15411.h0";
 our @LEXTS          = reverse map {"l$_"} (1 .. $LAB);  # source filename extensions
 our $GCC            = "gcc -m64";     # gcc executable and default flags
-our $RUNTIME        = "15411.c $rt_stem.c";   # runtime system for linking against asm file
+our $RUNTIME        = "-O2 15411.c $rt_stem.c";   # runtime system for linking against asm file
 
 my $c0_level = 6 - $LAB;
 our $REF_COMPILER = "/afs/cs.cmu.edu/academic/class/15411-f13/bin/cc0";
