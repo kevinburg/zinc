@@ -280,6 +280,16 @@ gen2 (ACtrl (CompP (ALoc v1) (ALoc v2) op l s)) m = let
   s' = map (\(x,y) -> (updateGen m x, y)) s
   res = ACtrl (CompP (ALoc v1') (ALoc v2') op l s')
   in (res, m)
+gen2 (ACtrl (CompP (ALoc v1) v2 op l s)) m = let
+  [v1'] = map (updateGen m) [v1]
+  s' = map (\(x,y) -> (updateGen m x, y)) s
+  res = ACtrl (CompP (ALoc v1') v2 op l s')
+  in (res, m)
+gen2 (ACtrl (CompP v1 (ALoc v2) op l s)) m = let
+  [v2'] = map (updateGen m) [v2]
+  s' = map (\(x,y) -> (updateGen m x, y)) s
+  res = ACtrl (CompP v1 (ALoc v2') op l s')
+  in (res, m)
 gen2 x m = (x,m)
 
 isVar (AVar _) = True
@@ -476,17 +486,28 @@ updateVars'(ACtrl(IfzP(ALoc v) s b set)) vm l =
    case Map.lookup v vm of
      Just v' -> (ACtrl (IfzP(ALoc v') s b set'),l++[s])
      Nothing -> (ACtrl (IfzP(ALoc v) s b set'),l++[s])
-updateVars'(ACtrl(CompP (ALoc v1) (ALoc v2) op s set)) vm l =
+updateVars'(ACtrl(CompP e1 e2 op s set)) vm l =
   let
     set' = map (\(a,av) -> case Map.lookup a vm of
                    Just a' -> (a', Just (ALoc a'))
                    Nothing -> (a,av)) set
   in
-   case (Map.lookup v1 vm, Map.lookup v2 vm) of
-     (Just v1', Just v2') -> (ACtrl (CompP (ALoc v1') (ALoc v2') op s set'),l++[s])
-     (Just v1', Nothing) -> (ACtrl (CompP (ALoc v1') (ALoc v2) op s set'),l++[s])
-     (Nothing, Just v2') -> (ACtrl (CompP (ALoc v1) (ALoc v2') op s set'),l++[s])
-     (Nothing, Nothing) -> (ACtrl (CompP (ALoc v1) (ALoc v2) op s set'),l++[s])
+   case (e1, e2) of
+     (ALoc v1, ALoc v2) ->
+       case (Map.lookup v1 vm, Map.lookup v2 vm) of
+         (Just v1', Just v2') -> (ACtrl (CompP (ALoc v1') (ALoc v2') op s set'),l++[s])
+         (Just v1', Nothing) -> (ACtrl (CompP (ALoc v1') (ALoc v2) op s set'),l++[s])
+         (Nothing, Just v2') -> (ACtrl (CompP (ALoc v1) (ALoc v2') op s set'),l++[s])
+         (Nothing, Nothing) -> (ACtrl (CompP (ALoc v1) (ALoc v2) op s set'),l++[s])
+     (ALoc v1, _) ->
+       case Map.lookup v1 vm of
+         (Just v1') -> (ACtrl (CompP (ALoc v1') e2 op s set'),l++[s])
+         Nothing -> (ACtrl (CompP (ALoc v1) e2 op s set'),l++[s])
+     (_, ALoc v2) ->
+       case Map.lookup v2 vm of
+         (Just v2') -> (ACtrl (CompP e1 (ALoc v2') op s set'),l++[s])
+         Nothing -> (ACtrl (CompP e1 (ALoc v2) op s set'),l++[s])
+     _ -> (ACtrl (CompP e1 e2 op s set'),l++[s])
 updateVars'(APush v) vm l = --trace "APush" $
   case Map.lookup v vm of
     Just v' -> (APush v',l)

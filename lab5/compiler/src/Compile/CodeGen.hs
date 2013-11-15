@@ -462,8 +462,9 @@ genStmt (acc, n, l, ep) ((Ctrl (If e s Nothing _) _) : xs) lens ctx safe =
       (aasms, n3, l3, ep3) = genStmt ([], n2, l2, ep) [s] lens ctx safe
       aasm = e1code ++ e2code ++
              [ACtrl $ Comp (ALoc (ATemp n)) (ALoc (ATemp n1)) op (show $ l3+1)] ++
-             aasms ++ [ACtrl $ Lbl (show $ l3+1)]
-      in genStmt (acc ++ aasm, n3, l3+1, ep3) xs lens ctx safe
+             [ACtrl $ Goto (show $ l3+2), ACtrl $ Lbl (show $ l3+2)] ++
+             aasms ++ [ACtrl $ Goto (show $ l3+1), ACtrl $ Lbl (show $ l3+1)]
+      in genStmt (acc ++ aasm, n3, l3+2, ep3) xs lens ctx safe
     _ -> let
       (aasme, n', l') = genExp (n + 1, l) e (ATemp n) lens ctx safe
       (aasms, n'', l'', ep') = genStmt ([], n', l', ep) [s] lens ctx safe
@@ -1157,12 +1158,10 @@ translate regMap _ (ACtrl (Comp v1' v2' op l)) | op == Eq || op == Neq =
        Cmpl v2 (Reg R15D),
        jump l]
     (_, Val _) ->
-      [Movl v2 (Reg R15D),
-       Cmpl (Reg R15D) v1,
+      [Cmpl v2 v1,
        jump l]
     (Val _, _) ->
-      [Movl v1 (Reg R15D),
-       Cmpl (Reg R15D) v2,
+      [Cmpl v1 v2,
        jump l]
     (Stk _, Stk _) ->
       [Movl v1 (Reg R15D),
