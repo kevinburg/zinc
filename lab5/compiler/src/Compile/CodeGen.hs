@@ -87,7 +87,7 @@ genFunction (fun,p,b) l lengths (c, smap) safe opt =
     (regMap, used) = allocateRegisters unssa
     program = foldr (\x -> \acc -> (show x) ++ "\n" ++ acc) "" unssa
     code = 
-      case trace program used of
+      case used of
         0 ->
           setup ++ (concatMap (translate regMap 0) unssa)
         x | x < 4 -> let
@@ -454,19 +454,42 @@ genStmt (acc, n, l, ep) ((Ctrl (Return Nothing _) _) : xs) _ _ _ =
       Nothing -> (l+1, l+1)
   in (acc ++ [ACtrl $ Goto (show epilogue)], n, l', Just epilogue)
 genStmt (acc, n, l, ep) ((Ctrl (If e s Nothing _) _) : xs) lens ctx safe =
-  let
-    (aasme, n', l') = genExp (n + 1, l) e (ATemp n) lens ctx safe
-    (aasms, n'', l'', ep') = genStmt ([], n', l', ep) [s] lens ctx safe
-    aasm = [ACtrl $ Ifz (ALoc (ATemp n)) (show $ l''+2) False,
-            ACtrl $ Goto (show $ l''+1),
-            ACtrl $ Lbl (show $ l''+1)]
-    aasm' = aasme ++ aasm ++ aasms ++
-            [ACtrl $ Goto (show $ l''+2), ACtrl $ Lbl (show $ l''+2)]
-  in genStmt (acc ++ aasm', n'', l''+2, ep') xs lens ctx safe
+  case e of
+    (ExpBinOp op e1 e2 _) | op == Eq || op == Gt || op == Lt || op == Neq
+                            || op == Geq || op == Leq -> let
+      (e1code, n1, l1) = genExp (n+1, l) e1 (ATemp n) lens ctx safe
+      (e2code, n2, l2) = genExp (n1+1, l1) e2 (ATemp n1) lens ctx safe
+      (aasms, n3, l3, ep3) = genStmt ([], n2, l2, ep) [s] lens ctx safe
+      aasm = e1code ++ e2code ++
+             [ACtrl $ Comp (ALoc (ATemp n)) (ALoc (ATemp n1)) op (show $ l3+1)] ++
+             aasms ++ [ACtrl $ Lbl (show $ l3+1)]
+      in genStmt (acc ++ aasm, n3, l3+1, ep3) xs lens ctx safe
+    _ -> let
+      (aasme, n', l') = genExp (n + 1, l) e (ATemp n) lens ctx safe
+      (aasms, n'', l'', ep') = genStmt ([], n', l', ep) [s] lens ctx safe
+      aasm = [ACtrl $ Ifz (ALoc (ATemp n)) (show $ l''+2) False,
+              ACtrl $ Goto (show $ l''+1),
+              ACtrl $ Lbl (show $ l''+1)]
+      aasm' = aasme ++ aasm ++ aasms ++
+              [ACtrl $ Goto (show $ l''+2), ACtrl $ Lbl (show $ l''+2)]
+      in genStmt (acc ++ aasm', n'', l''+2, ep') xs lens ctx safe
 genStmt (acc, n, l, ep) ((Ctrl (If e s1 (Just s2) _) _) : xs) lens ctx safe =
   case e of
    (TrueT _) -> genStmt (acc, n, l, ep) (s1 : xs) lens ctx safe
    (FalseT _) -> genStmt (acc, n, l, ep) (s2 : xs) lens ctx safe
+   (ExpBinOp op e1 e2 _) | op == Eq || op == Gt || op == Lt || op == Neq
+                           || op == Geq || op == Leq -> let
+     (e1code, n1, l1) = genExp (n+1, l) e1 (ATemp n) lens ctx safe
+     (e2code, n2, l2) = genExp (n1+1, l1) e2 (ATemp n1) lens ctx safe
+     (aasms1, n3, l3, ep3) = genStmt ([], n2, l2, ep) [s1] lens ctx safe
+     (aasms2, n4, l4, ep4) = genStmt ([], n3, l3, ep3) [s2] lens ctx safe
+     aasm = [ACtrl $ Comp (ALoc (ATemp n)) (ALoc (ATemp n1)) op (show $ l4+2),
+             ACtrl $ Goto (show $ l4+1),
+             ACtrl $ Lbl (show $ l4+1)]
+     aasm' = e1code ++ e2code ++ aasm ++ aasms1 ++
+             [ACtrl $ Goto (show $ l4+3), ACtrl $ Lbl (show $ l4+2)] ++ aasms2 ++
+             [ACtrl $ Goto (show $ l4+3), ACtrl $ Lbl (show $ l4+3)]
+     in genStmt (acc ++ aasm', n4, l4+3, ep4) xs lens ctx safe
    _ -> let
      (aasme, n1, l1) = genExp (n+1, l) e (ATemp n) lens ctx safe
      (aasms1, n2, l2, ep2) = genStmt ([], n1, l1, ep) [s1] lens ctx safe
@@ -481,6 +504,18 @@ genStmt (acc, n, l, ep) ((Ctrl (If e s1 (Just s2) _) _) : xs) lens ctx safe =
 genStmt (acc, n, l, ep) ((Ctrl (While e s _) _) : xs) lens ctx safe =
   case e of
     (FalseT _) -> genStmt (acc, n, l, ep) xs lens ctx safe
+    (ExpBinOp op e1 e2 _) | op == Eq || op == Gt || op == Lt || op == Neq
+                            || op == Geq || op == Leq -> let
+      (e1code, n1, l1) = genExp (n+1, l) e1 (ATemp n) lens ctx safe
+      (e2code, n2, l2) = genExp (n1+1, l1) e2 (ATemp n1) lens ctx safe
+      (aasms, n3, l3, ep1) = genStmt ([], n2, l2, ep) [s] lens ctx safe
+      aasm = [ACtrl $ Goto (show $ l3+1), ACtrl $ Lbl (show $ l3+1)] ++
+             e1code ++ e2code ++
+             [ACtrl $ Comp (ALoc (ATemp n)) (ALoc (ATemp n1)) op (show $ l3+2)] ++
+             [ACtrl $ Goto (show $ l3+3), ACtrl $ Lbl (show $ l3+3)] ++
+             aasms ++
+             [ACtrl $ Goto (show $ l3+1), ACtrl $ Lbl (show $ l3+2)]
+      in genStmt (acc ++ aasm, n3, l3+3, ep1) xs lens ctx safe
     _ ->
       let
         (aasme, n1, l1) = genExp (n+1, l) e (ATemp n) lens ctx safe
@@ -500,18 +535,31 @@ genStmt (acc, n, l, ep) ((Ctrl (For ms1 e ms2 s3 p) _) : xs) lens (ctx, smap) sa
         (Decl t s _ _) -> (genStmt ([], n, l, ep) [Simp s1 p] lens (ctx, smap) safe,
                            (Map.insert s t ctx))
         _ -> (genStmt ([], n, l, ep) [Simp s1 p] lens (ctx, smap) safe, ctx)
-    (aasme, n2, l2) = genExp (n1+1, l1) e (ATemp n1) lens (ctx', smap) safe
-    (step, n3, l3, ep2) = case ms2 of
-      Nothing -> ([], n2, l2, ep1)
-      (Just s2) -> genStmt ([], n2, l2, ep1) [Simp s2 p] lens (ctx', smap) safe
-    (body, n4, l4, ep3) = genStmt ([], n3, l3, ep2) [s3] lens (ctx', smap) safe
-    aasm = init ++ [ACtrl $ Goto (show $ l4+1), ACtrl $ Lbl (show $ l4+1)] ++ aasme ++
-           [ACtrl $ Ifz (ALoc (ATemp n1)) (show $ l4+3) False,
-            ACtrl $ Goto (show $ l4+2),
-            ACtrl $ Lbl (show $ l4+2)] ++ body ++ step ++
-           [ACtrl $ Goto (show $ l4+1),
-            ACtrl $ Lbl (show $ l4+3)]
-  in genStmt (acc ++ aasm, n4, l4+3, ep3) xs lens (ctx', smap) safe
+    (step, n2, l2, ep2) = case ms2 of
+      Nothing -> ([], n1, l1, ep1)
+      (Just s2) -> genStmt ([], n1, l1, ep1) [Simp s2 p] lens (ctx', smap) safe
+    (body, n3, l3, ep3) = genStmt ([], n2, l2, ep2) [s3] lens (ctx', smap) safe
+    in case e of
+      (ExpBinOp op e1 e2 _) | op == Eq || op == Gt || op == Lt || op == Neq
+                              || op == Geq || op == Leq -> let
+        (e1code, n4, l4) = genExp (n3+1, l3) e1 (ATemp n3) lens (ctx', smap) safe
+        (e2code, n5, l5) = genExp (n4+1, l4) e2 (ATemp n4) lens (ctx', smap) safe
+        aasm = init ++ [ACtrl $ Goto (show $ l5+1), ACtrl $ Lbl (show $ l5+1)] ++
+               e1code ++ e2code ++
+               [ACtrl $ Comp (ALoc (ATemp n3)) (ALoc (ATemp n4)) op (show $ l5+2),
+                ACtrl $ Goto (show $ l5+3), ACtrl $ Lbl (show $ l5+3)] ++
+               body ++ step ++
+               [ACtrl $ Goto (show $ l5+1), ACtrl $ Lbl (show $ l5+2)]
+        in genStmt (acc ++ aasm, n5, l5+3, ep3) xs lens (ctx', smap) safe
+      _ -> let
+        (aasme, n4, l4) = genExp (n3+1, l3) e (ATemp n3) lens (ctx', smap) safe
+        aasm = init ++ [ACtrl $ Goto (show $ l4+1), ACtrl $ Lbl (show $ l4+1)] ++ aasme ++
+               [ACtrl $ Ifz (ALoc (ATemp n1)) (show $ l4+3) False,
+                ACtrl $ Goto (show $ l4+2),
+                ACtrl $ Lbl (show $ l4+2)] ++ body ++ step ++
+               [ACtrl $ Goto (show $ l4+1),
+                ACtrl $ Lbl (show $ l4+3)]
+        in genStmt (acc ++ aasm, n4, l4+3, ep3) xs lens (ctx', smap) safe
 genStmt acc ((Ctrl (Assert e _) p) : xs) lens ctx safe = let
   s = Ctrl (If (ExpUnOp LNot e p) (Simp (Expr (App "_c0_abort" [] p) p) p) Nothing p) p
   in genStmt acc (s : xs) lens ctx safe
@@ -856,6 +904,9 @@ translate regMap _ (AAsm {aAssign = [dest], aOp = Add, aArgs = [src1, src2]}) =
        [Movl s dest',
         Addl s2 dest']
      (Stk _, _) ->
+       if s2 == dest' then
+         [Movl s (Reg R15D),
+          Addl (Reg R15D) s2] else
        case dest' of
          (Reg _) ->
            [Movl s dest',
@@ -1093,6 +1144,65 @@ translate regMap _ (ACtrl (Ifz v l True)) =
                  Je l]
      (Val i) -> [Movl v' (Reg R15), Testq (Reg R15) (Reg R15), Je l]
      _ -> [Testl v' v', Je l]
+translate regMap _ (ACtrl (Comp v1' v2' op l)) | op == Eq || op == Neq =
+  let
+    v1 = regFind regMap v1'
+    v2 = regFind regMap v2'
+    jump = case op of
+      Eq -> Jne
+      Neq -> Je
+  in case (v1, v2) of
+    (Val _, Val _) ->
+      [Movl v1 (Reg R15D),
+       Cmpl v2 (Reg R15D),
+       jump l]
+    (_, Val _) ->
+      [Movl v2 (Reg R15D),
+       Cmpl (Reg R15D) v1,
+       jump l]
+    (Val _, _) ->
+      [Movl v1 (Reg R15D),
+       Cmpl (Reg R15D) v2,
+       jump l]
+    (Stk _, Stk _) ->
+      [Movl v1 (Reg R15D),
+       Cmpl v2 (Reg R15D),
+       jump l]
+    _ ->
+      [Cmpl v1 v2,
+       jump l]
+translate regMap _ (ACtrl (Comp v1' v2' op l)) =
+  let
+    v1 = regFind regMap v1'
+    v2 = regFind regMap v2'
+    jump = case op of
+      Lt -> Jge
+      Gt -> Jle
+      Leq -> Jg
+      Geq -> Jl
+    jump' = case op of
+      Lt -> Jl
+      Gt -> Jg
+      Leq -> Jle
+      Geq -> Jge
+  in case (v1, v2) of
+    (Val _, Val _) ->
+      [Movl v1 (Reg R15D),
+       Cmpl v2 (Reg R15D),
+       jump l]
+    (_, Val _) ->
+      [Cmpl v2 v1,
+       jump l]
+    (Val _, _) ->
+      [Cmpl v1 v2,
+       jump' l]
+    (Stk _, Stk _) ->
+      [Movl v1 (Reg R15D),
+       Cmpl v2 (Reg R15D),
+       jump l]
+    _ ->
+      [Cmpl v2 v1,
+       jump l]
 translate regMap _ (AAsm {aAssign = [dest], aOp = o, aArgs = [src1, src2]})
   | o == SShl || o == SShr =
   let
@@ -1109,10 +1219,14 @@ translate regMap _ (AAsm {aAssign = [dest], aOp = o, aArgs = [src1, src2]})
         Movl s1 (Reg R15D),
         Movl (Reg R15D) dest',
         asm (Reg CL) dest']
-     _ ->
-       [Movl s2 (Reg ECX),
-        Movl s1 dest',
-        asm (Reg CL) dest']
+     _ -> case s2 of
+       Val _ ->
+         [Movl s1 dest',
+          asm (Val 1) dest']
+       _ ->
+         [Movl s2 (Reg ECX),
+          Movl s1 dest',
+          asm (Reg CL) dest']
 translate _ _ x = trace (show x) []
 
                 

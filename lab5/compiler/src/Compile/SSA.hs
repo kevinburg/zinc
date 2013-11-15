@@ -66,6 +66,9 @@ optimize p m =
                 (ACtrl (IfzP v lbl b l)) -> let
                   l' = map (\(var, _) -> (var, Just $ copy m (ALoc var))) l
                   in (aasm ++ [ACtrl $ IfzP (copy m v) lbl b l'], m)
+                (ACtrl (CompP v1 v2 op lbl l)) -> let
+                  l' = map (\(var, _) -> (var, Just $ copy m (ALoc var))) l
+                  in (aasm ++ [ACtrl $ CompP (copy m v1) (copy m v2) op lbl l'], m)
                 x -> (aasm ++ [x], m)
             ) ([], m) p
     (copyProp, m2) = constProp `seq`
@@ -125,6 +128,9 @@ optimize p m =
                 (ACtrl (IfzP v lbl b l)) -> let
                   l' = map (\(var, _) -> (var, Just $ copyPt m (ALoc var))) l
                   in (aasm ++ [ACtrl $ IfzP (copy m v) lbl b l'], m)
+                (ACtrl (CompP v1 v2 op lbl l)) -> let
+                  l' = map (\(var, _) -> (var, Just $ copyPt m (ALoc var))) l
+                  in (aasm ++ [ACtrl $ CompP (copy m v1) (copy m v2) op lbl l'], m)
                 x -> (aasm ++ [x], m)
             ) ([], m1) constProp
     string = copyProp `seq` ((show constProp) ++ "\n" ++ (show copyProp) ++ "\n\n")
@@ -214,6 +220,12 @@ paramGoto blocks = List.map (\(l,(live, aasm)) -> (l,(live, map f aasm))) blocks
               Just (vs, _) -> vs
               Nothing -> Set.empty
           in ACtrl $ IfzP v l b $ map (\x -> (x, Nothing)) (Set.toList vs)
+        f (ACtrl (Comp v1 v2 op l)) = 
+          let
+            vs = case List.lookup l blocks of
+              Just (vs, _) -> vs
+              Nothing -> Set.empty
+          in ACtrl $ CompP v1 v2 op l $ map (\x -> (x, Nothing)) (Set.toList vs)
         f s = s
 
 varGeneration blocks = let
@@ -262,6 +274,11 @@ gen2 (ACtrl (IfzP (ALoc v) l b s)) m = let
   [v'] = map (updateGen m) [v]
   s' = map (\(x,y) -> (updateGen m x, y)) s
   res = ACtrl (IfzP (ALoc v') l b s')
+  in (res, m)
+gen2 (ACtrl (CompP (ALoc v1) (ALoc v2) op l s)) m = let
+  [v1', v2'] = map (updateGen m) [v1, v2]
+  s' = map (\(x,y) -> (updateGen m x, y)) s
+  res = ACtrl (CompP (ALoc v1') (ALoc v2') op l s')
   in (res, m)
 gen2 x m = (x,m)
 
@@ -328,6 +345,13 @@ gotosMap' aasm l m =
                           Nothing -> Just [(Set.fromList $ map fst set,l)]) s m
       in
        gotosMap' (tail aasm) l m'
+    (ACtrl(CompP _ _ _ s set)) ->
+      let
+        m' = Map.alter(\x -> case x of
+                          Just x' -> Just ((Set.fromList $ map fst set,l) : x')
+                          Nothing -> Just [(Set.fromList $ map fst set,l)]) s m
+      in
+       gotosMap' (tail aasm) l m'
     _ -> gotosMap' (tail aasm) l m
 
 labelsMap :: Blocks -> LMap
@@ -371,7 +395,7 @@ cmpLbls lbls g l b vm =
     in
      if bool
      then let
-       Just(_,aasm) = List.lookup lbl b'
+       Just (_,aasm) = List.lookup lbl b'
        varmap = createVarMap lvars g'
        (aasm',lbls') = --trace ((show lbl)++"\n"++(show vm)++"\n--------\n") $
          updateVars aasm vm lbls 
@@ -443,7 +467,7 @@ updateVars'(ACtrl(Ret(ALoc v))) vm l = --trace ("\tRet:"++(show vm)) $
   case Map.lookup v vm of
     Just v' -> (ACtrl(Ret(ALoc v')),l)
     Nothing -> (ACtrl(Ret(ALoc v)),l)
-updateVars'(ACtrl(IfzP(ALoc v) s b set)) vm l = --trace ("\tIfzP:"++(show vm)) $
+updateVars'(ACtrl(IfzP(ALoc v) s b set)) vm l =
   let
     set' = map (\(a,av) -> case Map.lookup a vm of
                    Just a' -> (a', Just (ALoc a'))
@@ -451,7 +475,18 @@ updateVars'(ACtrl(IfzP(ALoc v) s b set)) vm l = --trace ("\tIfzP:"++(show vm)) $
   in
    case Map.lookup v vm of
      Just v' -> (ACtrl (IfzP(ALoc v') s b set'),l++[s])
-     Nothing -> (ACtrl(IfzP(ALoc v) s b set'),l++[s])
+     Nothing -> (ACtrl (IfzP(ALoc v) s b set'),l++[s])
+updateVars'(ACtrl(CompP (ALoc v1) (ALoc v2) op s set)) vm l =
+  let
+    set' = map (\(a,av) -> case Map.lookup a vm of
+                   Just a' -> (a', Just (ALoc a'))
+                   Nothing -> (a,av)) set
+  in
+   case (Map.lookup v1 vm, Map.lookup v2 vm) of
+     (Just v1', Just v2') -> (ACtrl (CompP (ALoc v1') (ALoc v2') op s set'),l++[s])
+     (Just v1', Nothing) -> (ACtrl (CompP (ALoc v1') (ALoc v2) op s set'),l++[s])
+     (Nothing, Just v2') -> (ACtrl (CompP (ALoc v1) (ALoc v2') op s set'),l++[s])
+     (Nothing, Nothing) -> (ACtrl (CompP (ALoc v1) (ALoc v2) op s set'),l++[s])
 updateVars'(APush v) vm l = --trace "APush" $
   case Map.lookup v vm of
     Just v' -> (APush v',l)
@@ -586,6 +621,30 @@ deSSA blocks = let bmap = Map.fromList blocks
           stmt = case val of
             ALoc(AVarG s i) -> ACtrl(Ifz(ALoc(AVar (s ++ (show i)))) goto b)
             t -> ACtrl(Ifz t goto b)
+          in assigns ++ [stmt]
+        f bmap (ACtrl(CompP val1 val2 op goto valList)) = let
+          (gvals, _) = if goto == "mem" then (Set.empty,[]) else bmap Map.! goto
+          assigns = concat $ Set.toList $ Set.map
+                    (\x -> let
+                        var = case x of
+                          (AVarG s _) -> s
+                        in case List.find (\(key, _) -> case key of
+                                              (AVarG s' _) -> var == s'
+                                              _ -> False) valList of
+                             (Just (y, p)) -> case p of
+                               Just (ALoc v) -> [AAsm [unGen x] Nop [ALoc $ unGen v]]
+                               Just const -> [AAsm [unGen x] Nop [const]]
+                               Nothing -> [AAsm [unGen x] Nop [ALoc $ unGen y]]
+                             Nothing -> []) gvals
+          stmt = case (val1, val2) of
+            (ALoc(AVarG s1 i1), ALoc (AVarG s2 i2)) ->
+              ACtrl $ Comp (ALoc (AVar (s1 ++ (show i1)))) (ALoc (AVar (s2 ++ (show i2)))) op goto
+            (ALoc(AVarG s1 i1), _) ->
+              ACtrl $ Comp (ALoc (AVar (s1 ++ (show i1)))) val2 op goto
+            (_, ALoc (AVarG s2 i2)) ->
+              ACtrl $ Comp  val1 (ALoc (AVar (s2 ++ (show i2)))) op goto
+            _ ->
+              ACtrl $ Comp val1 val2 op goto
           in assigns ++ [stmt]
         f bmap (ACtrl(Ret(ALoc(AVarG s i)))) = [ACtrl(Ret(ALoc(AVar (s ++ (show i)))))]
         f bmap AAsm{aAssign=locs, aOp = o, aArgs = vals} =

@@ -31,6 +31,11 @@ data Asm = AsmRet
          | Testq Arg Arg
          | Cmpl Arg Arg
          | Je String
+         | Jne String
+         | Jl String
+         | Jle String
+         | Jg String
+         | Jge String
          | AsmLbl String
          | Movzbl Arg Arg
          | Setl Arg
@@ -88,6 +93,11 @@ instance Show Asm where
   show (Testl e1 e2) = "\ttest " ++ show e1 ++ ", " ++ show e2
   show (Testq e1 e2) = "\ttestq " ++ show e1 ++ ", " ++ show e2
   show (Je s) = "\tje ." ++ s
+  show (Jne s) = "\tjne ." ++ s
+  show (Jl s) = "\tjl ." ++ s
+  show (Jle s) = "\tjle ." ++ s
+  show (Jg s) = "\tjg ." ++ s
+  show (Jge s) = "\tjge ." ++ s
   show (Cmpl e1 e2) = "\tcmpl " ++ show e1 ++ ", " ++ show e2
   show (AsmLbl s) = "." ++ s ++ ":"
   show (AsmCall s) = "\txorb %al, %al\n" ++ if s == "_c0_abort" then

@@ -100,6 +100,18 @@ liveVars' (stmt : aasm) i labels live m saturate =
           Just s -> Set.union s live
         (m', changed) = update m i live'
       in liveVars' aasm (i+1) labels live' m' (saturate && not(changed))
+    ACtrl (Comp v1 v2 _ l) ->
+      let
+        locs = Set.map (\(ALoc v) -> v) $
+               Set.filter (\x -> case x of
+                              ALoc _ -> True
+                              _ -> False) (Set.fromList [v1,v2])
+        line = labels Map.! l
+        live' = case Map.lookup line m of
+          Nothing -> Set.union locs live
+          Just s -> Set.unions [locs, s, live]
+        (m', changed) = update m i live'
+      in liveVars' aasm (i+1) labels live' m' (saturate && not(changed))
     AAsm {aAssign = [dest], aOp = _, aArgs = srcs} ->
       let
         srcs' = isTemp srcs
@@ -167,6 +179,20 @@ genInter' (stmt : aasm) i live inter vars =
         Nothing -> Set.empty
         Just s -> s
       newInter = Set.map (\x -> (v, x)) vs
+      inter' = Set.union inter newInter
+      in genInter' aasm (i+1) live inter' vars'
+    ACtrl (Comp v1 v2 _ _) -> let
+      locs = Set.map (\(ALoc v) -> v) $
+             Set.filter (\x -> case x of
+                            ALoc _ -> True
+                            _ -> False) (Set.fromList [v1,v2])
+      vars' = Set.union locs vars
+      vs = case Map.lookup (i-1) live of
+        Nothing -> Set.empty
+        Just s -> s
+      locs' = Set.toList locs
+      vs' = Set.toList vs
+      newInter = Set.fromList [(a,b) | a <- locs', b <- vs']
       inter' = Set.union inter newInter
       in genInter' aasm (i+1) live inter' vars'
     ACtrl _ -> genInter' aasm (i+1) live inter vars

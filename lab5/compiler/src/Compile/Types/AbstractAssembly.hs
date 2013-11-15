@@ -24,10 +24,12 @@ data AAsm = AAsm {aAssign :: [ALoc]
 
 data COp = Ret AVal
          | Ifz AVal String Bool
+         | Comp AVal AVal Op String
          | Goto String
          | Lbl String
          | GotoP String [(ALoc, Maybe AVal)]
          | IfzP AVal String Bool [(ALoc, Maybe AVal)]
+         | CompP AVal AVal Op String [(ALoc, Maybe AVal)]
          | Call String [Int]
          deriving (Show, Ord, Eq)
 
