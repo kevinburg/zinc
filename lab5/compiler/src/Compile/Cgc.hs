@@ -80,7 +80,7 @@ coloring g = let size = Map.size g
                             case v < 0 of
                               True -> Reg (SpillArg (-v))
                               False ->
-                                case (v < (length(order)-1)) of
+                                case (v < (length(order))) of
                                   True ->
                                     let Just reg = lookup v order
                                     in Reg reg

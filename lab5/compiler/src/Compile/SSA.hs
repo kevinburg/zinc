@@ -147,6 +147,7 @@ optimize p m =
            constantFold Nop [AImm i] = Just (AImm i, Nop)
            constantFold Add [AImm i, AImm j] = Just (AImm (mod (i+j) $ 2^32), Nop)
            constantFold Add [s, AImm 0] = Just (s, Nop)
+           constantFold Add [AImm 0, s] = Just (s, Nop)
            constantFold Mul [AImm i, AImm j] = Just (AImm (mod (i*j) $ 2^32), Nop)
            constantFold Mul [s, AImm 0] = Just (AImm 0, Nop)
            constantFold Mul [s, AImm 1] = Just (s, Nop)
