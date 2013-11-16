@@ -647,22 +647,34 @@ genExp (n, l) (ExpTernOp e1 e2 e3 _) loc lens ctx safe =
   case e1 of
     (TrueT _) -> genExp (n, l) e2 loc lens ctx safe
     (FalseT _) -> genExp (n, l) e3 loc lens ctx safe
-    _ ->
-      let
-        (i1, n1, l1) = genExp (n+1, l) e1 (ATemp n) lens ctx safe
-        (i2, n2, l2) = genExp (n1+1, l1) e2 (ATemp n1) lens ctx safe
-        (i3, n3, l3) = genExp (n2+1, l2) e3 (ATemp n2) lens ctx safe
-        aasm = i1 ++ [ACtrl $ Ifz (ALoc (ATemp n)) (show $ l3+2) False,
-                      ACtrl $ Goto (show $ l3+1),
-                      ACtrl $ Lbl (show $ l3+1)] ++
-               i2 ++ [AAsm [loc] NoTouch [ALoc $ ATemp n1],
-                      -- No touching!
-                      ACtrl $ Goto (show $ l3+3),
-                      ACtrl $ Lbl (show $ l3+2)] ++
-               i3 ++ [AAsm [loc] NoTouch [ALoc $ ATemp n2],
-                      ACtrl $ Goto (show $ l3+3),
-                      ACtrl $ Lbl (show $ l3+3)]
-      in (aasm, n3, l3+3)
+    _ -> let
+      (i2, n1, l1) = genExp (n+1, l) e2 (ATemp n) lens ctx safe
+      (i3, n2, l2) = genExp (n1+1, l1) e3 (ATemp n1) lens ctx safe
+      in case e1 of
+        (ExpBinOp op e1' e2' _) | op == Eq || op == Gt || op == Lt || op == Neq
+                                  || op == Geq || op == Leq -> let
+          (e1code, n3, l3) = genExp (n2+1,l2) e1' (ATemp n2) lens ctx safe
+          (e2code, n4, l4) = genExp (n3+1,l3) e2' (ATemp n3) lens ctx safe
+          aasm = e1code ++ e2code ++
+                 [ACtrl $ Comp (ALoc (ATemp n2)) (ALoc (ATemp n3)) op (show $ l4+1),
+                  ACtrl $ Goto (show $ l4+2), ACtrl $ Lbl (show $ l4+2)] ++
+                 i2 ++ [AAsm [loc] NoTouch [ALoc $ ATemp n],
+                        ACtrl $ Goto (show $ l4+3), ACtrl $ Lbl (show $ l4+1)] ++
+                 i3 ++ [AAsm [loc] NoTouch [ALoc $ ATemp n1],
+                        ACtrl $ Goto (show $ l4+3), ACtrl $ Lbl (show $ l4+3)]
+          in (aasm, n4, l4+3)
+        _ -> let
+          (i1, n3, l3) = genExp (n2+1, l2) e1 (ATemp n2) lens ctx safe
+          aasm = i1 ++ [ACtrl $ Ifz (ALoc (ATemp n2)) (show $ l3+2) False,
+                        ACtrl $ Goto (show $ l3+1),
+                        ACtrl $ Lbl (show $ l3+1)] ++
+                 i2 ++ [AAsm [loc] NoTouch [ALoc $ ATemp n],
+                        ACtrl $ Goto (show $ l3+3),
+                        ACtrl $ Lbl (show $ l3+2)] ++
+                 i3 ++ [AAsm [loc] NoTouch [ALoc $ ATemp n1],
+                        ACtrl $ Goto (show $ l3+3),
+                        ACtrl $ Lbl (show $ l3+3)]
+          in (aasm, n3, l3+3)
 genExp (n, l) (App f es _) loc lens ctx safe =
   case lookup f lens of
     Just 0 -> ([], n, l)
@@ -863,7 +875,7 @@ translate regMap _ (AAsm {aAssign = [dest], aOp = AddrAdd, aArgs = [src1, src2]}
                       else if s2 == d then [Movq s1 (Reg R15), Addq (Reg R15) s2]
                            else [Movq s1 (Reg R15), Addq s2 (Reg R15), Movq (Reg R15) d]
     _ ->
-      [Movq s1 (Reg R15),
+     [Movq s1 (Reg R15),
       Movq s2 (Reg R14),
       Addq (Reg R14) (Reg R15),
       Movq (Reg R15) d]
