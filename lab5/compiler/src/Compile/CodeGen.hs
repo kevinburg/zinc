@@ -100,13 +100,13 @@ parVar f (Param t s) = Param t (f++"_"++s)
 
 numStmts l = sum $ map (\x -> case x of
                            Simp _ _ -> 1
-                           Ctrl (If _ _ _ _) _ -> 1
-                           Ctrl (For _ _ _ (BlockStmt(Block b _) _) _) _ -> length(b)
-                           Ctrl (For _ _ _ _ _) _ -> 2
-                           Ctrl (While _ _ _) _ -> 2
+                           Ctrl (If _ s1 Nothing _) _ -> 1 + (numStmts [s1])
+                           Ctrl (If _ s1 (Just s2) _) _ -> 1 + (max (numStmts [s1]) (numStmts [s2]))
+                           Ctrl (For _ _ _ s _) _ -> 1 + (numStmts [s])
+                           Ctrl (While _ s _) _ -> 1 + (numStmts [s])
                            Ctrl (Return _ _) _ -> 1
-                           BlockStmt(Block b _) _ -> length b
-                           _ -> 2
+                           BlockStmt(Block s _) _ -> numStmts s
+                           _ -> 1
                        ) l
 
 replaceRets lv (Ctrl(Return(Just x) p1) p0) =
@@ -136,7 +136,7 @@ inline' :: String -> Map.Map String ([Expr],[Stmt]) -> [Stmt] -> [Stmt] -> [Stmt
 inline' _ _ nst [] = nst
 inline' func fmap nst (s:st) =
   let
-    maxstmts = 7
+    maxstmts = 3
     s2 = case s of
       Simp s' p0 -> case s' of
         Decl t id (Just e) p1 -> case e of
@@ -160,7 +160,7 @@ inline' func fmap nst (s:st) =
                 setprms = map (\(x,y) -> Simp (Asgn (roll x) Nothing y p2) p1) $ zip prms exprs
               in
                if numStmts(sts) <= maxstmts
-               then
+               then 
                  setprms ++ (map (replaceRets lv) sts)
                else  [Simp (Asgn lv op e p1) p0]
             Nothing -> [Simp (Asgn lv op e p1) p0]
