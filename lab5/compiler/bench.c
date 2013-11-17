@@ -19,11 +19,11 @@
 #define KBEST 12
 #define EPSILON 0.01		/* KBEST samples should be within EPSILON */
 
-/* extern int c0_main(); */    /* unused here */
+/* extern int _c0_main(); */    /* unused here */
 extern void* c0_init(int param);
 extern void c0_prepare(void* data, int param);
 extern void c0_run(void* data, int param);
-extern void c0_checksum(void* data, int param);
+extern int c0_checksum(void* data, int param);
 
 /* Other globals */
 static int debug_level = 0;
@@ -75,12 +75,19 @@ int main(int argc, char *argv[]) {
   
   debug_level = 0;
   param = 1000;
+  int checksums = 0;            /* do not write checksums by default */
+  int verify = 0;               /* do not verify, by default */
+  int checksum = 0;
 
   /* parse command line args */
-  while ((c = getopt(argc, argv, "hd:n:")) != -1) {
+  while ((c = getopt(argc, argv, "hkd:n:x:")) != -1) {
     switch (c) {
     case 'd': /* debug level */
       debug_level = atoi(optarg);
+      break;
+
+    case 'k': /* checksums */
+      checksums = 1;
       break;
 
     case 'h': /* print help message */
@@ -89,6 +96,11 @@ int main(int argc, char *argv[]) {
 
     case 'n': /* parameter value */
       param = atoi(optarg);
+      break;
+
+    case 'x': /* checksum */
+      verify = 1;
+      checksum = atoi(optarg);
       break;
 
     default: /* unrecognized argument */
@@ -115,6 +127,21 @@ int main(int argc, char *argv[]) {
   c0_prepare(data, param);
   time_run(data, param);
   /* Timing runs */
+
+  if (checksums) {
+    /* compute and print checksum */
+    printf("%d\n", c0_checksum(data, param));
+    exit(0);
+  }
+
+  if (verify != 0) {
+    int chk = c0_checksum(data, param);
+    if (chk != checksum) {
+      fprintf(stderr, "Checksum %d != %d\n", chk, checksum);
+      exit(1);
+    }
+  }
+
   for (i = 0; i < MAXITERS; i++) {
     c0_prepare(data, param);
     cycles = time_run(data, param);
@@ -132,7 +159,7 @@ int main(int argc, char *argv[]) {
   // cycles = values[0];
 
   /* Print best score */
-  if (debug_level >= 1) fprintf(stderr,"Iterations: %d\n", i);
+  if (debug_level >= 1) fprintf(stderr, "Iterations: %d\n", i);
   if (debug_level >= 1) fprintf(stderr, "Best cycles: %lu\n", values[0]);
   if (debug_level >= 1) fprintf(stderr, "%d-Best cycles: %lu\n", KBEST, cycles);
   printf("%lu\n", cycles);
@@ -144,7 +171,6 @@ int main(int argc, char *argv[]) {
  */
 unsigned long time_run(void* data, int param) {
   unsigned long cycles;
-  double secs;
 
   /* Time the function */
   /* no input, so no need to rewind */
@@ -162,6 +188,8 @@ unsigned long time_run(void* data, int param) {
 void usage(char *progname) {
 	fprintf(stderr, "usage: %s [-hg]\n", progname);
 	fprintf(stderr, "  -h        Print this message\n");
+        fprintf(stderr, "  -k        Create checksums files\n");
+        fprintf(stderr, "  -x <N>    Verify checksum = <N>\n");
 	fprintf(stderr, "  -d <D>    Set debug level (default = 0)\n");
         fprintf(stderr, "  -n <N>    Set <N> as benchmark parameter (default = 1000)\n");
 	exit(0);

@@ -41,7 +41,7 @@ my $score0          = 0;    # score for suite 0
 my $num_tried1      = 0;    # number of tests1 tried
 my $num_succeeded1  = 0;    # number of tests1 succeeded
 my $score1          = 0;    # score for suite 1
-my $result          = "";   # result string for Autolab server
+# my $result          = "";   # result string for Autolab server
 
 Getopt::Long::Configure ("bundling");
 my $success = GetOptions (
@@ -212,7 +212,7 @@ sub bench {
     my $file = shift;
     my $sums = shift;
     my $result = shift;
-    my ($directive, $expected, $valid, $error, $asm_file, $result, $line);
+    my ($directive, $expected, $valid, $error, $asm_file, $line);
     my $command;
     my $ret;
     my $timeout;
@@ -271,7 +271,7 @@ sub bench {
 
 			print pack("A15", "$key: ");
 			$sums->{$key} = $sums->{$key} + $cycles;
-                        $result->{$key} = $cycles;
+                        # $result->{$key} = $cycles;
 			if ($first) {
 				$base = $cycles;
 				printf("%15d\n", $cycles);

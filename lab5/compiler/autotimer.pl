@@ -33,14 +33,9 @@ our $Opt_Help           = 0;    # -h, help
 our $Opt_Make           = 1;    # -m, build compiler (on by default)
 our $Opt_Quiet          = 0;    # -q, quiet
 our $Opt_Verbose        = 0;    # -v (stacks)
+our $Opt_Checksum       = 0;    # -k (checksum)
 our @Testfiles;                 # files... (default ../tests0)
 
-# my $num_tried0      = 0;    # number of tests0 tried
-#  my $num_succeeded0  = 0;    # number of tests0 succeeded
-# my $score0          = 0;    # score for suite 0
-# my $num_tried1      = 0;    # number of tests1 tried
-# my $num_succeeded1  = 0;    # number of tests1 succeeded
-# my $score1          = 0;    # score for suite 1
 my $result          = "";   # result string for Autolab server
 
 Getopt::Long::Configure ("bundling");
@@ -51,6 +46,7 @@ my $success = GetOptions (
     'make!'         => \$Opt_Make,
     'q|quiet+'      => \$Opt_Quiet,
     'v|verbose+'    => \$Opt_Verbose,
+    'k|checksum'    => \$Opt_Checksum,
 );
 $success or pod2usage();
 
@@ -195,9 +191,30 @@ sub bench {
                           printf("assembly failure\n");
                         } else {
 
-			$command = "./bench -d 0";
+                        my $checksum_file = suffix($file, "chksum");
+                        if ($Opt_Checksum != 0) {
+                          $command = "./bench -k -d 0";
+                          ($result, $timeout) = system_with_timeout($BENCH_RUN_TIMEOUT, $command, "> $checksum_file", "> /dev/null");
+                          if ($result != 0) {
+                            print("execution failure\n");
+                            print("checksum file not written");
+                          } else {
+                            printq(2, "-- Wrote file $checksum_file --\n");
+                          }
+                        } else {
+
+                          if (-e "$checksum_file") {
+                            my $checksum = read_file("$checksum_file");
+                            chomp $checksum;
+                            $command = "./bench -d 0 -x $checksum";
+                            # printq(3, "-- Consulting checksum in $checksum_file --\n");
+                          } else {
+                            $command = "./bench -d 0";
+                            printq(2, "-- No checksum file $checksum_file found --\n");
+                          }
+
 			($result, $timeout) = system_with_timeout($BENCH_RUN_TIMEOUT, $command,
-                                                                  "> a.result", "> /dev/null"); # ,$in_file
+                                                                  "> a.result"); # , "> /dev/null", $in_file
                         if ($result != 0) {
                           print("execution failure\n");
                         } else {
@@ -209,7 +226,7 @@ sub bench {
                         printf("%15d\n", $cycles);
                         # take the last result always, for now
                         $results->{$file} = $cycles;
-                      }}}}
+                      }}}}}
               }
     print "\n";
 }

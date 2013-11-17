@@ -27,17 +27,22 @@ codeGen (Program gdecls, sdefn, safe, opt) =
                            _ -> []) gdecls
     lengths = map (\(s,_,b) -> (s, length b)) fdefns
     inl = if opt >= 2 then inline fdefns else fdefns
-    gdecls' = map (\x -> case x of
-                      FDefn t s p b p0 -> FDefn t s (map (parVar s) p) b p0
-                      _ -> x) gdecls 
+    gdecls' = if opt >= 2
+              then map (\x -> case x of
+                           FDefn t s p b p0 -> FDefn t s (map (parVar s) p) b p0
+                           _ -> x) gdecls
+              else gdecls
     ctx = foldr (\x -> \acc -> case x of
-                    (FDefn t s p _ _) -> foldr (\(Param ty st)-> \a-> Map.insert st ty a) (Map.insert s t acc) p
+                    (FDefn t s p _ _) -> --foldr (\(Param ty st)-> \a-> Map.insert st ty a)
+                                         (Map.insert s t acc)
+                                         --p
                     _ -> acc) Map.empty gdecls'
     sinl=foldr(\(x,y,z)-> \acc->(show x)++(show y)++"\n"++(foldr(\a -> \b->(show a)++"\n"++b) "" z)++"\n"++acc) "" inl
     (res, _) = foldr (\f -> \(m, l) -> let
                     (s, aasm, l') = genFunction f l lengths (ctx, smap) safe opt
                     in (Map.insert s aasm m, l')) (Map.empty,0) inl
-  in trace sinl $ res
+  in {-trace sinl $-} res
+
 
 ptoe [] = []
 ptoe ((Param t s):xs) = (Ident s $ newPos "" 0 0) : ptoe xs
@@ -93,6 +98,17 @@ funcVar f ((BlockStmt(Block s p1) p0):xs) = (BlockStmt (Block (funcVar f s) p1) 
 
 parVar f (Param t s) = Param t (f++"_"++s)
 
+numStmts l = sum $ map (\x -> case x of
+                           Simp _ _ -> 1
+                           Ctrl (If _ _ _ _) _ -> 1
+                           Ctrl (For _ _ _ (BlockStmt(Block b _) _) _) _ -> length(b)
+                           Ctrl (For _ _ _ _ _) _ -> 1
+                           Ctrl (While _ _ _) _ -> 4
+                           Ctrl (Return _ _) _ -> 1
+                           BlockStmt _ _ -> 4
+                           _ -> 4
+                       ) l
+
 inline fdefns =
   let
     fdefns' = map(\(x,y,z) -> (x, map (parVar x) y, funcVar x z)) fdefns
@@ -106,7 +122,7 @@ inline' :: String -> Map.Map String ([Expr],[Stmt]) -> [Stmt] -> [Stmt] -> [Stmt
 inline' _ _ nst [] = nst
 inline' func fmap nst (s:st) =
   let
-    maxstmts = 4
+    maxstmts = 0
     s2 = case s of
       Simp s' p0 -> case s' of
         Decl t id (Just e) p1 -> case e of
@@ -118,7 +134,7 @@ inline' func fmap nst (s:st) =
                   (Ctrl(Return x _) _) -> x
                   _ -> trace "hmm... why?" $ Nothing 
               in
-               if length(sts) <= maxstmts
+               if numStmts(sts) <= maxstmts
                then setprms ++ (init sts) ++ [Simp (Decl t id ret p1) p1]
                else [Simp (Decl t id (Just (App s exprs p2)) p1) p0]
             Nothing -> [Simp (Decl t id (Just (App s exprs p2)) p1) p0]
@@ -132,7 +148,7 @@ inline' func fmap nst (s:st) =
                   (Ctrl(Return (Just x) _) _) -> x
                   _ -> trace "hmm... why?" $ unroll lv p1
               in
-               if length(sts) <= maxstmts
+               if numStmts(sts) <= maxstmts
                then
                  setprms ++ (init sts) ++ [Simp (Asgn lv op ret p1) p0]
                else  [Simp (Asgn lv op e p1) p0]
@@ -147,7 +163,7 @@ inline' func fmap nst (s:st) =
                   (Ctrl(Return _ _) _) -> init sts
                   _ -> sts
               in
-               if length(sts) <= maxstmts
+               if numStmts(sts) <= maxstmts
                then
                  setprms ++ sts'
                else [Simp (Expr e p1) p0]
@@ -169,7 +185,7 @@ inline' func fmap nst (s:st) =
                   Just s -> Just $ head (inline' func fmap [] [s])
                   Nothing -> Nothing
               in
-               if length(sts) <= maxstmts then
+               if numStmts(sts) <= maxstmts then
                  setprms ++ (init sts) ++ [Simp (Decl Bool (func++"_inline_if") ret p1) p0]  ++
                  [Ctrl (If (Ident (func++"_inline_if") p1) stif'' stel' p1) p0]
                else [Ctrl (If e stif stel p1) p0]
@@ -181,7 +197,7 @@ inline' func fmap nst (s:st) =
               let
                 setprms = map (\(x,y) -> Simp (Asgn (roll x) Nothing y p2) p1) $ zip prms exprs 
               in
-               if length(sts) <= maxstmts
+               if numStmts(sts) <= maxstmts
                then
                  setprms ++ sts -- includes final return otherwise wouldn't have typchecked
                else [Ctrl (Return me p1) p0]
