@@ -33,9 +33,9 @@ codeGen (Program gdecls, sdefn, safe, opt) =
                            _ -> x) gdecls
               else gdecls
     ctx = foldr (\x -> \acc -> case x of
-                    (FDefn t s p _ _) -> --foldr (\(Param ty st)-> \a-> Map.insert st ty a)
+                    (FDefn t s p _ _) -> foldr (\(Param ty st)-> \a-> Map.insert st ty a)
                                          (Map.insert s t acc)
-                                         --p
+                                         p
                     _ -> acc) Map.empty gdecls'
     sinl=foldr(\(x,y,z)-> \acc->(show x)++(show y)++"\n"++(foldr(\a -> \b->(show a)++"\n"++b) "" z)++"\n"++acc) "" inl
     (res, _) = foldr (\f -> \(m, l) -> let
@@ -102,12 +102,26 @@ numStmts l = sum $ map (\x -> case x of
                            Simp _ _ -> 1
                            Ctrl (If _ _ _ _) _ -> 1
                            Ctrl (For _ _ _ (BlockStmt(Block b _) _) _) _ -> length(b)
-                           Ctrl (For _ _ _ _ _) _ -> 1
-                           Ctrl (While _ _ _) _ -> 4
+                           Ctrl (For _ _ _ _ _) _ -> 2
+                           Ctrl (While _ _ _) _ -> 2
                            Ctrl (Return _ _) _ -> 1
-                           BlockStmt _ _ -> 4
-                           _ -> 4
+                           BlockStmt(Block b _) _ -> length b
+                           _ -> 2
                        ) l
+
+replaceRets lv (Ctrl(Return(Just x) p1) p0) =
+  Simp(Asgn lv Nothing x p0) p1
+replaceRets lv (Ctrl(If e s1 (Just s2) p1) p0) =
+    let
+      s1' = replaceRets lv s1
+      s2' = replaceRets lv s2
+    in (Ctrl(If e s1' (Just s2') p1) p0)
+replaceRets lv (Ctrl(If e s1 Nothing p1) p0) = Ctrl(If e (replaceRets lv s1) Nothing p1) p0
+replaceRets lv (Ctrl(While e s p1) p0) = Ctrl(While e (replaceRets lv s) p1) p0
+replaceRets lv (Ctrl(For ms1 e ms2 s p1) p0) = Ctrl(For ms1 e ms2 (replaceRets lv s) p1) p0
+replaceRets lv (BlockStmt(Block s p1) p0) = BlockStmt(Block (map (replaceRets lv) s) p1) p0
+replaceRets lv e = e
+
 
 inline fdefns =
   let
@@ -122,7 +136,7 @@ inline' :: String -> Map.Map String ([Expr],[Stmt]) -> [Stmt] -> [Stmt] -> [Stmt
 inline' _ _ nst [] = nst
 inline' func fmap nst (s:st) =
   let
-    maxstmts = 0
+    maxstmts = 7
     s2 = case s of
       Simp s' p0 -> case s' of
         Decl t id (Just e) p1 -> case e of
@@ -132,7 +146,7 @@ inline' func fmap nst (s:st) =
                 setprms = map (\(x,y) -> Simp (Asgn (roll x) Nothing y p2) p1) $ zip prms exprs
                 ret = case last sts of
                   (Ctrl(Return x _) _) -> x
-                  _ -> trace "hmm... why?" $ Nothing 
+                  _ -> trace "Decl hmm... why?" $ Nothing 
               in
                if numStmts(sts) <= maxstmts
                then setprms ++ (init sts) ++ [Simp (Decl t id ret p1) p1]
@@ -144,13 +158,10 @@ inline' func fmap nst (s:st) =
             Just (prms,sts) ->
               let
                 setprms = map (\(x,y) -> Simp (Asgn (roll x) Nothing y p2) p1) $ zip prms exprs
-                ret = case last sts of
-                  (Ctrl(Return (Just x) _) _) -> x
-                  _ -> trace "hmm... why?" $ unroll lv p1
               in
                if numStmts(sts) <= maxstmts
                then
-                 setprms ++ (init sts) ++ [Simp (Asgn lv op ret p1) p0]
+                 setprms ++ (map (replaceRets lv) sts)
                else  [Simp (Asgn lv op e p1) p0]
             Nothing -> [Simp (Asgn lv op e p1) p0]
           _ -> [Simp (Asgn lv op e p1) p0]
@@ -178,7 +189,7 @@ inline' func fmap nst (s:st) =
                 setprms = map (\(x,y) -> Simp (Asgn (roll x) Nothing y p2) p1) $ zip prms exprs
                 ret = case last sts of
                   (Ctrl(Return (Just x) _) _) -> Just x
-                  _ -> trace "hmm... why?" $ Nothing
+                  _ -> trace "If hmm... why?" $ Nothing
                 stif' = inline' func fmap [] [stif]
                 stif'' = if length stif' == 1 then head stif' else trace "stif sadface" $ head stif'
                 stel' = case stel of
