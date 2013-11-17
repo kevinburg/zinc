@@ -26,13 +26,174 @@ codeGen (Program gdecls, sdefn, safe, opt) =
                            (FDefn _ s p (Block b _) _) -> [(s,p,b)]
                            _ -> []) gdecls
     lengths = map (\(s,_,b) -> (s, length b)) fdefns
+    inl = if opt >= 2 then inline fdefns else fdefns
+    gdecls' = map (\x -> case x of
+                      FDefn t s p b p0 -> FDefn t s (map (parVar s) p) b p0
+                      _ -> x) gdecls 
     ctx = foldr (\x -> \acc -> case x of
-                    (FDefn t s _ _ _) -> Map.insert s t acc
-                    _ -> acc) Map.empty gdecls
+                    (FDefn t s p _ _) -> foldr (\(Param ty st)-> \a-> Map.insert st ty a) (Map.insert s t acc) p
+                    _ -> acc) Map.empty gdecls'
+    sinl=foldr(\(x,y,z)-> \acc->(show x)++(show y)++"\n"++(foldr(\a -> \b->(show a)++"\n"++b) "" z)++"\n"++acc) "" inl
     (res, _) = foldr (\f -> \(m, l) -> let
                     (s, aasm, l') = genFunction f l lengths (ctx, smap) safe opt
-                    in (Map.insert s aasm m, l')) (Map.empty,0) fdefns
-  in res
+                    in (Map.insert s aasm m, l')) (Map.empty,0) inl
+  in trace sinl $ res
+
+ptoe [] = []
+ptoe ((Param t s):xs) = (Ident s $ newPos "" 0 0) : ptoe xs
+
+funcVarE f (Ident s p0) = Ident (f++"_"++s) p0
+funcVarE f (ExpUnOp o e p0) = ExpUnOp o (funcVarE f e) p0
+funcVarE f (ExpBinOp Arrow e1 e2 p0) = ExpBinOp Arrow (funcVarE f e1) e2 p0
+funcVarE f (ExpBinOp Dot e1 e2 p0) = ExpBinOp Dot (funcVarE f e1) e2 p0
+funcVarE f (ExpBinOp o e1 e2 p0) = ExpBinOp o (funcVarE f e1) (funcVarE f e2) p0
+funcVarE f (ExpTernOp e1 e2 e3 p0) = ExpTernOp (funcVarE f e1) (funcVarE f e2) (funcVarE f e3) p0
+funcVarE f (App s le p0) = App s (map (\x-> funcVarE f x) le) p0
+funcVarE f (AllocArray t e p0) = AllocArray t (funcVarE f e) p0
+funcVarE f (Subscr e1 e2 p0) = Subscr (funcVarE f e1) (funcVarE f e2) p0
+funcVarE f e = e
+
+funcVarLV f (LIdent s) = LIdent (f++"_"++s)
+funcVarLV f (LArrow lv s) = LArrow (funcVarLV f lv) s
+funcVarLV f (LDot lv s) = LDot (funcVarLV f lv) s
+funcVarLV f (LDeref lv) = LDeref (funcVarLV f lv)
+funcVarLV f (LArray lv e) = LArray (funcVarLV f lv) (funcVarE f e)
+
+funcVar f [] = []
+funcVar f ((Simp s p0):xs) = 
+  let s' = case s of
+        Decl t i (Just e) p1 -> Decl t (f++"_"++i) (Just (funcVarE f e)) p1
+        Asgn lv o e p1 -> Asgn (funcVarLV f lv) o (funcVarE f e) p1
+        PostOp o lv p1 -> PostOp o (funcVarLV f lv) p1
+        Expr e p1 -> Expr (funcVarE f e) p1
+        e -> e
+  in
+   (Simp s' p0) : funcVar f xs
+funcVar f ((Ctrl c p0) : xs) =
+  let c' = case c of
+        If e s (Just ms) p1 -> If (funcVarE f e) (head $ funcVar f [s]) (Just (head $ funcVar f [ms])) p1
+        If e s Nothing p1 -> If (funcVarE f e) (head $ funcVar f [s]) Nothing p1
+        While e s p1 -> While (funcVarE f e) (head $ funcVar f [s]) p1
+        For (Just s1) e (Just s2) st p1 ->
+          let Simp s1' _  = head $ funcVar f [(Simp s1 p1)]
+              Simp s2' _ = head $ funcVar f [(Simp s2 p1)]
+          in For (Just s1') (funcVarE f e) (Just s2') (head $ funcVar f [st]) p1
+        For (Just s1) e Nothing st p1 ->
+          let Simp s1' _ = head $ funcVar f [(Simp s1 p1)]
+          in For (Just s1') (funcVarE f e) Nothing (head $ funcVar f [st]) p1
+        For Nothing e (Just s2) st p1 ->
+          let Simp s2' _ = head $ funcVar f [(Simp s2 p1)]
+          in For Nothing (funcVarE f e) (Just s2') (head $ funcVar f [st]) p1
+        Return (Just e) p1 -> Return (Just (funcVarE f e)) p1
+        Assert e p1 -> Assert (funcVarE f e) p1
+        e -> e
+  in
+   (Ctrl c' p0) : funcVar f xs
+funcVar f ((BlockStmt(Block s p1) p0):xs) = (BlockStmt (Block (funcVar f s) p1) p0) : funcVar f xs
+
+parVar f (Param t s) = Param t (f++"_"++s)
+
+inline fdefns =
+  let
+    fdefns' = map(\(x,y,z) -> (x, map (parVar x) y, funcVar x z)) fdefns
+    fmap = Map.fromList $ map (\(x,y,z) -> (x,(ptoe y,z))) fdefns'
+    fdefns'' = map (\(f,p,stmts) -> (f, p, inline' f fmap [] stmts)) fdefns'
+  in
+   fdefns''
+
+--inline (function name) (Map Function Name -> Stmts in Function) (New statements) (Curr Statements)
+inline' :: String -> Map.Map String ([Expr],[Stmt]) -> [Stmt] -> [Stmt] -> [Stmt]
+inline' _ _ nst [] = nst
+inline' func fmap nst (s:st) =
+  let
+    maxstmts = 4
+    s2 = case s of
+      Simp s' p0 -> case s' of
+        Decl t id (Just e) p1 -> case e of
+          App s exprs p2 | s /= func -> case Map.lookup s fmap of
+            Just (prms,sts) ->
+              let
+                setprms = map (\(x,y) -> Simp (Asgn (roll x) Nothing y p2) p1) $ zip prms exprs
+                ret = case last sts of
+                  (Ctrl(Return x _) _) -> x
+                  _ -> trace "hmm... why?" $ Nothing 
+              in
+               if length(sts) <= maxstmts
+               then setprms ++ (init sts) ++ [Simp (Decl t id ret p1) p1]
+               else [Simp (Decl t id (Just (App s exprs p2)) p1) p0]
+            Nothing -> [Simp (Decl t id (Just (App s exprs p2)) p1) p0]
+          _ -> [Simp (Decl t id (Just e) p1) p0]
+        Asgn lv op e p1 -> case e of
+          App s exprs p2 | s /= func -> case Map.lookup s fmap of
+            Just (prms,sts) ->
+              let
+                setprms = map (\(x,y) -> Simp (Asgn (roll x) Nothing y p2) p1) $ zip prms exprs
+                ret = case last sts of
+                  (Ctrl(Return (Just x) _) _) -> x
+                  _ -> trace "hmm... why?" $ unroll lv p1
+              in
+               if length(sts) <= maxstmts
+               then
+                 setprms ++ (init sts) ++ [Simp (Asgn lv op ret p1) p0]
+               else  [Simp (Asgn lv op e p1) p0]
+            Nothing -> [Simp (Asgn lv op e p1) p0]
+          _ -> [Simp (Asgn lv op e p1) p0]
+        Expr e p1 -> case e of
+          App s exprs p2 | s /= func -> case Map.lookup s fmap of
+            Just (prms,sts) ->
+              let
+                setprms = map (\(x,y) -> Simp (Asgn (roll x) Nothing y p2) p1) $ zip prms exprs
+                sts' = case last sts of
+                  (Ctrl(Return _ _) _) -> init sts
+                  _ -> sts
+              in
+               if length(sts) <= maxstmts
+               then
+                 setprms ++ sts'
+               else [Simp (Expr e p1) p0]
+            Nothing -> [Simp (Expr e p1) p0]
+          _ -> [Simp (Expr e p1) p0]
+        _ -> [Simp s' p0]
+      Ctrl c p0 -> case c of
+        If e stif stel p1 -> case e of
+          App s exprs p2 | s /= func-> case Map.lookup s fmap of
+            Just (prms,sts) ->
+              let
+                setprms = map (\(x,y) -> Simp (Asgn (roll x) Nothing y p2) p1) $ zip prms exprs
+                ret = case last sts of
+                  (Ctrl(Return (Just x) _) _) -> Just x
+                  _ -> trace "hmm... why?" $ Nothing
+                stif' = inline' func fmap [] [stif]
+                stif'' = if length stif' == 1 then head stif' else trace "stif sadface" $ head stif'
+                stel' = case stel of
+                  Just s -> Just $ head (inline' func fmap [] [s])
+                  Nothing -> Nothing
+              in
+               if length(sts) <= maxstmts then
+                 setprms ++ (init sts) ++ [Simp (Decl Bool (func++"_inline_if") ret p1) p0]  ++
+                 [Ctrl (If (Ident (func++"_inline_if") p1) stif'' stel' p1) p0]
+               else [Ctrl (If e stif stel p1) p0]
+            Nothing -> [Ctrl (If e stif stel p1) p0]
+          _ -> [Ctrl (If e stif stel p1) p0]
+        Return me p1 -> case me of 
+          Just (App s exprs p2) | s /= func -> case Map.lookup s fmap of
+            Just (prms,sts) ->
+              let
+                setprms = map (\(x,y) -> Simp (Asgn (roll x) Nothing y p2) p1) $ zip prms exprs 
+              in
+               if length(sts) <= maxstmts
+               then
+                 setprms ++ sts -- includes final return otherwise wouldn't have typchecked
+               else [Ctrl (Return me p1) p0]
+            _ -> [Ctrl (Return me p1) p0]
+          _ -> [Ctrl (Return me p1) p0]
+        _ -> [Ctrl c p0]
+      BlockStmt (Block stmts p1) p0 -> [BlockStmt (Block (inline' func fmap [] stmts) p1) p0]
+      --_ -> [s]
+  in
+   inline' func fmap (nst++s2) st
+        
+        
 
 -- Computes struct size and field offsets in bytes.
 structInfo :: Map.Map String [Param] -> Map.Map String (Int, Int, Map.Map String (Int, Type))
@@ -70,8 +231,10 @@ addField sdefn = (\(constraint, size, ps, m) -> \(Param t s) -> let
         
 genFunction (fun,p,b) l lengths (c, smap) safe opt =
   let
-    ctx = foldr (\(Param t i) -> \acc -> Map.insert i t acc) c p
-    (aasm, _, l', ep) = genStmt ([], length(p), l, Nothing) b lengths (ctx, smap) safe
+    ctx = foldr (\(Param t i) -> \acc -> Map.insert i t acc) c p 
+    sb = fun ++"\n"++ foldr (\x -> \acc -> (show x) ++ "\n" ++ acc) "" b
+    (aasm, _, l', ep) = --trace sb $
+      genStmt ([], length(p), l, Nothing) b lengths (ctx, smap) safe
     p' = zip (map (\(Param _ i) -> i) p) [0..]
     prefix = map (\(i, n) ->
                    AAsm {aAssign = [AVar i], aOp = Nop, aArgs = [ALoc $ AArg n]}) p'
@@ -286,7 +449,7 @@ lvalType (LDot l i) (ctx, smap) =
           case Map.lookup i fields of
             (Just (_, t)) -> t
      
-typecheck (Ident i p) (ctx, smap) typs = let t = ctx Map.! i
+typecheck (Ident i p) (ctx, smap) typs = let t = {-trace ((show i)++"\n"++(show ctx)) $ -}ctx Map.! i
                                              typs' = Map.insert (Ident i p) t typs
                                          in (typs',t)
 typecheck (ExpUnOp Deref e _) ctx typs =
@@ -692,7 +855,7 @@ genExp (n, l) (App f es _) loc lens ctx safe =
                [AAsm {aAssign = [loc], aOp = Nop, aArgs = [ALoc $ ARes]}]
       in (aasm, n', l')
 genExp (n, l) (Subscr e1 e2 _) loc lens ctx safe =
-  let
+  let 
     (typs',size') = typecheck e1 ctx Map.empty
     size = case size' of
       (Array Int) -> 4
