@@ -44,7 +44,7 @@ The following list describes all safety checks that are performed in \texttt{saf
 
 \begin{itemize}
 \item Array bounds checking during write and read.
-\item Null checking before struct field access. For example, before evaluating \texttt{s -> f}, a null check
+\item Null checking before struct field access. For example, before evaluating \texttt{s->f}, a null check
 is performed on \texttt{s}.
 \item Check that shift value falls in the range $[0, 31]$ for left and right shifts.
 \item Check requested array size non-negative before \texttt{alloc\_array}.
@@ -59,16 +59,62 @@ time by hoisting some of these checks outside of the loop. \texttt{shifts.l4} ra
 We attribute this to the removal of conditional branching from every arithmetic shift.
 
 \section{Instruction Selection}
+Before optimizations, all conditional branches were encoded in a piece of abstract assembly that looks like
+\texttt{ifz v l}, which says to check the value of \texttt{v} and jump to \texttt{l} if it is zero. This makes
+the translation for a statement like the following rather bulky.
 
+\begin{verbatim}
+if (x > y) {
+  return 1;
+} else {
+  return 0;
+}
+\end{verbatim}
 
+First, the expression \texttt{x>y} is computed down to a value $b$ of zero or one, using a comparison and a set
+instruction. Then, $b$ is compared to zero. There is room for optimization here, because our use of set 
+instructions and the second comparison is really just a rewrite of the built-in x86 conditional jumps. Our
+optimization introduces a new abstract assembly construct \texttt{comp v1 v2 op l}, which says to compare
+\texttt{v1} to \texttt{v2} using the binary comparison operator \texttt{op} and jump to \texttt{l} if the result
+of the comparison is false. This allows the above example to be translated to a single \texttt{cmpq/cmpl} 
+instruction.
+
+The effect of this optimization is most noticeable in programs that make use of loops that go around a
+large number of times. The exit conditions are checked much more efficiently using this improved translation.
+
+ 
 \section{Constant Propagation and Folding}
 
 
 \section{Eliminating Register Moves}
 
+We noticed two patterns in our assembly that could be optimized, so two peephole optimizations were implemented
+directly on the x86 assembly. The first was to remove jumps that jump to the next line in the file. A jump
+looking like the following is removed.
+
+\begin{verbatim}
+    jump l
+l:
+\end{verbatim}
+
+We also noticed patterns of moves that look like the following.
+
+\begin{verbatim}
+movq a x
+movq b x
+\end{verbatim}
+
+These two lines can be optimized to \texttt{movq b x} as long as the first move is guaranteed to have no effect
+on the value of $b$ (this is not always the case).
 
 \section{Common Subexpression Elimination}
+We implemented a rather conservative version of common subexpression elimination. The only common computations
+we eliminate are multiplications which don't involve memory references. This optimization has the most noticeable
+effect on the \texttt{qsort.l4} test. The swap function involves writing to a memory block immediately after
+reading from the same block. The multiplication to compute the array access offset is only done once with this
+optimization. We certainly could do more to reduce redundant memory loads, but this does something.
 
+Applying this optimization introduces more opportunities for copy propagation.
 
 \section{Inlining}
 
