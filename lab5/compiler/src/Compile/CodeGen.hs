@@ -136,7 +136,7 @@ inline' :: String -> Map.Map String ([Expr],[Stmt]) -> [Stmt] -> [Stmt] -> [Stmt
 inline' _ _ nst [] = nst
 inline' func fmap nst (s:st) =
   let
-    maxstmts = 3
+    maxstmts = 0
     s2 = case s of
       Simp s' p0 -> case s' of
         Decl t id (Just e) p1 -> case e of
@@ -1382,10 +1382,10 @@ translate regMap _ (ACtrl (Comp v1' v2' op l)) =
       Leq -> Jg
       Geq -> Jl
     jump' = case op of
-      Lt -> Jl
-      Gt -> Jg
-      Leq -> Jle
-      Geq -> Jge
+      Lt -> Jle
+      Gt -> Jge
+      Leq -> Jl
+      Geq -> Jg
   in case (v1, v2) of
     (Val _, Val _) ->
       [Movl v1 (Reg R15D),
@@ -1421,9 +1421,9 @@ translate regMap _ (AAsm {aAssign = [dest], aOp = o, aArgs = [src1, src2]})
         Movl (Reg R15D) dest',
         asm (Reg CL) dest']
      _ -> case s2 of
-       Val _ ->
+       Val i ->
          [Movl s1 dest',
-          asm (Val 1) dest']
+          asm (Val i) dest']
        _ ->
          [Movl s2 (Reg ECX),
           Movl s1 dest',

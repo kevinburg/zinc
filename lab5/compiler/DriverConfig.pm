@@ -17,7 +17,7 @@ use vars qw($LAB $COMPILER $COMPILER_EXEC $COMPILER_ARGS @LEXTS $GCC $RUNTIME
             $BENCH_SUITE $BENCH_LINK $BENCH_LEXT @BENCH_FLAGS @BENCH_SAFES
             $BENCH_EPSILON $BENCH_RUN_TIMEOUT $BENCH_OUTLYING);
 
-our $LAB            = 5;
+our $LAB            = 4;
 
 my $rt_stem = "l${LAB}rt";
 

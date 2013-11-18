@@ -14,6 +14,7 @@ import Debug.Trace
 
 getDefaults "c0c" = defaultJob
 getDefaults "l5c" = defaultJob {jobOutFormat = Asm}
+getDefaults "l4c" = defaultJob {jobOutFormat = Asm}
 getDefaults _ = defaultJob
 
 main :: IO ()
