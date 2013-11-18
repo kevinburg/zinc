@@ -85,6 +85,18 @@ large number of times. The exit conditions are checked much more efficiently usi
  
 \section{Constant Propagation and Folding}
 
+The constant propagation optimization is good for reducing some unsimplified arithmetic expressions in the
+test cases. Also, having constant and copy propagation made temporary variable allocation in code generation
+much simpler. It allows us to relax the way we assign values to temporary variables during code generation 
+with the knowledge that the optimization will take care of extraneous moves.
+
+Constant folding interacts very well with copy propagation. It is common for optimizations made in the 
+copy propagation pass to open up opportunities for more content propagation and folding. In order to prevent 
+passing over the code multiple times, we implemented an optimization pass that applies constant and copy
+propagation all at once. This optimization pass will create lots of dead code. However, since the code was
+in SSA form, we were able to determine if a line will become dead immediately after the optimization and
+remove it as we go. This made our optimization pass more complicated, but allowed us to skip writing
+a dead code eliminator.
 
 \section{Eliminating Register Moves}
 
