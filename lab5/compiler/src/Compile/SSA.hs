@@ -29,7 +29,10 @@ ssa aasm fun opt = let
                             in (m', acc ++ [(fun, (s, code))]))
                   (Map.empty, []) (minimize l)
        opt1 = map (\(fun, (s, aasm)) -> (fun, (s, cse aasm))) opt
-       in opt1
+       string = foldr(\(x,(y,z))-> \acc->(show x)++": "++(show y)++"\n"++(foldr(\a-> \b->(show a)++"\n"++b) "" z)++acc) "" opt1
+       in
+        --trace string $
+        opt1
           
 optimize p m =
   let
@@ -344,23 +347,26 @@ gotosMap' aasm l m =
   else case head aasm of
     (ACtrl(GotoP s set)) ->
       let
+        set' = filter (\x -> case x of {AVarG _ _ -> True; _->False}) $ map fst set
         m' = Map.alter(\x -> case x of
-                          Just x' -> Just ((Set.fromList $ map fst set,l) : x')
-                          Nothing -> Just [(Set.fromList $ map fst set,l)]) s m
+                          Just x' -> Just ((Set.fromList set',l) : x')
+                          Nothing -> Just [(Set.fromList set',l)]) s m
       in
        gotosMap' (tail aasm) l m'
     (ACtrl(IfzP _ s _ set)) ->
       let
+        set' = filter (\x -> case x of {AVarG _ _ -> True; _->False}) $ map fst set
         m' = Map.alter(\x -> case x of
-                          Just x' -> Just ((Set.fromList $ map fst set,l) : x')
-                          Nothing -> Just [(Set.fromList $ map fst set,l)]) s m
+                          Just x' -> Just ((Set.fromList set',l) : x')
+                          Nothing -> Just [(Set.fromList set',l)]) s m
       in
        gotosMap' (tail aasm) l m'
     (ACtrl(CompP _ _ _ s set)) ->
       let
+        set' = filter(\x -> case x of {AVarG _ _ -> True; _->False}) $ map fst set
         m' = Map.alter(\x -> case x of
-                          Just x' -> Just ((Set.fromList $ map fst set,l) : x')
-                          Nothing -> Just [(Set.fromList $ map fst set,l)]) s m
+                          Just x' -> Just ((Set.fromList set',l) : x')
+                          Nothing -> Just [(Set.fromList set',l)]) s m
       in
        gotosMap' (tail aasm) l m'
     _ -> gotosMap' (tail aasm) l m
@@ -407,9 +413,10 @@ cmpLbls lbls g l b vm =
      if bool
      then let
        Just (_,aasm) = List.lookup lbl b'
-       varmap = createVarMap lvars g'
+       varmap = if (Set.size l' == Set.size g') then createVarMap l' g' else Map.empty
+       vm' = Map.union vm varmap
        (aasm',lbls') = --trace ((show lbl)++"\n"++(show vm)++"\n--------\n") $
-         updateVars aasm vm lbls 
+         updateVars aasm vm' lbls 
        l'' = Map.adjust (\v -> l') lbl l
        ylbl = l'' Map.! lbl
        b'' = map(\(x,(y,z)) -> if x == lbl then (x,(ylbl,aasm')) else (x,(y,z))) b'
@@ -432,7 +439,23 @@ cmpSets g l b vm =
      in
       (True, head gvars, l'', b) -- removing params, set of params to remove, new lbl params, new blocks
    else
-     (False, head gvars, l, b) 
+     --trace (show $ length gvars) $ 
+     case all(\x -> x == l) gvars of
+       True -> (True, head gvars, Set.empty, b)
+       _ -> case (head gvars) == (foldl (\x-> \y-> if x==y then x else y) (head gvars) gvars) of
+         True -> (True, head gvars, l, b)
+         False -> 
+           let
+             trans = List.transpose $ map Set.toAscList gvars
+             trans' = map List.nub trans
+             t1 = sum $ map length trans
+             t2 = sum $ map length trans'
+             trans'' = map(\x->if length x > 1 then [] else x) trans'
+             g' = Set.fromList $ concat trans''
+             l' = Set.filter (\x-> Set.member x g') l
+           in --trace ((show l) ++ "\n"++ (show trans)++"\n") $
+            if t1 == t2 then (False, head gvars, l, b)
+            else (True, g', l, b)
 
 createVarMap s1 s2 =
   let l1 = filter (\x -> case x of {AVarG _ _ -> True; _ -> False}) $ Set.toAscList s1
