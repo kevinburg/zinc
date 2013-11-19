@@ -136,7 +136,7 @@ inline' :: String -> Map.Map String ([Expr],[Stmt]) -> [Stmt] -> [Stmt] -> [Stmt
 inline' _ _ nst [] = nst
 inline' func fmap nst (s:st) =
   let
-    maxstmts = 0
+    maxstmts = 3
     s2 = case s of
       Simp s' p0 -> case s' of
         Decl t id (Just e) p1 -> case e of
@@ -1112,8 +1112,11 @@ translate regMap _ (AAsm {aAssign = [dest], aOp = Add, aArgs = [src1, src2]}) =
           Addl (Reg R15D) s2] else
        case dest' of
          (Reg _) ->
-           [Movl s dest',
-            Addl s2 dest']
+           if s2 == dest' then
+              [Addl s dest']
+           else 
+             [Movl s dest',
+              Addl s2 dest']
          _ ->
            [Movl s (Reg R15D),
             Addl s2 (Reg R15D),
@@ -1121,8 +1124,11 @@ translate regMap _ (AAsm {aAssign = [dest], aOp = Add, aArgs = [src1, src2]}) =
      (_, Stk _) ->
        case dest' of
          (Reg _) ->
-           [Movl s2 dest',
-            Addl s dest']
+           if s == dest' then
+             [Addl s2 dest']
+           else
+             [Movl s2 dest',
+              Addl s dest']
          _ ->
            [Movl s2 (Reg R15D),
             Addl s (Reg R15D),

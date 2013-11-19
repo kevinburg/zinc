@@ -135,6 +135,7 @@ optimize p m =
             ) ([], m1) constProp
     string = copyProp `seq` ((show constProp) ++ "\n" ++ (show copyProp) ++ "\n\n")
   in (copyProp, m2)
+  --in (constProp, m2)
      where copy m x =
              case Map.lookup x m of
                (Just c) -> c
