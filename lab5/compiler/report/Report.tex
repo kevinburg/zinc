@@ -22,7 +22,7 @@
     urlcolor=blue
 }
 
-\newcommand{\labtitle}{Report}
+\newcommand{\labtitle}{Lab 5 - Optimizations}
 \newcommand{\authorname}{Kevin Burg - John Cole}
 
 \begin{document}  % START THE DOCUMENT!
@@ -81,6 +81,8 @@ instruction.
 
 The effect of this optimization is most noticeable in programs that make use of loops that go around a
 large number of times. The exit conditions are checked much more efficiently using this improved translation.
+This optimization works well with copy propagation to make conditional branches really fast. In some cases,
+simple branches were taken from 10 lines of assembly down to 2.
 
  
 \section{Constant Propagation and Folding}
@@ -97,6 +99,10 @@ propagation all at once. This optimization pass will create lots of dead code. H
 in SSA form, we were able to determine if a line will become dead immediately after the optimization and
 remove it as we go. This made our optimization pass more complicated, but allowed us to skip writing
 a dead code eliminator.
+
+Certain constant propagations allowed for more constant folds to happen. This is especially noticeable in the
+case of computing array offsets. A translation for accessing \texttt{A[0]} becomes much simpler when we took 
+into account that $a+0 = a$ for all addresses $a$.
 
 \section{Eliminating Register Moves}
 
@@ -142,13 +148,19 @@ giving certain weights to each type of statement. For example, simple
 assignment statements would be given a weight less than say a for loop.
 This gives a good estimate on how complex a function is, and how much
 benefit we gain by inlining the function instead of just calling it as it
-is. \\
+is.
+
 We deal with conflicts to variable names by adding the function name to the
 variable before inlining functions, thus ensuring that we have unique variable
 names. We also exclude recursive functions from being inlined, because
 just by unrolling the recursion by one iteration adds only a small benefit
-to the overall cost.\\
+to the overall cost.
 
+The inlining optimization works particularly well with other optimizations that
+reduce the number of register conflicts and moves, such as copy propagation. 
+When those optimizations are implemented along with inlining a certain function,
+it may be the case that a function no longer needs to use callee-save registers,
+reducing the number of register moves.
 
 \end{document}
 
