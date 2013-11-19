@@ -134,7 +134,20 @@ Applying this optimization introduces more opportunities for copy propagation. O
 run copy propagation again after this step.
 
 \section{Inlining}
-
+We developed a heuristic to inline functions so we can eliminate some of the
+overhead required for function calls. Our heuristic deals with how many
+statements there are in the function to be inlined. Instead of just counting
+the total number of statements in the function we classify the statements
+giving certain weights to each type of statement. For example, simple
+assignment statements would be given a weight less than say a for loop.
+This gives a good estimate on how complex a function is, and how much
+benefit we gain by inlining the function instead of just calling it as it
+is. \\
+We deal with conflicts to variable names by adding the function name to the
+variable before inlining functions, thus ensuring that we have unique variable
+names. We also exclude recursive functions from being inlined, because
+just by unrolling the recursion by one iteration adds only a small benefit
+to the overall cost.\\
 
 
 \end{document}
