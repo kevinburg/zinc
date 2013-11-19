@@ -119,6 +119,10 @@ movq b x
 These two lines can be optimized to \texttt{movq b x} as long as the first move is guaranteed to have no effect
 on the value of $b$ (this is not always the case).
 
+We chose to implement copy propagation instead of register coalescing as we feel these two optimizations have
+the same effect on our generated code and running both would be redundant. Copy propagation along with finding
+the SSA-minimal form of the program greatly reduced the number of move instructions in our files.
+
 \section{Common Subexpression Elimination}
 We implemented a rather conservative version of common subexpression elimination. The only common computations
 we eliminate are multiplications which don't involve memory references. This optimization has the most noticeable
@@ -126,7 +130,8 @@ effect on the \texttt{qsort.l4} test. The swap function involves writing to a me
 reading from the same block. The multiplication to compute the array access offset is only done once with this
 optimization. We certainly could do more to reduce redundant memory loads, but this does something.
 
-Applying this optimization introduces more opportunities for copy propagation.
+Applying this optimization introduces more opportunities for copy propagation. Our solution to this was to
+run copy propagation again after this step.
 
 \section{Inlining}
 
