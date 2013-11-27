@@ -1,0 +1,34 @@
+Name:                c0c
+Version:             0.0
+Synopsis:            C0 Compiler Base Code
+Author:              Matthew Maurer
+Maintainer:          mmaurer@andrew.cmu.edu
+Category:            Development
+Build-type:          Simple
+Cabal-version:       >=1.2
+
+Executable c0c
+  Main-Is:        c0c.hs
+  Hs-Source-Dirs: src
+  Build-Depends:  base, filepath, mtl, process, bytestring, syb, containers, deepseq
+  Extensions:     DeriveDataTypeable, RankNTypes, FlexibleInstances,
+                  MultiParamTypeClasses, FlexibleContexts
+
+test-suite c0c-test
+  type:              exitcode-stdio-1.0
+  hs-source-dirs:    tests, src
+  main-is:           Test.hs
+  build-depends:     base,
+                     HUnit,
+                     test-framework,
+                     test-framework-hunit, deepseq
+
+benchmark c0c-bench
+  type:             exitcode-stdio-1.0
+  hs-source-dirs:   bench, src
+  main-is:          MainBenchmarkSuite.hs
+  build-depends:    base, filepath, mtl, process, bytestring, syb, containers,
+                    criterion, deepseq
+  Extensions:	    DeriveDataTypeable, RankNTypes, FlexibleInstances,
+                    MultiParamTypeClasses, FlexibleContexts
+  ghc-options: 	    -O

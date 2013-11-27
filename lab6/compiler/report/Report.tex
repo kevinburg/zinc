@@ -1,0 +1,280 @@
+\documentclass[aps,letterpaper,11pt]{revtex4}
+\input kvmacros
+
+\linespread{1.2}
+
+
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{verbatim}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{fullpage}
+\usepackage{listings}
+\usepackage{subfig}
+\usepackage[usenames,dvipsnames]{color}
+\usepackage[pdftex]{hyperref}
+\hypersetup{
+    colorlinks,
+    citecolor=blue,
+    filecolor=blue,
+    linkcolor=blue,
+    urlcolor=blue
+}
+
+\newcommand{\labtitle}{Lab 5 - Optimizations}
+\newcommand{\authorname}{Kevin Burg - John Cole}
+
+\begin{document}  % START THE DOCUMENT!
+
+\begin{titlepage}
+\begin{center}
+{\Large \textsc{\labtitle} \\ \vspace{4pt}} 
+\rule[13pt]{\textwidth}{1pt} \\ \vspace{150pt}
+{\large By: \authorname \\ \vspace{10pt}
+\today}
+\end{center}
+\end{titlepage}
+
+
+\section{Unsafe Mode}
+
+The following list describes all safety checks that are performed in \texttt{safe} mode and not performed in
+\texttt{unsafe} mode.
+
+\begin{itemize}
+\item Array bounds checking during write and read.
+\item Null checking before struct field access. For example, before evaluating \texttt{s->f}, a null check
+is performed on \texttt{s}.
+\item Check that shift value falls in the range $[0, 31]$ for left and right shifts.
+\item Check requested array size non-negative before \texttt{alloc\_array}.
+\end{itemize}
+
+The difference between safe and unsafe mode is most noticeable in tests that make frequent memory accesses.
+For example, the execution time of \texttt{mmult2.l4} dropped by almost $60\%$ when compiled with the
+\texttt{--unsafe} flag. We attribute this to the number of conditional jumps that can be removed from the
+code when bounds checking is ignored. Using naive safety checks, an array access inside a loop results in
+bounds check every time the loop goes around. There may be ways to compile safely and decrease execution
+time by hoisting some of these checks outside of the loop. \texttt{shifts.l4} ran $85\%$ percent faster.
+We attribute this to the removal of conditional branching from every arithmetic shift.
+
+\section{Instruction Selection}
+Before optimizations, all conditional branches were encoded in a piece of abstract assembly that looks like
+\texttt{ifz v l}, which says to check the value of \texttt{v} and jump to \texttt{l} if it is zero. This makes
+the translation for a statement like the following rather bulky.
+
+\begin{verbatim}
+if (x > y) {
+  return 1;
+} else {
+  return 0;
+}
+\end{verbatim}
+
+First, the expression \texttt{x>y} is computed down to a value $b$ of zero or one, using a comparison and a set
+instruction. Then, $b$ is compared to zero. There is room for optimization here, because our use of set 
+instructions and the second comparison is really just a rewrite of the built-in x86 conditional jumps. Our
+optimization introduces a new abstract assembly construct \texttt{comp v1 v2 op l}, which says to compare
+\texttt{v1} to \texttt{v2} using the binary comparison operator \texttt{op} and jump to \texttt{l} if the result
+of the comparison is false. This allows the above example to be translated to a single \texttt{cmpq/cmpl} 
+instruction.
+
+The effect of this optimization is most noticeable in programs that make use of loops that go around a
+large number of times. The exit conditions are checked much more efficiently using this improved translation.
+This optimization works well with copy propagation to make conditional branches really fast. In some cases,
+simple branches were taken from 10 lines of assembly down to 2.
+
+ 
+\section{Constant Propagation and Folding}
+
+The constant propagation optimization is good for reducing some unsimplified arithmetic expressions in the
+test cases. Also, having constant and copy propagation made temporary variable allocation in code generation
+much simpler. It allows us to relax the way we assign values to temporary variables during code generation 
+with the knowledge that the optimization will take care of extraneous moves.
+
+Constant folding interacts very well with copy propagation. It is common for optimizations made in the 
+copy propagation pass to open up opportunities for more content propagation and folding. In order to prevent 
+passing over the code multiple times, we implemented an optimization pass that applies constant and copy
+propagation all at once. This optimization pass will create lots of dead code. However, since the code was
+in SSA form, we were able to determine if a line will become dead immediately after the optimization and
+remove it as we go. This made our optimization pass more complicated, but allowed us to skip writing
+a dead code eliminator.
+
+Certain constant propagations allowed for more constant folds to happen. This is especially noticeable in the
+case of computing array offsets. A translation for accessing \texttt{A[0]} becomes much simpler when we took 
+into account that $a+0 = a$ for all addresses $a$.
+
+\section{Eliminating Register Moves}
+
+We noticed two patterns in our assembly that could be optimized, so two peephole optimizations were implemented
+directly on the x86 assembly. The first was to remove jumps that jump to the next line in the file. A jump
+looking like the following is removed.
+
+\begin{verbatim}
+    jump l
+l:
+\end{verbatim}
+
+We also noticed patterns of moves that look like the following.
+
+\begin{verbatim}
+movq a x
+movq b x
+\end{verbatim}
+
+These two lines can be optimized to \texttt{movq b x} as long as the first move is guaranteed to have no effect
+on the value of $b$ (this is not always the case).
+
+We chose to implement copy propagation instead of register coalescing as we feel these two optimizations have
+the same effect on our generated code and running both would be redundant. Copy propagation along with finding
+the SSA-minimal form of the program greatly reduced the number of move instructions in our files.
+
+\section{Common Subexpression Elimination}
+We implemented a rather conservative version of common subexpression elimination. The only common computations
+we eliminate are multiplications which don't involve memory references. This optimization has the most noticeable
+effect on the \texttt{qsort.l4} test. The swap function involves writing to a memory block immediately after
+reading from the same block. The multiplication to compute the array access offset is only done once with this
+optimization. We certainly could do more to reduce redundant memory loads, but this does something.
+
+Applying this optimization introduces more opportunities for copy propagation. Our solution to this was to
+run copy propagation again after this step.
+
+\section{Inlining}
+We developed a heuristic to inline functions so we can eliminate some of the
+overhead required for function calls. Our heuristic deals with how many
+statements there are in the function to be inlined. Instead of just counting
+the total number of statements in the function we classify the statements
+giving certain weights to each type of statement. For example, simple
+assignment statements would be given a weight less than say a for loop.
+This gives a good estimate on how complex a function is, and how much
+benefit we gain by inlining the function instead of just calling it as it
+is.
+
+We deal with conflicts to variable names by adding the function name to the
+variable before inlining functions, thus ensuring that we have unique variable
+names. We also exclude recursive functions from being inlined, because
+just by unrolling the recursion by one iteration adds only a small benefit
+to the overall cost.
+
+The inlining optimization works particularly well with other optimizations that
+reduce the number of register conflicts and moves, such as copy propagation. 
+When those optimizations are implemented along with inlining a certain function,
+it may be the case that a function no longer needs to use callee-save registers,
+reducing the number of register moves.
+
+\end{document}
+
+
+%%%%%%%%%%%%%%%%
+COMMON COMMANDS:
+%%%%%%%%%%%%%%%%
+% IMAGES
+\begin{figure}[H]
+   \begin{center}
+      \includegraphics[width=0.6\textwidth]{RTL_SCHEM.png}
+   \end{center}
+\caption{A screenshot of the RTL Schematics produced from the Verilog code.}
+\label{RTL}
+\end{figure}
+
+% SUBFIGURES IMAGES
+\begin{figure}[H]
+  \centering
+  \subfloat[LED4 Period]{\label{fig:Per4}\includegraphics[width=0.4\textwidth]{period_led4.png}} \\                
+  \subfloat[LED5 Period]{\label{fig:Per5}\includegraphics[width=0.4\textwidth]{period_led5.png}}
+  \subfloat[LED6 Period]{\label{fig:Per6}\includegraphics[width=0.4\textwidth]{period_led6.png}}
+  \caption{Period of LED blink rate captured by osciliscope.}
+  \label{fig:oscil}
+\end{figure}
+
+% INSERT SOURCE CODE
+\lstset{language=Verilog, tabsize=3, backgroundcolor=\color{mygrey}, basicstyle=\small, commentstyle=\color{BrickRed}}
+\lstinputlisting{MODULE.v}
+
+% TEXT TABLE
+\begin{table}
+\begin{center}
+\begin{tabular}{|l|c|c|l|}
+	x & x & x & x \\ \hline
+	x & x & x & x \\
+	x & x & x & x \\ \hline
+\end{tabular}
+\caption{Caption}
+\label{label}
+\end{center}
+\end{table}
+
+% MATHMATICAL ENVIRONMENT
+$ 8 = 2 \times 4 $
+
+% CENTERED FORMULA
+\[  \]
+
+% NUMBERED EQUATION
+\begin{equation}
+	
+\end{equation}
+
+% ARRAY OF EQUATIONS (The splat supresses the numbering)
+\begin{align*}
+	
+\end{align*}
+
+% NUMBERED ARRAY OF EQUATIONS
+\begin{align}
+	
+\end{align}
+
+% ACCENTS
+\dot{x} % dot
+\ddot{x} % double dot
+\bar{x} % bar
+\tilde{x} % tilde
+\vec{x} % vector
+\hat{x} % hat
+\acute{x} % acute
+\grave{x} % grave
+\breve{x} % breve
+\check{x} % dot (cowboy hat)
+
+% FONTS
+\mathrm{text} % roman
+\mathsf{text} % sans serif
+\mathtt{text} % Typewriter
+\mathbb{text} % Blackboard bold
+\mathcal{text} % Caligraphy
+\mathfrak{text} % Fraktur
+
+\textbf{text} % bold
+\textit{text} % italic
+\textsl{text} % slanted
+\textsc{text} % small caps
+\texttt{text} % typewriter
+\underline{text} % underline
+\emph{text} % emphasized
+
+\begin{tiny}text\end{tiny} % Tiny
+\begin{scriptsize}text\end{scriptsize} % Script Size
+\begin{footnotesize}text\end{footnotesize} % Footnote Size
+\begin{small}text\end{small} % Small
+\begin{normalsize}text\end{normalsize} % Normal Size
+\begin{large}text\end{large} % Large
+\begin{Large}text\end{Large} % Larger
+\begin{LARGE}text\end{LARGE} % Very Large
+\begin{huge}text\end{huge}   % Huge
+\begin{Huge}text\end{Huge}   % Very Huge
+
+
+% GENERATE TABLE OF CONTENTS AND/OR TABLE OF FIGURES
+% These seem to have some issues with the "revtex4" document class.  To use, change
+% the very first line of this document to "article" like this:
+% \documentclass[aps,letterpaper,10pt]{article}
+\tableofcontents
+\listoffigures
+\listoftables
+
+% INCLUDE A HYPERLINK OR URL
+\url{http://www.derekhildreth.com}
+\href{http://www.derekhildreth.com}{Derek Hildreth's Website}
+
+% FOR MORE, REFER TO THE "LINUX CHEAT SHEET.PDF" FILE INCLUDED!
