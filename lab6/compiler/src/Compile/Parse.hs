@@ -81,9 +81,19 @@ gdecl = try (do
                 p <- getPosition
                 reserved "struct"
                 i <- identifier
+                reservedOp "<"
+                typeParam <- identifier
+                reservedOp ">"
                 fields <- braces $ fieldList
                 semi
-                return $ SDefn i fields p)
+                return $ SDefn i (Just typeParam) fields p) <|>
+        try (do
+                p <- getPosition
+                reserved "struct"
+                i <- identifier
+                fields <- braces $ fieldList
+                semi
+                return $ SDefn i Nothing fields p)
         <?> "gdecl"
 
 field = do
@@ -473,7 +483,7 @@ c0Def = LanguageDef
                        "alloc_array", "typedef", "struct", "else", "assert",
                        "true", "false", "bool"],
     reservedOpNames = ["+",  "*",  "-",  "/",  "%", "?", ":", "->", ".", "--",
-                       "++", "[", "]"],
+                       "++", "[", "]", "<", ">"],
     caseSensitive   = True}
 
 c0Tokens :: Tok.GenTokenParser ByteString [String] Identity

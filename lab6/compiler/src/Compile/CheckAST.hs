@@ -15,7 +15,7 @@ checkAST :: (Map.Map String Type, [(String,
                                   (Type, [Param], S,
                                    Map.Map String Type,
                                    Map.Map String (Type, [Type]),
-                                   Map.Map String [Param]))],
+                                   Map.Map String (Maybe String, [Param])))],
              Map.Map String [Param]) -> Either String (Map.Map String [Param])
 checkAST (typedef, fdefns, sdefns) =
   let
@@ -41,7 +41,12 @@ checkAST (typedef, fdefns, sdefns) =
                                       Map.singleton fun (Map ts output)]
                    ctx'' = Map.map (findType tdefs) ctx'
                    sdefns'' = Map.map
-                              (\x -> map (\(Param t s) ->Param (findType typedef t) s) x)
+                              (\(typeParam, x) ->
+                                map (\(Param t s) -> case typeParam of
+                                        Nothing -> Param (findType typedef t) s
+                                        (Just t') -> if t == (Type t') then Param t s
+                                                     else Param (findType typedef t) s
+                                    ) x)
                               sdefns'
                    in case checkFunction tdefs ctx'' (t,p,b) fdefns sdefns'' of
                      Left s -> Left s

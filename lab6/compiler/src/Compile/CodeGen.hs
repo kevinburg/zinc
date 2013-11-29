@@ -22,7 +22,7 @@ codeGen :: (Program, Map.Map String [Param], Bool, Int) -> Map.Map String [Asm]
 codeGen (Program gdecls, sdefn, safe, opt) =
   let
     smap = Map.map (\(a,b,c) -> (a,c)) $ structInfo sdefn
-    fdefns = concatMap (\x -> case x of
+    fdefns = trace (show smap) concatMap (\x -> case x of
                            (FDefn _ s p (Block b _) _) -> [(s,p,b)]
                            _ -> []) gdecls
     lengths = map (\(s,_,b) -> (s, length b)) fdefns
@@ -237,6 +237,7 @@ computeStruct s params sdefn m = foldl (addField sdefn) (0, 0, Map.empty, m) par
   
 addField sdefn = (\(constraint, size, ps, m) -> \(Param t s) -> let
                      (pSize, align, m') = case t of
+                       (Type _) -> (8, 8, m)
                        Bool -> (4, 4, m)
                        Int -> (4, 4, m)
                        (Pointer _) -> (8, 8, m)
