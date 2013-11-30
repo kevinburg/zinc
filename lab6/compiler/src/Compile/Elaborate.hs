@@ -12,19 +12,19 @@ elaborate :: Program -> Either String
                                       (Type, [Param], S, Map.Map String Type,
                                        Map.Map String (Type, [Type]),
                                        Map.Map String (Maybe String, [Param])))],
-               Map.Map String [Param]), Program)
+               Map.Map String (Maybe String, [Param])), Program)
 elaborate (Program gdecls) =
   case partProgram gdecls (Map.singleton "fpt" Int, Map.empty, [], Map.empty) of
     Left err -> Left err
     Right (typedef, fdecl, fdefn, sdefn) -> let
       res = map (\(key,(t, p, Block b _, t1, t2, t3)) ->
                   (key,(t, p, elaborate' b, t1, t2, t3))) fdefn
-      sdefn' = Map.map (\(typeParam, x) ->
+      sdefn' = Map.map (\(typeParam, x) -> (typeParam, 
                          map (\(Param t s) -> case typeParam of
                                  Nothing -> Param (findType typedef t) s
                                  Just t' -> if t == (Type t') then Param t s
                                             else Param (findType typedef t) s
-                             ) x) sdefn
+                             ) x)) sdefn
       in case foldr
               (\(key, val) -> \acc ->
                 case (acc, val) of

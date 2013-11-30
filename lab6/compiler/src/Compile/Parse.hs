@@ -287,6 +287,12 @@ typeEnd = try (do
                   reservedOp "*"
                   f <- typeEnd
                   return (\x -> f $ Pointer x)) <|>
+          try (do
+                  reservedOp "<"
+                  t <- typeParse
+                  reservedOp ">"
+                  f <- typeEnd
+                  return (\x -> f $ Poly t x)) <|>
           (do return (\x -> x)) 
           <?> "typeEnd"
 

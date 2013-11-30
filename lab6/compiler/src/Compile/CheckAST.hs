@@ -16,7 +16,8 @@ checkAST :: (Map.Map String Type, [(String,
                                    Map.Map String Type,
                                    Map.Map String (Type, [Type]),
                                    Map.Map String (Maybe String, [Param])))],
-             Map.Map String [Param]) -> Either String (Map.Map String [Param])
+             Map.Map String (Maybe String, [Param])) ->
+            Either String (Map.Map String (Maybe String, [Param]))
 checkAST (typedef, fdefns, sdefns) =
   let
     (_, ctx) = addHeader typedef
@@ -41,12 +42,12 @@ checkAST (typedef, fdefns, sdefns) =
                                       Map.singleton fun (Map ts output)]
                    ctx'' = Map.map (findType tdefs) ctx'
                    sdefns'' = Map.map
-                              (\(typeParam, x) ->
+                              (\(typeParam, x) -> (typeParam, 
                                 map (\(Param t s) -> case typeParam of
                                         Nothing -> Param (findType typedef t) s
                                         (Just t') -> if t == (Type t') then Param t s
                                                      else Param (findType typedef t) s
-                                    ) x)
+                                    ) x))
                               sdefns'
                    in case checkFunction tdefs ctx'' (t,p,b) fdefns sdefns'' of
                      Left s -> Left s
@@ -204,7 +205,7 @@ type Context = Map.Map String Type
 
 -- Performs static type checking on a statements  under a typing context
 checkS :: S -> Context -> Context -> Set.Set String -> Type ->
-          Map.Map String [Param] ->CheckS
+          Map.Map String (Maybe String, [Param]) -> CheckS
 checkS ANup ctx _ _ _ _ = ValidS
 checkS (AAssert e) ctx m d _ smap =
   case checkE e ctx d smap of
@@ -284,7 +285,8 @@ checkS (AExpr e s) ctx m d t smap =
     BadE s -> BadS s
     ValidE _ -> checkS s ctx m d t smap
 
-lvalType :: LValue -> Context -> Set.Set String -> Map.Map String [Param] -> Maybe Type
+lvalType :: LValue -> Context -> Set.Set String ->
+            Map.Map String (Maybe String, [Param]) -> Maybe Type
 lvalType (LIdent i) ctx _ _ = Map.lookup i ctx
 lvalType (LDeref l) ctx d smap =
   case lvalType l ctx d smap of
@@ -294,15 +296,24 @@ lvalType (LDeref l) ctx d smap =
 lvalType (LArrow l s) ctx d smap =
   case lvalType l ctx d smap of
     Just (Pointer(Struct s1)) -> case Map.lookup s1 smap of
-      Just ps -> case List.find (\(Param _ f) -> f == s) ps of
+      Just (_, ps) -> case List.find (\(Param _ f) -> f == s) ps of
         Just (Param t _) -> Just t
         _ -> Nothing
-      _ -> Nothing 
+      _ -> Nothing
+    Just (Pointer (Poly t (Struct s1))) ->
+      case Map.lookup s1 smap of
+        Just (Just typeParam, ps) ->
+          case List.find (\(Param _ f) -> f == s) ps of
+            Just (Param (Type t') _) -> if t' == typeParam then Just t
+                                        else Nothing
+            Just (Param t _) -> Just t
+            _ -> Nothing
+        _ -> Nothing
     _ -> Nothing
 lvalType (LDot l s) ctx d smap =
   case lvalType l ctx d smap of
     Just (Struct s1) -> case Map.lookup s1 smap of
-      Just ps -> case List.find (\(Param _ f) -> f == s) ps of
+      Just (_, ps) -> case List.find (\(Param _ f) -> f == s) ps of
         Just (Param t _) -> Just t
         _ -> Nothing
       _ -> Nothing
@@ -317,7 +328,7 @@ lvalType (LArray l e) ctx d smap =
     _ -> Nothing
   
 -- Performs static type checking on an expression under a typing context
-checkE :: Expr -> Context -> Set.Set String -> Map.Map String [Param] -> CheckE
+checkE :: Expr -> Context -> Set.Set String -> Map.Map String (Maybe String, [Param]) -> CheckE
 checkE (ExpInt Dec i _) _ _ _ = if i > (2^31) then BadE "const too large"
                               else ValidE Int
 checkE (ExpInt Hex i _) _ _ _ = if i > (2^32 - 1) then BadE "const too large"
@@ -354,7 +365,7 @@ checkE (ExpBinOp Arrow e (Ident s2 _) _) ctx d smap =
         (Pointer (Struct s)) ->
               case Map.lookup s smap of
                 Nothing -> BadE $ "undefined struct " ++ s
-                Just fields ->
+                Just (_, fields) ->
                   case List.find (\(Param _ fieldName) -> fieldName == s2) fields of
                     Nothing -> BadE $ "field " ++ s2 ++ " undefined in struct " ++ s
                     Just (Param t' _) -> ValidE t'
@@ -369,7 +380,7 @@ checkE (ExpBinOp Dot e (Ident s2 _) _) ctx d smap =
         (Struct i) ->
           case Map.lookup i smap of
             Nothing -> BadE $ "undefined struct " ++ i
-            Just fields ->
+            Just (_, fields) ->
               case List.find (\(Param _ fieldName) -> fieldName == s2) fields of
                 Nothing -> BadE $ "field " ++ s2 ++ " undefined in struct " ++ i
                 Just (Param t' _) -> ValidE t'
@@ -437,6 +448,9 @@ checkE (Alloc t _) ctx d smap =
     Struct s -> case Map.lookup s smap of
       Just t' -> ValidE (Pointer (Struct s))
       Nothing -> BadE "Allocating undefined struct"
+    Poly t (Struct s) -> case Map.lookup s smap of
+      Just t' -> ValidE $ Pointer ((Poly t (Struct s)))
+      Nothing -> BadE "Allocatin undefined struct"
     _ -> ValidE (Pointer t)
 checkE (AllocArray t e _) ctx d smap =
   case checkE e ctx d smap of

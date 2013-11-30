@@ -13,6 +13,7 @@ data Type = Int
           | Struct String
           | Pointer Type
           | Array Type
+          | Poly Type Type
           | Map [Type] Type deriving (Eq, Show, Ord)
 
 data Op = Mul

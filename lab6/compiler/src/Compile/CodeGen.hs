@@ -18,11 +18,11 @@ import Compile.SSA
 {- TODO: Our IR sucks pretty bad. I dont think we should need to use
 a typechecker in the cogen phase (we are now). A lot of information is
 being thrown out after elaboration. -}
-codeGen :: (Program, Map.Map String [Param], Bool, Int) -> Map.Map String [Asm]
+codeGen :: (Program, Map.Map String (Maybe String, [Param]), Bool, Int) -> Map.Map String [Asm]
 codeGen (Program gdecls, sdefn, safe, opt) =
   let
-    smap = Map.map (\(a,b,c) -> (a,c)) $ structInfo sdefn
-    fdefns = trace (show smap) concatMap (\x -> case x of
+    smap = Map.map (\(a,b,c,d) -> (a,b,d)) $ structInfo sdefn
+    fdefns = concatMap (\x -> case x of
                            (FDefn _ s p (Block b _) _) -> [(s,p,b)]
                            _ -> []) gdecls
     lengths = map (\(s,_,b) -> (s, length b)) fdefns
@@ -223,39 +223,42 @@ inline' func fmap nst (s:st) =
         
 
 -- Computes struct size and field offsets in bytes.
-structInfo :: Map.Map String [Param] -> Map.Map String (Int, Int, Map.Map String (Int, Type))
+structInfo :: Map.Map String (Maybe String, [Param]) ->
+              Map.Map String (Maybe String, Int, Int, Map.Map String (Int, Type))
 structInfo sdefn = 
-  Map.foldWithKey (\s -> \params -> \acc -> let
+  Map.foldWithKey (\s -> \(typeParam, params) -> \acc -> let
                       (largest, size, ps, acc') = computeStruct s params sdefn acc
                       size' = if largest == 0 then 0 else case mod size largest of
                          0 -> size
                          n -> size + largest - n
-                      acc'' = Map.insert s (size', largest, ps) acc'
+                      acc'' = Map.insert s (typeParam, size', largest, ps) acc'
                       in acc'') Map.empty sdefn
 
-computeStruct s params sdefn m = foldl (addField sdefn) (0, 0, Map.empty, m) params
+computeStruct s params sdefn m =
+  foldl (addField sdefn) (0, 0, Map.empty, m) params
   
-addField sdefn = (\(constraint, size, ps, m) -> \(Param t s) -> let
-                     (pSize, align, m') = case t of
-                       (Type _) -> (8, 8, m)
-                       Bool -> (4, 4, m)
-                       Int -> (4, 4, m)
-                       (Pointer _) -> (8, 8, m)
-                       (Array _) -> (8, 8, m)
-                       (Struct s) -> case Map.lookup s m of
-                         Just (len, align, _) -> (len, align, m)
-                         Nothing -> let
-                           params = sdefn Map.! s
-                           (constraint, size, ps, m') = computeStruct s params sdefn m
-                           size' = if constraint == 0 then size else case mod size constraint of
-                             0 -> size
-                             n -> size + constraint - n
-                           m'' = Map.insert s (size', constraint, ps) m'
-                           in (size', constraint, m'')
-                     offset = if align == 0 then size else case mod size align of
-                       0 -> size
-                       n -> size + pSize - n
-                     in (max constraint align, offset + pSize, Map.insert s (offset, t) ps, m'))
+addField sdefn =
+  (\(constraint, size, ps, m) -> \(Param t s) -> let
+      (pSize, align, m') = case t of
+        (Type _) -> (8, 8, m)
+        Bool -> (4, 4, m)
+        Int -> (4, 4, m)
+        (Pointer _) -> (8, 8, m)
+        (Array _) -> (8, 8, m)
+        (Struct s) -> case Map.lookup s m of
+          Just (_, len, align, _) -> (len, align, m)
+          Nothing -> let
+            (typeParam, params) = sdefn Map.! s
+            (constraint, size, ps, m') = computeStruct s params sdefn m
+            size' = if constraint == 0 then size else case mod size constraint of
+              0 -> size
+              n -> size + constraint - n
+            m'' = Map.insert s (typeParam, size', constraint, ps) m'
+            in (size', constraint, m'')
+      offset = if align == 0 then size else case mod size align of
+        0 -> size
+        n -> size + pSize - n
+      in (max constraint align, offset + pSize, Map.insert s (offset, t) ps, m'))
         
 genFunction (fun,p,b) l lengths (c, smap) safe opt =
   let
@@ -370,7 +373,7 @@ getLvalAddr (LArray (LIdent i) e) t n l (ctx, smap) typs safe = let
     (Array Int) -> 4
     (Array Bool) -> 4
     (Array (Struct s)) -> let
-      (size, _) = smap Map.! s in size
+      (_, size, _) = smap Map.! s in size
     _ -> 8                             
   op = case size of
     4 -> MemMov Small
@@ -398,7 +401,7 @@ getLvalAddr (LArray l e) t n lbl (ctx, smap) typs safe = let
     (Array Int) -> 4
     (Array Bool) -> 4
     (Array (Struct s)) -> let
-      (size, _) = smap Map.! s in size
+      (_, size, _) = smap Map.! s in size
     _ -> 8                             
   op = case size of
     4 -> MemMov Small
@@ -422,9 +425,12 @@ getLvalAddr (LArray l e) t n lbl (ctx, smap) typs safe = let
                AAsm [t] AddrAdd [ALoc $ ATemp (n''+1), ALoc $ ATemp n'']]
        in (lvalAasm ++ addr ++ exp ++ aasm, n''+2, lbl'')
 getLvalAddr (LArrow (LIdent s) i) t n lbl (ctx, smap) _ safe = let
-  offset = case Map.lookup s ctx of
+  offset = case trace (show ctx) Map.lookup s ctx of
     Just (Pointer (Struct st)) -> case Map.lookup st smap of
-      Just (_, m) -> case Map.lookup i m of
+      Just (_, _, m) -> case Map.lookup i m of
+        Just (offset, _) -> offset
+    Just (Pointer (Poly t' (Struct st))) -> case Map.lookup st smap of
+      Just (_, _, m) -> case Map.lookup i m of
         Just (offset, _) -> offset
   in if safe then let
     aasm = [ACtrl $ Ifz (ALoc $ AVar s) "mem" True,
@@ -439,7 +445,7 @@ getLvalAddr (LArrow l i) t n lbl (ctx, smap) typs safe = let
   s = case head typs of
     (Pointer (Struct i)) -> i
   offset = case Map.lookup s smap of
-    Just (_, m) -> case Map.lookup i m of
+    Just (_, _, m) -> case Map.lookup i m of
       Just (offset, _) -> offset
   aasm = [AAsm [ATemp n'] Nop [ALoc $ Pt $ ATemp n],
           AAsm [t] AddrAdd [ALoc $ ATemp n', AImm $ fromIntegral offset]]
@@ -450,7 +456,7 @@ getLvalAddr (LDot l i) t n lbl (ctx, smap) typs safe = let
   s = case head typs of
     (Struct i) -> i
   offset = case Map.lookup s smap of
-    Just (_, m) -> case Map.lookup i m of
+    Just (_, _, m) -> case Map.lookup i m of
       Just (offset, _) -> offset
   aasm = [AAsm [t] AddrAdd [ALoc $ ATemp n, AImm $ fromIntegral offset]]
   in (lvalAasm ++ aasm, n', lbl')
@@ -466,14 +472,24 @@ lvalType (LArrow l i) (ctx, smap) =
   case lvalType l (ctx, smap) of
     (Pointer (Struct s)) ->
       case Map.lookup s smap of
-        (Just (_, fields)) ->
+        (Just (_, _, fields)) ->
           case Map.lookup i fields of
             (Just (_, t)) -> t
+    Pointer (Poly t (Struct s)) ->
+      case Map.lookup s smap of
+        Just (Just typeParam, _, fields) ->
+          case Map.lookup i fields of
+            Just (_, Type t') -> if t' == typeParam then t
+                                 else Type t'
+            Just (_, t) -> t
+        Just (_, _, fields) ->
+          case Map.lookup i fields of
+            Just (_, t) -> t
 lvalType (LDot l i) (ctx, smap) =
   case lvalType l (ctx, smap) of
     (Struct s) ->
       case Map.lookup s smap of
-        (Just (_, fields)) ->
+        (Just (_, _, fields)) ->
           case Map.lookup i fields of
             (Just (_, t)) -> t
      
@@ -511,7 +527,7 @@ typecheck (ExpBinOp Arrow e (Ident i _) _) (ctx, smap) typs =
       case typecheck e (ctx, smap) typs of
         (typs',(Pointer (Struct s))) ->
           case Map.lookup s smap of
-            Just (_, m) ->
+            Just (_, _, m) ->
               case Map.lookup i m of
                 Just (_, t) -> let typs'' = Map.insert e t typs'
                                in (typs'',t)
@@ -522,7 +538,7 @@ typecheck (ExpBinOp Dot e (Ident i _) _) (ctx, smap) typs =
       case typecheck e (ctx, smap) typs of
         (typs',(Struct s)) ->
           case Map.lookup s smap of
-            Just (_, m) ->
+            Just (_, _, m) ->
               case Map.lookup i m of
                 Just (_, t) -> let typs'' = Map.insert e t typs'
                                in (typs'', t)
@@ -548,7 +564,7 @@ typExpr (ExpBinOp Arrow e (Ident i _) _) (ctx, smap) l =
   in case head l' of
     (Pointer (Struct s)) ->
       case Map.lookup s smap of
-        Just (_, m) ->
+        Just (_, _, m) ->
           case Map.lookup i m of
             Just (_, t) -> t : l'
 typExpr (ExpBinOp Dot e (Ident i _) _) (ctx, smap) l =
@@ -556,7 +572,7 @@ typExpr (ExpBinOp Dot e (Ident i _) _) (ctx, smap) l =
   in case head l' of
     (Struct s) ->
       case Map.lookup s smap of
-        Just (_, m) ->
+        Just (_, _, m) ->
           case Map.lookup i m of
             Just (_, t) -> t : l' 
 typExpr (Alloc t _) (ctx, smap) l = (Pointer t) : l
@@ -568,7 +584,7 @@ lvaltypes (LDot lval s) ctx smap l =
     l' = lvaltypes lval ctx smap l
   in
    case head l' of
-     (Struct s') -> let (_,p) = smap Map.! s'
+     (Struct s') -> let (_, _,p) = smap Map.! s'
                         (_,t) = p Map.! s
                     in t:l'
 lvaltypes (LDeref lval) ctx smap l =
@@ -757,7 +773,7 @@ genStmt acc ((Ctrl (Assert e _) p) : xs) lens ctx safe = let
   in genStmt acc (s : xs) lens ctx safe
 
 genExp :: (Int, Int) -> Expr -> ALoc -> [(String, Int)] ->
-          (Map.Map String Type, Map.Map String (Int, Map.Map String (Int, Type))) ->
+          (Map.Map String Type, Map.Map String (Maybe String, Int, Map.Map String (Int, Type))) ->
           Bool -> ([AAsm], Int, Int)
 genExp (n,l) (TempLoc i) loc _ _ _ = ([AAsm [loc] Nop [ALoc $ Pt $ ATemp i]], n, l)
 genExp (n,l) (ExpInt _ i _) loc _ _ _ = ([AAsm [loc] Nop [AImm $ fromIntegral i]], n, l)
@@ -771,7 +787,7 @@ genExp (n,l) (ExpBinOp Arrow e (Ident f _) p) loc lens (ctx, smap) safe = let
   s = case s' of
     (Pointer (Struct i)) -> i
   offset = case Map.lookup s smap of
-    Just (_, m) -> case Map.lookup f m of
+    Just (_, _, m) -> case Map.lookup f m of
       Just (offset, _) -> offset
   aasm = [AAsm [ATemp n'] AddrAdd [ALoc $ ATemp n, AImm $ fromIntegral offset],
           AAsm [loc] Nop [ALoc $ Pt $ ATemp n']]
@@ -782,7 +798,7 @@ genExp (n,l) (ExpBinOp Dot e (Ident f _) p) loc lens (ctx, smap) safe = let
   s = case head typs of
     (Struct i) -> i
   offset = case Map.lookup s smap of
-    Just (_, m) -> case Map.lookup f m of
+    Just (_, _, m) -> case Map.lookup f m of
       Just (offset, _) -> offset
   aasm = [AAsm [ATemp n'] AddrAdd [ALoc $ ATemp n, AImm $ fromIntegral offset],
           AAsm [loc] Nop [ALoc $ Pt $ ATemp n']]
@@ -919,7 +935,9 @@ genExp (n, l) (Alloc t _) loc lens (ctx, smap) safe =
       (Pointer _) -> 8
       (Array _) -> 8
       (Struct s) -> case Map.lookup s smap of
-        Just (i, _) -> i
+        Just (_, i, _) -> i
+      Poly _ (Struct s) -> case Map.lookup s smap of
+        Just (_, i, _) -> i
     aasm = [AAsm [AArg 1] Nop [AImm $ fromIntegral size],
             AAsm [AArg 0] Nop [AImm $ fromIntegral 1],
             ACtrl $ Call "_c0_calloc" [],
@@ -933,7 +951,7 @@ genExp (n, l) (AllocArray t e _) loc lens (ctx, smap) safe =
       (Pointer _) -> 8
       (Array _) -> 8
       (Struct s) -> let
-        (size, _) = smap Map.! s in size
+        (_, size, _) = smap Map.! s in size
     (exp, n', l') = genExp (n+1, l) e (ATemp n) lens (ctx, smap) safe
     aasm = case safe of
       True -> [AAsm [ATemp (n'+2)] Nop [AImm $ fromIntegral 0],
