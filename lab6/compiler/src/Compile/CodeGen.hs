@@ -425,7 +425,7 @@ getLvalAddr (LArray l e) t n lbl (ctx, smap) typs safe = let
                AAsm [t] AddrAdd [ALoc $ ATemp (n''+1), ALoc $ ATemp n'']]
        in (lvalAasm ++ addr ++ exp ++ aasm, n''+2, lbl'')
 getLvalAddr (LArrow (LIdent s) i) t n lbl (ctx, smap) _ safe = let
-  offset = case trace (show ctx) Map.lookup s ctx of
+  offset = case Map.lookup s ctx of
     Just (Pointer (Struct st)) -> case Map.lookup st smap of
       Just (_, _, m) -> case Map.lookup i m of
         Just (offset, _) -> offset
@@ -786,6 +786,7 @@ genExp (n,l) (ExpBinOp Arrow e (Ident f _) p) loc lens (ctx, smap) safe = let
   (exp, n', l') = genExp (n+1,l) e (ATemp n) lens (ctx, smap) safe
   s = case s' of
     (Pointer (Struct i)) -> i
+    (Pointer (Poly _ (Struct i))) -> i
   offset = case Map.lookup s smap of
     Just (_, _, m) -> case Map.lookup f m of
       Just (offset, _) -> offset

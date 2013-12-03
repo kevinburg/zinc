@@ -363,12 +363,21 @@ checkE (ExpBinOp Arrow e (Ident s2 _) _) ctx d smap =
     ValidE t ->
       case t of
         (Pointer (Struct s)) ->
-              case Map.lookup s smap of
-                Nothing -> BadE $ "undefined struct " ++ s
-                Just (_, fields) ->
-                  case List.find (\(Param _ fieldName) -> fieldName == s2) fields of
-                    Nothing -> BadE $ "field " ++ s2 ++ " undefined in struct " ++ s
-                    Just (Param t' _) -> ValidE t'
+          case Map.lookup s smap of
+            Nothing -> BadE $ "undefined struct " ++ s
+            Just (_, fields) ->
+              case List.find (\(Param _ fieldName) -> fieldName == s2) fields of
+                Nothing -> BadE $ "field " ++ s2 ++ " undefined in struct " ++ s
+                Just (Param t' _) -> ValidE t'
+        (Pointer (Poly t (Struct s1))) ->
+          case Map.lookup s1 smap of
+            Just (Just typeParam, ps) ->
+              case List.find (\(Param _ f) -> f == s2) ps of
+                Just (Param (Type t') _) -> if t' == typeParam then ValidE t
+                                            else BadE "critical error: plz abort"
+                Just (Param t _) -> ValidE t
+                _ -> BadE "wat"
+            _ -> BadE $ "undefined struct " ++ s1
         _ -> BadE "Invalid exp on LHS of arrow op"
 checkE (ExpBinOp Arrow _ _ _) _ _ _ = 
   BadE $ "exp on RHS of arrow op is not identifier."
