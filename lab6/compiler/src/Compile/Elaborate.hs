@@ -22,8 +22,7 @@ elaborate (Program gdecls) =
       sdefn' = Map.map (\(typeParam, x) -> (typeParam, 
                          map (\(Param t s) -> case typeParam of
                                  Nothing -> Param (findType typedef t) s
-                                 Just t' -> if t == (Type t') then Param t s
-                                            else Param (findType typedef t) s
+                                 Just t' -> Param (findPolyType typedef (Type t') t) s
                              ) x)) sdefn
       in case foldr
               (\(key, val) -> \acc ->
@@ -155,7 +154,8 @@ partProgram ((SDefn s typeParam f _) : xs) (typedef, fdecl, fdefn, sdefn) =
                                                 Nothing -> False
                                               _ -> False) f
       sts'' = map (\(Param t i) -> case t of Struct s' -> Param (Struct s') i
-                                             Type s' -> Param (typedef Map.! s') i) sts
+                                             Type s' ->
+                                               Param (typedef Map.! s') i) sts
       sts' = map (\(Param (Struct s') i) -> (Map.member s' sdefn && s /= s', s')) sts''
    in
     case foldl(\(x,a)-> \(y,b)-> case x && y of False -> (False,b)

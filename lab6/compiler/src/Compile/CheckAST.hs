@@ -45,8 +45,7 @@ checkAST (typedef, fdefns, sdefns) =
                               (\(typeParam, x) -> (typeParam, 
                                 map (\(Param t s) -> case typeParam of
                                         Nothing -> Param (findType typedef t) s
-                                        (Just t') -> if t == (Type t') then Param t s
-                                                     else Param (findType typedef t) s
+                                        (Just t') -> Param (findPolyType typedef (Type t') t) s
                                     ) x))
                               sdefns'
                    in case checkFunction tdefs ctx'' (t,p,b) fdefns sdefns'' of
@@ -54,7 +53,23 @@ checkAST (typedef, fdefns, sdefns) =
                      Right () -> Right ctx'') (Right ctx) fdefns of
       Left s -> Left s
       Right _ -> Right sdefns
-       
+
+{- Like findType but we dont replace the (Type a) field if it matches
+ the type paramter of the struct -}     
+findPolyType m t' (Type s) =
+  if (Type s) == t' then t'
+  else let
+    res = m Map.! s
+    in res `seq` findPolyType m t' res
+findPolyType m t' (Map t1 t2) = Map (map (findPolyType m t') t1) (findPolyType m t' t2)
+findPolyType m t' (Pointer t) = let
+  t'' = findPolyType m t' t
+  in t'' `seq` Pointer t''
+findPolyType m t' (Array t) = let
+  t'' = findPolyType m t' t
+  in t'' `seq` Array (findPolyType m t' t'')
+findPolyType _ _ x = x
+                 
 addHeader typedef = let
   funs = [("fadd", Map [Int, Int] Int),
           ("fsub", Map [Int, Int] Int),
@@ -96,7 +111,7 @@ fixTypesE m (App s e p) = let e' = map (fixTypesE m) e
 fixTypesE m x = x
 
 findType m (Type s) = let
-  res = (m Map.! s)
+  res = m Map.! s
   in res `seq` findType m res
 findType m (Map t1 t2) = Map (map (findType m) t1) (findType m t2)
 findType m (Pointer t) = let
@@ -104,7 +119,7 @@ findType m (Pointer t) = let
   in t' `seq` Pointer t'
 findType m (Array t) = let
   t' = findType m t
-  in t' `seq` Array (findType m t)
+  in t' `seq` Array t'
 findType _ x = x
              
 checkFunction m ctx val defined sdefns =
@@ -264,8 +279,8 @@ checkS (AAssign l e) ctx m d _ smap =
       case checkE e ctx d smap of
         BadE s -> BadS s
         ValidE t2 -> if (t1 == t2 && asnStrct(t2)) || ptrAny(t1,t2) then ValidS
-                     else BadS $ (show l) ++ " declared with type " ++ "no" ++ --(show t1) ++ 
-                          " assigned with type " ++ "no" --(show t2)
+                     else BadS $ (show l) ++ " declared with type " ++ (show t1) ++ 
+                          " assigned with type " ++ (show t2)
           where ptrAny(t1,t2) = case (t1,t2) of
                   (Pointer _, Pointer Void) -> True
                   _ -> False
@@ -304,9 +319,8 @@ lvalType (LArrow l s) ctx d smap =
       case Map.lookup s1 smap of
         Just (Just typeParam, ps) ->
           case List.find (\(Param _ f) -> f == s) ps of
-            Just (Param (Type t') _) -> if t' == typeParam then Just t
-                                        else Nothing
-            Just (Param t _) -> Just t
+            Just (Param t' _) ->
+              Just $ findType (Map.singleton typeParam t) t'
             _ -> Nothing
         _ -> Nothing
     _ -> Nothing
@@ -373,9 +387,8 @@ checkE (ExpBinOp Arrow e (Ident s2 _) _) ctx d smap =
           case Map.lookup s1 smap of
             Just (Just typeParam, ps) ->
               case List.find (\(Param _ f) -> f == s2) ps of
-                Just (Param (Type t') _) -> if t' == typeParam then ValidE t
-                                            else BadE "critical error: plz abort"
-                Just (Param t _) -> ValidE t
+                Just (Param t' _) ->
+                  ValidE $ findType (Map.singleton typeParam t) t'
                 _ -> BadE "wat"
             _ -> BadE $ "undefined struct " ++ s1
         _ -> BadE "Invalid exp on LHS of arrow op"

@@ -41,7 +41,7 @@ codeGen (Program gdecls, sdefn, safe, opt) =
     (res, _) = foldr (\f -> \(m, l) -> let
                     (s, aasm, l') = genFunction f l lengths (ctx, smap) safe opt
                     in (Map.insert s aasm m, l')) (Map.empty,0) inl
-  in {-trace sinl $-} res
+  in res
 
 
 ptoe [] = []
