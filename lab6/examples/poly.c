@@ -1,18 +1,14 @@
 struct foo <a> {
-  int x;
-  a y;
-  int z;
+  int size;
+  a[] array;
 };
 
 int main() {
-  struct foo <int> *s1 = alloc(struct foo <int>);
-  struct foo <bool> *s2 = alloc(struct foo <bool>);
-  s1->x = 1;
-  s1->y = (s1->x)+1;
-  s1->z = (s1->y)+1;
-  s2->y = true;
-  if (s2->y) {
-    return s1->x + s1->y + s1->z;
-  }
-  return 0;
+  int size = 5;
+  int[] A = alloc_array(int, size);
+  struct foo <int> *s = alloc(struct foo <int>);
+  s->size = size;
+  s->array = A;
+  (s->array)[1]=10;
+  return (s->array)[1];
 }

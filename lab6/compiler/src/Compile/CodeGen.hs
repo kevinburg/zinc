@@ -14,6 +14,7 @@ import Text.Parsec.Pos
 import Debug.Trace
 
 import Compile.SSA
+import qualified Compile.CheckAST as Check
 
 {- TODO: Our IR sucks pretty bad. I dont think we should need to use
 a typechecker in the cogen phase (we are now). A lot of information is
@@ -479,9 +480,7 @@ lvalType (LArrow l i) (ctx, smap) =
       case Map.lookup s smap of
         Just (Just typeParam, _, fields) ->
           case Map.lookup i fields of
-            Just (_, Type t') -> if t' == typeParam then t
-                                 else Type t'
-            Just (_, t) -> t
+            Just (_, t') -> Check.findType (Map.singleton typeParam t) t'
         Just (_, _, fields) ->
           case Map.lookup i fields of
             Just (_, t) -> t
@@ -531,6 +530,14 @@ typecheck (ExpBinOp Arrow e (Ident i _) _) (ctx, smap) typs =
               case Map.lookup i m of
                 Just (_, t) -> let typs'' = Map.insert e t typs'
                                in (typs'',t)
+        (typs',(Pointer (Poly t (Struct s)))) ->
+          case Map.lookup s smap of
+            Just (Just typeParam, _, m) ->
+              case Map.lookup i m of
+                Just (_, t') -> (typs', Check.findType (Map.singleton typeParam t) t')
+            Just (_, _, m) ->
+              case Map.lookup i m of
+                Just (_, t) -> (typs', t)
 typecheck (ExpBinOp Dot e (Ident i _) _) (ctx, smap) typs =
   case Map.lookup e typs of
     Just t' -> (typs,t')
@@ -564,6 +571,14 @@ typExpr (ExpBinOp Arrow e (Ident i _) _) (ctx, smap) l =
   in case head l' of
     (Pointer (Struct s)) ->
       case Map.lookup s smap of
+        Just (_, _, m) ->
+          case Map.lookup i m of
+            Just (_, t) -> t : l'
+    Pointer (Poly t (Struct s)) ->
+      case Map.lookup s smap of
+        Just (Just typeParam, _, m) ->
+          case Map.lookup i m of
+            Just (_, t') -> (Check.findType (Map.singleton typeParam t) t') : l'
         Just (_, _, m) ->
           case Map.lookup i m of
             Just (_, t) -> t : l'
