@@ -6,7 +6,8 @@
 -}
 module Compile.Types.Ops where
 
-data Type = Int 
+data Type = SmallType
+          | Int 
           | Bool 
           | Void 
           | Type String

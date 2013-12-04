@@ -115,10 +115,11 @@ partProgram ((FDefn t s p b _) : xs) (typedef, fdecl, fdefn, sdefn) =
     p' = map (\(Param t i) -> case t of
                  Type s' -> Param (typedef Map.! s') i
                  _ -> Param t i) p
+    typedef' = foldr (\(Param t _) -> \acc -> addPolyParam acc t) typedef p'
   in
-   case check (t, s, p') (typedef, fdecl, fdefn) of
+   case check (t, s, p') (typedef', fdecl, fdefn) of
      Left err -> Left err
-     Right () -> partProgram xs (typedef, fdecl, (s, (t,p',b,typedef,fdecl,sdefn)) : fdefn, sdefn)
+     Right () -> partProgram xs (typedef, fdecl, (s, (t,p',b,typedef',fdecl,sdefn)) : fdefn, sdefn)
 partProgram ((SDecl _ _) : xs) acc =
   partProgram xs acc
 partProgram ((SDefn s typeParam f _) : xs) (typedef, fdecl, fdefn, sdefn) =
@@ -164,6 +165,10 @@ partProgram ((SDefn s typeParam f _) : xs) (typedef, fdecl, fdefn, sdefn) =
       (True,a) -> Right ()) >>= \_ ->
   partProgram xs (typedef, fdecl, fdefn, Map.insert s (typeParam, f) sdefn)
 
+addPolyParam m (Type s) = Map.insert s SmallType m
+addPolyParam m (Pointer (Poly t _)) = addPolyParam m t
+addPolyParam m _ = m
+
 check (t, s, p) (typedef, fdecl, fdefn) = 
   (case t of
       Type s' ->
@@ -194,6 +199,7 @@ check (t, s, p) (typedef, fdecl, fdefn) =
                 Int -> False
                 Bool -> False
                 Void -> False
+                Poly _ t' -> pType t'
                 _ -> True
    in
     case any (\x -> x) pt' of

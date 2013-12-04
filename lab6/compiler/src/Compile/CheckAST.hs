@@ -497,6 +497,8 @@ checkE (Subscr e1 e2 _) ctx d smap =
 
 typeCompare (Pointer Void, Pointer _) = True
 typeCompare (Pointer _, Pointer Void) = True
+typeCompare (Poly _ t1, Poly _ t2) = typeCompare (t1, t2)
+typeCompare (Pointer t1, Pointer t2) = typeCompare (t1, t2)
 typeCompare (t1, t2) = t1 == t2
 
 getIdent s (LIdent i) (LIdent _) = Right i

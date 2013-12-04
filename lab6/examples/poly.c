@@ -3,12 +3,16 @@ struct foo <a> {
   a[] array;
 };
 
+int front(struct foo <a> *s) {
+  return s->size;
+}
+
 int main() {
   int size = 5;
   int[] A = alloc_array(int, size);
   struct foo <int> *s = alloc(struct foo <int>);
   s->size = size;
+  A[0] = 10;
   s->array = A;
-  (s->array)[1]=10;
-  return (s->array)[1];
+  return front(s);
 }
