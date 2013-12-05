@@ -1,9 +1,10 @@
 \documentclass[aps,letterpaper,11pt]{revtex4}
 \input kvmacros
+\input{cmacros}
 
 \linespread{1.2}
 
-
+\usepackage{proof}
 \usepackage{graphicx}
 \usepackage{float}
 \usepackage{verbatim}
@@ -59,6 +60,39 @@ substituted for these type parameters.
 
 \newpage
 \section{Specification}
+
+We extend the grammar of L4 in the following way.\\
+
+\begin{tabular}{lll}
+$\langle\text{identopt}\rangle$ \hspace{.5in}	& $::=$ & $\epsilon~|~\langle\text{ident}\rangle$\\
+$\langle\text{sdecl}\rangle$	& $::=$	& 	\textbf{struct ident} $\langle$identopt$\rangle$\textbf{;}\\
+$\langle\text{sdefn}\rangle$	& $::=$	& 	\textbf{struct ident} $\langle$identopt$\rangle$ \textbf{\{}
+											$\langle\text{field-list}\rangle$ \textbf{\};}\\
+$\langle\text{type}\rangle$	& $::=$	& \ldots $|$ \textbf{$<$}$\langle\text{type}\rangle$\textbf{$>$}
+\end{tabular}\\
+
+We need to introduce some notation to explain parameterized structure types. We allow a new form of declaration
+$a : \text{type}$ in our context. We write the type of a polymorphic structure in the following way
+
+\begin{center}
+$s : \forall a. s[a]$
+\end{center}
+
+In the example from the introduction, we would write $\textbf{struct foo} : \forall a. \textbf{struct foo}[a]$.
+Now write the judgement which gives a type to instantiated polymorphic structures is given by
+\[
+\begin{tabular}{c}
+  \infer{\textbf{alloc}(s <\tau'>) : \tau[\tau']^*}
+        {	
+        	{\tau'~\text{small}} \vspace{.1cm}\\
+			{s : \forall a. \tau[a]}
+        }
+\end{tabular}
+\]
+This says two important things. First, it says that any type substitution must occur with a small type.
+These are \texttt{int}, \texttt{bool}, etc. Because the small types are all concrete types, and structs are
+never parameterized by more than one type variable, an allocation may never return an object of
+existential type.
 
 \newpage
 \section{Implementation}
