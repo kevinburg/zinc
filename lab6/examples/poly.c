@@ -1,18 +1,15 @@
 struct foo <a> {
-  int size;
-  a[] array;
+  int x;
+  a data;
 };
 
-int front(struct foo <a> *s) {
-  return s->size;
+a data(struct foo <a> *s) {
+  return s->data;
 }
 
 int main() {
-  int size = 5;
-  int[] A = alloc_array(int, size);
   struct foo <int> *s = alloc(struct foo <int>);
-  s->size = size;
-  A[0] = 10;
-  s->array = A;
-  return front(s);
+  s->x = 1;
+  s->data = 2;
+  return data(s);
 }

@@ -480,7 +480,7 @@ lvalType (LArrow l i) (ctx, smap) =
       case Map.lookup s smap of
         Just (Just typeParam, _, fields) ->
           case Map.lookup i fields of
-            Just (_, t') -> Check.findType (Map.singleton typeParam t) t'
+            Just (_, t') -> Check.findType (Map.singleton typeParam t) Set.empty t'
         Just (_, _, fields) ->
           case Map.lookup i fields of
             Just (_, t) -> t
@@ -534,7 +534,7 @@ typecheck (ExpBinOp Arrow e (Ident i _) _) (ctx, smap) typs =
           case Map.lookup s smap of
             Just (Just typeParam, _, m) ->
               case Map.lookup i m of
-                Just (_, t') -> (typs', Check.findType (Map.singleton typeParam t) t')
+                Just (_, t') -> (typs', Check.findType (Map.singleton typeParam t) Set.empty t')
             Just (_, _, m) ->
               case Map.lookup i m of
                 Just (_, t) -> (typs', t)
@@ -578,7 +578,7 @@ typExpr (ExpBinOp Arrow e (Ident i _) _) (ctx, smap) l =
       case Map.lookup s smap of
         Just (Just typeParam, _, m) ->
           case Map.lookup i m of
-            Just (_, t') -> (Check.findType (Map.singleton typeParam t) t') : l'
+            Just (_, t') -> (Check.findType (Map.singleton typeParam t) Set.empty t') : l'
         Just (_, _, m) ->
           case Map.lookup i m of
             Just (_, t) -> t : l'

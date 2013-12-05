@@ -26,25 +26,27 @@ checkAST (typedef, fdefns, sdefns) =
         Nothing -> Left "main undefined"
         (Just (t, p, s, tdefs, _, _)) ->
           if length(p) > 0 then Left "main should take no arguments" else
-            if not(typeEq tdefs (Int, (findType tdefs) t)) then Left "main is not type int" else
+            if not(typeEq tdefs (Int, (findType tdefs Set.empty) t))
+            then Left "main is not type int" else
               Right ()) >>= \_ ->
     case foldr
-         (\(fun,(t, p, b, tdefs, fdecls, sdefns')) -> \acc ->
-           case findType tdefs t of
+         (\(fun,(t, p, b, tdefs, fdecls, sdefns')) -> \acc -> let
+           (output, args, _) = fixTypes tdefs (t,p,ANup) in
+           --case trace ((show fdefns) ++ "\n" ++ show fun) findType tdefs t of
+           case output of
              (Struct _) -> Left "function returns large type"
              _ ->
                case acc of
                  Left s -> Left s
                  Right ctx -> let
-                   (output, args, _) = fixTypes tdefs (t,p,ANup)
                    ts = map (\(Param ty i) -> ty) args
                    ctx' = Map.unions [ctx, Map.map (\(t1,t2) -> Map t2 t1) fdecls,
                                       Map.singleton fun (Map ts output)]
-                   ctx'' = Map.map (findType tdefs) ctx'
+                   ctx'' = Map.map (findType tdefs Set.empty) ctx'
                    sdefns'' = Map.map
                               (\(typeParam, x) -> (typeParam, 
                                 map (\(Param t s) -> case typeParam of
-                                        Nothing -> Param (findType typedef t) s
+                                        Nothing -> Param (findType typedef Set.empty t) s
                                         (Just t') -> Param (findPolyType typedef (Type t') t) s
                                     ) x))
                               sdefns'
@@ -52,7 +54,7 @@ checkAST (typedef, fdefns, sdefns) =
                      Left s -> Left s
                      Right () -> Right ctx'') (Right ctx) fdefns of
       Left s -> Left s
-      Right _ -> Right sdefns
+      Right x -> Right sdefns
 
 {- Like findType but we dont replace the (Type a) field if it matches
  the type paramter of the struct -}     
@@ -85,42 +87,56 @@ addHeader typedef = let
              
 fixTypes m (t, p, s) = 
   let
-    t' = findType m t
-    p' = map (\(Param t1 s) -> Param (findType m t1) s) p
-    s' = fixTypes' m s
+    freeVars = freeTypeVars Set.empty p
+    t' = findType m freeVars t
+    p' = map (\(Param t1 s) -> Param (findType m freeVars t1) s) p
+    s' = fixTypes' m freeVars s
   in (t', p', s') where
 
+freeTypeVars s [] = s
+freeTypeVars s ((Param (Poly (Type t) _) _) : xs) = freeTypeVars (Set.insert t s) xs
+freeTypeVars s ((Param (Pointer t) _) : xs) = freeTypeVars s ((Param t "") : xs)
+freeTypeVars s (_ : xs) = freeTypeVars s xs
+    
 {- TODO: I feel like we run this fixTypes routine in a bunch of
 different places across the codebase under different names.
 Maybe unify them? -}
-fixTypes' m (ADeclare i t s) = ADeclare i (findType m t) (fixTypes' m s)
-fixTypes' m (AIf e s1 s2) = AIf (fixTypesE m e) (fixTypes' m s1) (fixTypes' m s2)
-fixTypes' m (AWhile e s) = AWhile (fixTypesE m e) (fixTypes' m s)
-fixTypes' m (ASeq s1 s2) = ASeq (fixTypes' m s1) (fixTypes' m s2)
-fixTypes' m (ABlock s1 s2) = ABlock (fixTypes' m s1) (fixTypes' m s2)
-fixTypes' m (AExpr e s) = AExpr (fixTypesE m e) (fixTypes' m s)
-fixTypes' m (AAssign l e) = AAssign l (fixTypesE m e)
-fixTypes' m (AReturn (Just e)) = AReturn $ Just (fixTypesE m e)
-fixTypes' m x = x
+fixTypes' m f (ADeclare i t s) = ADeclare i (findType m f t) (fixTypes' m f s)
+fixTypes' m f (AIf e s1 s2) = AIf (fixTypesE m f e) (fixTypes' m f s1) (fixTypes' m f s2)
+fixTypes' m f (AWhile e s) = AWhile (fixTypesE m f e) (fixTypes' m f s)
+fixTypes' m f (ASeq s1 s2) = ASeq (fixTypes' m f s1) (fixTypes' m f s2)
+fixTypes' m f (ABlock s1 s2) = ABlock (fixTypes' m f s1) (fixTypes' m f s2)
+fixTypes' m f (AExpr e s) = AExpr (fixTypesE m f e) (fixTypes' m f s)
+fixTypes' m f (AAssign l e) = AAssign l (fixTypesE m f e)
+fixTypes' m f (AReturn (Just e)) = AReturn $ Just (fixTypesE m f e)
+fixTypes' _ _ x = x
 
-fixTypesE m (Alloc t p) = Alloc (findType m t) p
-fixTypesE m (AllocArray t e p) = AllocArray (findType m t) e p
-fixTypesE m (ExpBinOp Arrow e i p) = ExpBinOp Arrow (fixTypesE m e) i p
-fixTypesE m (App s e p) = let e' = map (fixTypesE m) e
-                          in App s e' p
-fixTypesE m x = x
+fixTypesE m f (Alloc t p) = Alloc (findType m f t) p
+fixTypesE m f (AllocArray t e p) = AllocArray (findType m f t) e p
+fixTypesE m f (ExpBinOp Arrow e i p) = ExpBinOp Arrow (fixTypesE m f e) i p
+fixTypesE m f (App s e p) = let e' = map (fixTypesE m f) e
+                            in App s e' p
+fixTypesE _ _ x = x
 
-findType m (Type s) = let
-  res = m Map.! s
-  in res `seq` findType m res
-findType m (Map t1 t2) = Map (map (findType m) t1) (findType m t2)
-findType m (Pointer t) = let
-  t' = findType m t
+findType m f (Type s) =
+  case Set.member s f of
+    True -> Type s
+    _ -> let
+      res = m Map.! s
+      in case res == (Type s) of
+        True -> res
+        _ -> res `seq` findType m f res
+findType m f (Map t1 t2) = let
+  freeVars = freeTypeVars Set.empty $ map (\t -> Param t "foo") t1
+  f' = Set.union f freeVars
+  in Map (map (findType m f') t1) (findType m f' t2)
+findType m f (Pointer t) = let
+  t' = findType m f t
   in t' `seq` Pointer t'
-findType m (Array t) = let
-  t' = findType m t
+findType m f (Array t) = let
+  t' = findType m f t
   in t' `seq` Array t'
-findType _ x = x
+findType _ _ x = x
              
 checkFunction m ctx val defined sdefns =
   let
@@ -320,7 +336,7 @@ lvalType (LArrow l s) ctx d smap =
         Just (Just typeParam, ps) ->
           case List.find (\(Param _ f) -> f == s) ps of
             Just (Param t' _) ->
-              Just $ findType (Map.singleton typeParam t) t'
+              Just $ findType (Map.singleton typeParam t) Set.empty t'
             _ -> Nothing
         _ -> Nothing
     _ -> Nothing
@@ -388,7 +404,7 @@ checkE (ExpBinOp Arrow e (Ident s2 _) _) ctx d smap =
             Just (Just typeParam, ps) ->
               case List.find (\(Param _ f) -> f == s2) ps of
                 Just (Param t' _) ->
-                  ValidE $ findType (Map.singleton typeParam t) t'
+                  ValidE $ findType (Map.singleton typeParam t) Set.empty t'
                 _ -> BadE "wat"
             _ -> BadE $ "undefined struct " ++ s1
         _ -> BadE "Invalid exp on LHS of arrow op"
@@ -450,16 +466,19 @@ checkE (App fun args _) ctx d smap =
   if Set.notMember fun d then BadE "undefined fun" else
     let
       ts = map (\e -> checkE e ctx d smap) args
-      -- TODO better error propagation here
     in case any(\x -> case x of {BadE _ -> True; _ -> False}) ts of
       True -> BadE $ "Error in params to function call " ++ (show fun)
       False -> let ts' = map (\(ValidE t) -> t) ts
                in
                 case Map.lookup fun ctx of
                   (Just (Map input output)) ->
-                    if length(ts') /= length(input) then BadE "Too many arguments to function call"
-                    else if all typeCompare $ zip ts' input then ValidE output
-                      else BadE "function input type mismatch"
+                    if length(ts') /= length(input) then
+                       BadE "Too many arguments to function call"
+                    else case subContext Map.empty (zip ts' input) of
+                      Nothing -> BadE "fuction input type mismatch"
+                      (Just m) -> case output of
+                        (Type _) -> ValidE $ findType m Set.empty output
+                        _ -> ValidE output
                   _ -> BadE "undefined function call"
 checkE (Null _) ctx d smap =
   ValidE (Pointer Void) -- Placeholder for Type Any
@@ -500,6 +519,19 @@ typeCompare (Pointer _, Pointer Void) = True
 typeCompare (Poly _ t1, Poly _ t2) = typeCompare (t1, t2)
 typeCompare (Pointer t1, Pointer t2) = typeCompare (t1, t2)
 typeCompare (t1, t2) = t1 == t2
+
+--TODO: not exhaustive, plz fix
+subContext m ((Pointer t1, Pointer t2) : xs) = subContext m ((t1,t2) : xs)
+subContext m ((Poly (Type t1) s1, Poly t2 s2) : xs) =
+  subContext (Map.insert t1 t2 m) xs
+subContext m ((Poly t1 s1, Poly (Type t2) s2) : xs) =
+  subContext (Map.insert t2 t1 m) xs
+subContext m ((Type t1, t2) : xs) =
+  subContext (Map.insert t1 t2 m) xs
+subContext m ((t1, Type t2) : xs) =
+  subContext (Map.insert t2 t1 m) xs
+subContext m (_ : xs) = Nothing
+subContext m [] = Just m
 
 getIdent s (LIdent i) (LIdent _) = Right i
 getIdent s (LIdent i) _ =

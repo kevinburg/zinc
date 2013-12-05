@@ -21,7 +21,7 @@ elaborate (Program gdecls) =
                   (key,(t, p, elaborate' b, t1, t2, t3))) fdefn
       sdefn' = Map.map (\(typeParam, x) -> (typeParam, 
                          map (\(Param t s) -> case typeParam of
-                                 Nothing -> Param (findType typedef t) s
+                                 Nothing -> Param (findType typedef Set.empty t) s
                                  Just t' -> Param (findPolyType typedef (Type t') t) s
                              ) x)) sdefn
       in case foldr
@@ -36,7 +36,8 @@ elaborate (Program gdecls) =
 
 -- replace all user defined types in program
 replaceType m (FDefn t s ps (Block stmts pos1) pos2) =
-  FDefn (findType m t) s (map (replacePType m) ps) (Block (map (replaceTypeS m) stmts) pos1) pos2
+  FDefn (findType m Set.empty t) s
+  (map (replacePType m) ps) (Block (map (replaceTypeS m) stmts) pos1) pos2
 replaceType m x = x
 
 mRepStmt _ Nothing = Nothing
@@ -47,12 +48,12 @@ mRepSimp m (Just s) = let
   (Simp s' pos) = replaceTypeS m (Simp s pos)
   in Just s'
 
-replacePType m (Param t s) = Param (findType m t) s
+replacePType m (Param t s) = Param (findType m Set.empty t) s
 
 replaceTypeS m (Simp (Decl t s Nothing pos1) pos2) =
-  Simp (Decl (findType m t) s Nothing pos1) pos2
+  Simp (Decl (findType m Set.empty t) s Nothing pos1) pos2
 replaceTypeS m (Simp (Decl t s (Just e) pos1) pos2) =
-  Simp (Decl (findType m t) s (Just $ replaceTypeE m e) pos1) pos2
+  Simp (Decl (findType m Set.empty t) s (Just $ replaceTypeE m e) pos1) pos2
 replaceTypeS m (Simp (Asgn l op e pos1) pos2) =
   Simp (Asgn l op (replaceTypeE m e) pos1) pos2
 replaceTypeS m (Simp (Expr e pos1) pos2) =
@@ -75,7 +76,7 @@ replaceTypeS m (BlockStmt (Block stmts pos1) pos2) =
   BlockStmt (Block (map (replaceTypeS m) stmts) pos1) pos2
 
 -- imported from checkAST
-replaceTypeE = fixTypesE
+replaceTypeE m t= fixTypesE m Set.empty t
   
 partProgram [] acc = Right acc
 partProgram ((TypeDef t s _) : xs) (typedef, fdecl, fdefn, sdefn) =
@@ -119,7 +120,7 @@ partProgram ((FDefn t s p b _) : xs) (typedef, fdecl, fdefn, sdefn) =
   in
    case check (t, s, p') (typedef', fdecl, fdefn) of
      Left err -> Left err
-     Right () -> partProgram xs (typedef, fdecl, (s, (t,p',b,typedef',fdecl,sdefn)) : fdefn, sdefn)
+     Right () -> partProgram xs (typedef, fdecl, (s, (t,p',b,typedef,fdecl,sdefn)) : fdefn, sdefn)
 partProgram ((SDecl _ _) : xs) acc =
   partProgram xs acc
 partProgram ((SDefn s typeParam f _) : xs) (typedef, fdecl, fdefn, sdefn) =
