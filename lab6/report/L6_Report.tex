@@ -94,6 +94,24 @@ These are \texttt{int}, \texttt{bool}, etc. Because the small types are all conc
 never parameterized by more than one type variable, an allocation may never return an object of
 existential type.
 
+Function types may also be parameterized by type variables. For example, from the introduction,
+$$\texttt{getSize} : \forall a. (\textbf{struct foo}[a]) -> \texttt{int}$$
+
+Type checking the use of polymorphic functions requires a definition of type variable substitution. Suppose
+$\theta$ is our substitution, then the judgement that allows us to type check the use of polymorphic
+functions is given by
+
+\[
+\begin{tabular}{c}
+  \infer{\Gamma \vdash f(e_1, \ldots, e_n) : \theta(\tau)}
+        {	
+        	{f : \forall a_1, \ldots, a_k. (\tau_1, \ldots, \tau_n) \rightarrow \tau}\\
+			{\Gamma \vdash \theta : (a_1, \ldots, a_k)}\\
+			{\Gamma \vdash e_1 : \theta(\tau_1), \ldots, e_n : \theta(\tau_n)}
+        }
+\end{tabular}
+\]
+
 \newpage
 \section{Implementation}
 
