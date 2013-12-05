@@ -136,6 +136,10 @@ findType m f (Pointer t) = let
 findType m f (Array t) = let
   t' = findType m f t
   in t' `seq` Array t'
+findType m f (Poly t s) = let
+  t' = findType m f t
+  s' = findType m f s
+  in Poly t' s'
 findType _ _ x = x
              
 checkFunction m ctx val defined sdefns =
@@ -526,6 +530,8 @@ subContext m ((Poly (Type t1) s1, Poly t2 s2) : xs) =
   subContext (Map.insert t1 t2 m) xs
 subContext m ((Poly t1 s1, Poly (Type t2) s2) : xs) =
   subContext (Map.insert t2 t1 m) xs
+subContext m ((Poly t1 s1, Poly t2 s2) : xs) =
+  if typeCompare (t1,t2) then subContext m xs else Nothing
 subContext m ((Type t1, t2) : xs) =
   subContext (Map.insert t1 t2 m) xs
 subContext m ((t1, Type t2) : xs) =
