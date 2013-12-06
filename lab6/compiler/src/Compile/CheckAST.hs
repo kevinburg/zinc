@@ -527,15 +527,35 @@ typeCompare (t1, t2) = t1 == t2
 --TODO: not exhaustive, plz fix
 subContext m ((Pointer t1, Pointer t2) : xs) = subContext m ((t1,t2) : xs)
 subContext m ((Poly (Type t1) s1, Poly t2 s2) : xs) =
-  subContext (Map.insert t1 t2 m) xs
+  case Map.lookup t1 m of
+    Nothing ->
+      subContext (Map.insert t1 t2 m) xs
+    Just t3 ->
+      if typeCompare(t2,t3) then subContext m xs
+      else Nothing
 subContext m ((Poly t1 s1, Poly (Type t2) s2) : xs) =
-  subContext (Map.insert t2 t1 m) xs
+  case Map.lookup t2 m of
+    Nothing ->
+      subContext (Map.insert t2 t1 m) xs
+    Just t3 ->
+      if typeCompare(t1,t3) then subContext m xs
+      else Nothing
 subContext m ((Poly t1 s1, Poly t2 s2) : xs) =
   if typeCompare (t1,t2) then subContext m xs else Nothing
 subContext m ((Type t1, t2) : xs) =
-  subContext (Map.insert t1 t2 m) xs
+  case Map.lookup t1 m of
+    Nothing ->
+      subContext (Map.insert t1 t2 m) xs
+    Just t3 ->
+      if typeCompare(t2,t3) then subContext m xs
+      else Nothing
 subContext m ((t1, Type t2) : xs) =
-  subContext (Map.insert t2 t1 m) xs
+  case Map.lookup t2 m of
+    Nothing ->
+      subContext (Map.insert t2 t1 m) xs
+    Just t3 ->
+      if typeCompare(t1,t3) then subContext m xs
+      else Nothing
 subContext m ((t1,t2) : xs) =
   if typeCompare (t1,t2) then subContext m xs else Nothing
 subContext m [] = Just m
