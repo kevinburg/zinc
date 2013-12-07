@@ -24,6 +24,7 @@ data Op = Mul
         | Sub
         | Div
         | Neg
+        | FnPtr
         | Deref
         | Arrow
         | Dot
@@ -63,6 +64,9 @@ opBool _ = False
 opPointer (Pointer _) = True
 opPointer _ = False
 
+opFunc (Map _ _) = True
+opFunc _ = False
+
 opType Mul = ([opInt, opInt], \_ -> Int)
 opType Add = ([opInt, opInt], \_ -> Int)
 opType Sub = ([opInt, opInt], \_ -> Int)
@@ -87,6 +91,7 @@ opType Leq = ([opInt, opInt], \_ -> Bool)
 opType Gt = ([opInt, opInt], \_ -> Bool)
 opType Geq = ([opInt, opInt], \_ -> Bool)
 opType Deref = ([opPointer], \(Pointer t) -> t)
+opType FnPtr = ([opFunc], \(Map _ t) -> (Pointer t))
              
 instance Show Op where
   show Mul = "*"
@@ -122,3 +127,4 @@ instance Show Op where
   show AddrAdd = "AddrAdd"
   show AddrSub = "AddrSub"
   show (MemMov s) = "MemMov " ++ (show s)
+  show FnPtr = "&"

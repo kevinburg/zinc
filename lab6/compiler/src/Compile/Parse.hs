@@ -110,10 +110,18 @@ fieldList =
       ) <|> do return []
 
 param :: C0Parser Param
-param = do
-  t <- typeParse
-  i <- identifier
-  return $ Param t i
+param =
+  try (do
+          t <- typeParse
+          f <- parens $ expr
+          p <- parens $ commaSep typeParse
+          case f of
+            ExpUnOp Deref (Ident s p0) p1 -> return $ Param (Pointer (Map p t)) s
+            _ -> Text.ParsecCombinators.Parsec.unexpected "Bad Params") <|>
+  try (do
+          t <- typeParse
+          i <- identifier
+          return $ Param t i)
   <?> "param"
 
 block :: C0Parser Block
@@ -199,6 +207,21 @@ simp = try (do
                case op of
                  Just o -> return $ PostOp o dest pos
                  Nothing -> Text.ParserCombinators.Parsec.unexpected "asdfdsf") <|>
+       try (do
+               pos <- getPosition
+               c <- ctrl
+               e1 <- expr
+               e2 <- parens $ commaSep expr
+               case e1 of
+                 ExpUnOp Deref (Ident s p0) p1 -> return $ Expr (App (FuncName s) e2 p1) pos
+                 _ -> Text.ParserCombinators.Parsec.unexpected "FnPtr Ctrl") <|>
+       try (do
+               pos <- getPosition
+               e1 <- expr
+               e2 <- parens $ commaSep expr
+               case e1 of
+                 ExpUnOp Deref (Ident s p0) p1 -> return $ Expr (App (FuncName s) e2 p1) pos
+                 _ -> Text.ParserCombinators.Parsec.unexpected "FnPtr")<|> --return $ Expr (App e1 e2 pos) pos) <|>
        try (do
                pos <- getPosition
                e <- expr
@@ -416,7 +439,7 @@ termFront = do
             p <- getPosition
             i <- identifier
             args <- parens $ commaSep expr
-            return $ App i args p) <|>
+            return $ App (FuncName i) args p) <|>
    (do p <- getPosition
        i <- identifier
        return $ Ident i p) <|>
@@ -489,7 +512,7 @@ c0Def = LanguageDef
                        "alloc_array", "typedef", "struct", "else", "assert",
                        "true", "false", "bool"],
     reservedOpNames = ["+",  "*",  "-",  "/",  "%", "?", ":", "->", ".", "--",
-                       "++", "[", "]", "<", ">"],
+                       "++", "[", "]", "<", ">","&"],
     caseSensitive   = True}
 
 c0Tokens :: Tok.GenTokenParser ByteString [String] Identity
@@ -526,6 +549,7 @@ brackets   = Tok.brackets c0Tokens
 
 opTable = [[prefix "--" (ExpUnOp Fail),
             prefix  "-"   (ExpUnOp Neg),
+            prefix  "&"   (ExpUnOp FnPtr),
             prefix  "*"   (ExpUnOp Deref),
             prefix  "~"   (ExpUnOp BNot),
             prefix  "!"   (ExpUnOp LNot)],

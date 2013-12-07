@@ -35,7 +35,9 @@ codeGen (Program gdecls, sdefn, safe, opt) =
                            _ -> x) gdecls
               else gdecls
     ctx = foldr (\x -> \acc -> case x of
-                    (FDefn t s p _ _) -> foldr (\(Param ty st)-> \a-> Map.insert st ty a)
+                    (FDefn t s p _ _) -> foldr (\x -> \a -> case x of
+                                                   (Param ty st)-> Map.insert st ty a
+                                                   (FnParam t (ExpUnOp _ (Ident s _)_) ts) -> Map.insert s t a)
                                          (Map.insert s t acc)
                                          p
                     _ -> acc) Map.empty gdecls'
@@ -47,6 +49,7 @@ codeGen (Program gdecls, sdefn, safe, opt) =
 
 ptoe [] = []
 ptoe ((Param t s):xs) = (Ident s $ newPos "" 0 0) : ptoe xs
+ptoe ((FnParam t e ts):xs) = e : ptoe xs
 
 funcVarE f (Ident s p0) = Ident (f++"_"++s) p0
 funcVarE f (ExpUnOp o e p0) = ExpUnOp o (funcVarE f e) p0
@@ -98,6 +101,7 @@ funcVar f ((Ctrl c p0) : xs) =
 funcVar f ((BlockStmt(Block s p1) p0):xs) = (BlockStmt (Block (funcVar f s) p1) p0) : funcVar f xs
 
 parVar f (Param t s) = Param t (f++"_"++s)
+parVar f x = x
 
 numStmts l = sum $ map (\x -> case x of
                            Simp _ _ -> 1
@@ -141,79 +145,91 @@ inline' func fmap nst (s:st) =
     s2 = case s of
       Simp s' p0 -> case s' of
         Decl t id (Just e) p1 -> case e of
-          App s exprs p2 | s /= func -> case Map.lookup s fmap of
-            Just (prms,sts) ->
-              let
-                setprms = map (\(x,y) -> Simp (Asgn (roll x) Nothing y p2) p1) $ zip prms exprs
-                ret = case last sts of
-                  (Ctrl(Return x _) _) -> x
-                  _ -> trace "Decl hmm... why?" $ Nothing 
-              in
-               if numStmts(sts) <= maxstmts
-               then setprms ++ (init sts) ++ [Simp (Decl t id ret p1) p1]
-               else [Simp (Decl t id (Just (App s exprs p2)) p1) p0]
-            Nothing -> [Simp (Decl t id (Just (App s exprs p2)) p1) p0]
+          App s exprs p2 | case s of {FuncName f->f/=func; Ident f _->f/=func} ->
+            let s' = case s of (FuncName f) -> f
+                               (Ident f _) -> f
+            in case Map.lookup s' fmap of
+              Just (prms,sts) ->
+                let
+                  setprms = map (\(x,y) -> Simp (Asgn (roll x) Nothing y p2) p1) $ zip prms exprs
+                  ret = case last sts of
+                    (Ctrl(Return x _) _) -> x
+                    _ -> trace "Decl hmm... why?" $ Nothing 
+                in
+                 if numStmts(sts) <= maxstmts
+                 then setprms ++ (init sts) ++ [Simp (Decl t id ret p1) p1]
+                 else [Simp (Decl t id (Just (App s exprs p2)) p1) p0]
+              Nothing -> [Simp (Decl t id (Just (App s exprs p2)) p1) p0]
           _ -> [Simp (Decl t id (Just e) p1) p0]
         Asgn lv op e p1 -> case e of
-          App s exprs p2 | s /= func -> case Map.lookup s fmap of
-            Just (prms,sts) ->
-              let
-                setprms = map (\(x,y) -> Simp (Asgn (roll x) Nothing y p2) p1) $ zip prms exprs
-              in
-               if numStmts(sts) <= maxstmts
-               then 
-                 setprms ++ (map (replaceRets lv) sts)
-               else  [Simp (Asgn lv op e p1) p0]
-            Nothing -> [Simp (Asgn lv op e p1) p0]
+          App s exprs p2 | case s of {FuncName f->f/=func; Ident f _->f/=func} ->
+            let s' = case s of (FuncName f) -> f
+                               (Ident f _) -> f
+            in case Map.lookup s' fmap of
+              Just (prms,sts) ->
+                let
+                  setprms = map (\(x,y) -> Simp (Asgn (roll x) Nothing y p2) p1) $ zip prms exprs
+                in
+                 if numStmts(sts) <= maxstmts
+                 then 
+                   setprms ++ (map (replaceRets lv) sts)
+                 else  [Simp (Asgn lv op e p1) p0]
+              Nothing -> [Simp (Asgn lv op e p1) p0]
           _ -> [Simp (Asgn lv op e p1) p0]
         Expr e p1 -> case e of
-          App s exprs p2 | s /= func -> case Map.lookup s fmap of
-            Just (prms,sts) ->
-              let
-                setprms = map (\(x,y) -> Simp (Asgn (roll x) Nothing y p2) p1) $ zip prms exprs
-                sts' = case last sts of
-                  (Ctrl(Return _ _) _) -> init sts
-                  _ -> sts
-              in
-               if numStmts(sts) <= maxstmts
-               then
-                 setprms ++ sts'
-               else [Simp (Expr e p1) p0]
-            Nothing -> [Simp (Expr e p1) p0]
+          App s exprs p2 | case s of {FuncName f->f/=func; Ident f _->f/=func} ->
+            let s' = case s of {FuncName f -> f; Ident f _-> f}
+            in case Map.lookup s' fmap of
+              Just (prms,sts) ->
+                let
+                  setprms = map (\(x,y) -> Simp (Asgn (roll x) Nothing y p2) p1) $ zip prms exprs
+                  sts' = case last sts of
+                    (Ctrl(Return _ _) _) -> init sts
+                    _ -> sts
+                in
+                 if numStmts(sts) <= maxstmts
+                 then
+                   setprms ++ sts'
+                 else [Simp (Expr e p1) p0]
+              Nothing -> [Simp (Expr e p1) p0]
           _ -> [Simp (Expr e p1) p0]
         _ -> [Simp s' p0]
       Ctrl c p0 -> case c of
         If e stif stel p1 -> case e of
-          App s exprs p2 | s /= func-> case Map.lookup s fmap of
-            Just (prms,sts) ->
-              let
-                setprms = map (\(x,y) -> Simp (Asgn (roll x) Nothing y p2) p1) $ zip prms exprs
-                ret = case last sts of
-                  (Ctrl(Return (Just x) _) _) -> Just x
-                  _ -> trace "If hmm... why?" $ Nothing
-                stif' = inline' func fmap [] [stif]
-                stif'' = if length stif' == 1 then head stif' else trace "stif sadface" $ head stif'
-                stel' = case stel of
-                  Just s -> Just $ head (inline' func fmap [] [s])
-                  Nothing -> Nothing
-              in
-               if numStmts(sts) <= maxstmts then
-                 setprms ++ (init sts) ++ [Simp (Decl Bool (func++"_inline_if") ret p1) p0]  ++
-                 [Ctrl (If (Ident (func++"_inline_if") p1) stif'' stel' p1) p0]
-               else [Ctrl (If e stif stel p1) p0]
-            Nothing -> [Ctrl (If e stif stel p1) p0]
+          App s exprs p2 | case s of {FuncName f->f/=func; Ident f _->f/=func} ->
+            let s' = case s of {FuncName f->f; Ident f _->f}
+            in case Map.lookup s' fmap of
+              Just (prms,sts) ->
+                let
+                  setprms = map (\(x,y) -> Simp (Asgn (roll x) Nothing y p2) p1) $ zip prms exprs
+                  ret = case last sts of
+                    (Ctrl(Return (Just x) _) _) -> Just x
+                    _ -> trace "If hmm... why?" $ Nothing
+                  stif' = inline' func fmap [] [stif]
+                  stif'' = if length stif' == 1 then head stif' else trace "stif sadface" $ head stif'
+                  stel' = case stel of
+                    Just s -> Just $ head (inline' func fmap [] [s])
+                    Nothing -> Nothing
+                in
+                 if numStmts(sts) <= maxstmts then
+                   setprms ++ (init sts) ++ [Simp (Decl Bool (func++"_inline_if") ret p1) p0]  ++
+                   [Ctrl (If (Ident (func++"_inline_if") p1) stif'' stel' p1) p0]
+                 else [Ctrl (If e stif stel p1) p0]
+              Nothing -> [Ctrl (If e stif stel p1) p0]
           _ -> [Ctrl (If e stif stel p1) p0]
         Return me p1 -> case me of 
-          Just (App s exprs p2) | s /= func -> case Map.lookup s fmap of
-            Just (prms,sts) ->
-              let
-                setprms = map (\(x,y) -> Simp (Asgn (roll x) Nothing y p2) p1) $ zip prms exprs 
-              in
-               if numStmts(sts) <= maxstmts
-               then
-                 setprms ++ sts -- includes final return otherwise wouldn't have typchecked
-               else [Ctrl (Return me p1) p0]
-            _ -> [Ctrl (Return me p1) p0]
+          Just (App s exprs p2) | case s of {FuncName f->f/=func; Ident f _->f/=func} ->
+            let s' = case s of {FuncName f -> f; Ident f _->f}
+            in case Map.lookup s' fmap of
+              Just (prms,sts) ->
+                let
+                  setprms = map (\(x,y) -> Simp (Asgn (roll x) Nothing y p2) p1) $ zip prms exprs 
+                in
+                 if numStmts(sts) <= maxstmts
+                 then
+                   setprms ++ sts -- includes final return otherwise wouldn't have typchecked
+                 else [Ctrl (Return me p1) p0]
+              _ -> [Ctrl (Return me p1) p0]
           _ -> [Ctrl (Return me p1) p0]
         _ -> [Ctrl c p0]
       BlockStmt (Block stmts p1) p0 -> [BlockStmt (Block (inline' func fmap [] stmts) p1) p0]
@@ -263,11 +279,15 @@ addField sdefn =
         
 genFunction (fun,p,b) l lengths (c, smap) safe opt =
   let
-    ctx = foldr (\(Param t i) -> \acc -> Map.insert i t acc) c p 
+    ctx = foldr (\x -> \acc -> case x of
+                    (Param t i) -> Map.insert i t acc
+                    (FnParam t (ExpUnOp _ (Ident i _) _) ts) -> Map.insert i t acc) c p 
     sb = fun ++"\n"++ foldr (\x -> \acc -> (show x) ++ "\n" ++ acc) "" b
     (aasm, _, l', ep) = --trace sb $
       genStmt ([], length(p), l, Nothing) b lengths (ctx, smap) safe
-    p' = zip (map (\(Param _ i) -> i) p) [0..]
+    p' = zip (map (\x -> case x of
+                      (Param _ i) -> i
+                      (FnParam _ (ExpUnOp _ (Ident i _) _) _) -> i) p) [0..]
     prefix = map (\(i, n) ->
                    AAsm {aAssign = [AVar i], aOp = Nop, aArgs = [ALoc $ AArg n]}) p'
     setup = [Push (Reg RBP),
@@ -501,7 +521,8 @@ typecheck (ExpUnOp Deref e _) ctx typs =
     Nothing -> case typecheck e ctx typs of
       (typs',(Pointer t)) -> let typs'' = Map.insert e t typs in (typs'',t)
 typecheck (App f p sp) (ctx, smap) typs =
-  let t = ctx Map.! f
+  let f' = case f of {FuncName s->s; Ident s _->s}
+      t = ctx Map.! f'
       typs' = Map.insert (App f p sp) t typs
   in (typs',t)
 typecheck (ExpTernOp _ e2 e3 _) ctx typs =
@@ -559,7 +580,8 @@ typExpr (ExpUnOp Deref e _) (ctx,smap) l =
   let l' = typExpr e (ctx, smap) l
   in case head l' of
     (Pointer t) -> t : l' 
-typExpr (App f p sp) (ctx, smap) l = ctx Map.! f : l
+typExpr (App (Ident f _) p sp) (ctx, smap) l = ctx Map.! f : l
+typExpr (App (FuncName f) p sp) (ctx, smap) l = ctx Map.! f : l
 typExpr (ExpTernOp _ e2 e3 _) (ctx, smap) l =
   typExpr e2 (ctx,smap) l
 typExpr (Subscr e _ _) (ctx, smap) l = 
@@ -784,7 +806,7 @@ genStmt (acc, n, l, ep) ((Ctrl (For ms1 e ms2 s3 p) _) : xs) lens (ctx, smap) sa
                 ACtrl $ Lbl (show $ l4+3)]
         in genStmt (acc ++ aasm, n4, l4+3, ep3) xs lens (ctx', smap) safe
 genStmt acc ((Ctrl (Assert e _) p) : xs) lens ctx safe = let
-  s = Ctrl (If (ExpUnOp LNot e p) (Simp (Expr (App "_c0_abort" [] p) p) p) Nothing p) p
+  s = Ctrl (If (ExpUnOp LNot e p) (Simp (Expr (App (FuncName "_c0_abort") [] p) p) p) Nothing p) p
   in genStmt acc (s : xs) lens ctx safe
 
 genExp :: (Int, Int) -> Expr -> ALoc -> [(String, Int)] ->
@@ -846,6 +868,9 @@ genExp (n,l) (ExpBinOp op e1 e2 _) loc lens ctx safe =
       (i2, n'', l'') = genExp (n' + 1, l') e2 (ATemp n') lens ctx safe
       aasm  = [AAsm [loc] op [ALoc $ ATemp n, ALoc $ ATemp $ n']]
       in (i1 ++ i2 ++ aasm, n'', l'')
+genExp (n,l) (ExpUnOp FnPtr (App (Ident f _) e _) _) loc lens ctx safe =
+  let aasm = [ACtrl $ Lea f $ ALoc (ATemp n)]
+  in (aasm, n+1, l)
 genExp (n,l) (ExpUnOp Deref e _) loc lens ctx safe = let
   (aasm, n', l') = genExp (n+1, l) e (ATemp n) lens ctx safe
   in (aasm ++ [AAsm [loc] Nop [ALoc $ Pt $ ATemp n]], n', l')
@@ -899,7 +924,8 @@ genExp (n, l) (ExpTernOp e1 e2 e3 _) loc lens ctx safe =
                         ACtrl $ Lbl (show $ l3+3)]
           in (aasm, n3, l3+3)
 genExp (n, l) (App f es _) loc lens ctx safe =
-  case lookup f lens of
+  let f' = case f of {FuncName s->s; Ident s _->s} in
+  case lookup f' lens of
     Just 0 -> ([], n, l)
     _ ->
       let
@@ -911,8 +937,10 @@ genExp (n, l) (App f es _) loc lens ctx safe =
         moveFrontArgs = map (\(i, t) ->
                               AAsm {aAssign = [AArg i], aOp = Nop, aArgs = [ALoc $ ATemp t]})
                         $ zip [0..] front
-        aasm = computeArgs ++ moveFrontArgs ++ [ACtrl $ Call f rest] ++
-               [AAsm {aAssign = [loc], aOp = Nop, aArgs = [ALoc $ ARes]}]
+        call = case f of
+          FuncName s -> [ACtrl $ Call f' rest] ++ [AAsm {aAssign = [loc], aOp = Nop, aArgs = [ALoc $ ARes]}]
+          Ident s _ -> [ACtrl $ CallFn (ALoc $ AVar s) rest]
+        aasm = computeArgs ++ moveFrontArgs ++ call
       in (aasm, n', l')
 genExp (n, l) (Subscr e1 e2 _) loc lens ctx safe =
   let 
@@ -1334,6 +1362,41 @@ translate regMap _ (AAsm {aAssign = [dest], aOp = BOr, aArgs = [src1, src2]}) =
   binOp (dest,src1,src2) BOr regMap
 translate regMap _ (AAsm {aAssign = [dest], aOp = BXor, aArgs = [src1, src2]}) =
   binOp (dest,src1,src2) BXor regMap
+translate regMap n (ACtrl (Lea f aval)) =
+  let reg = regFind regMap aval
+  in
+   case reg of
+     (Reg _) -> [Leaq ("_"++f++"(%rip)") reg]
+     _ -> [Leaq ("_"++f++"(%rip)") (Reg R15), Movq (Reg R15) reg]
+translate regMap n (ACtrl (CallFn aval ts)) = let
+  (l, _) = 
+    foldr (\t -> \(acc, i) -> 
+            case regFind regMap $ ALoc $ ATemp t of
+              (Stk j) -> ([Movl (Stk j) (Reg R15D),
+                           Movl (Reg R15D) (Stk (-i*8))] : acc, i+1)
+              s -> ([Movl s (Stk (-i*8))] : acc, i+1)) ([], 1) ts
+  saves = concat l
+  restores = map (\(Movl x y) -> Movl y x) (reverse saves)
+  reg = regFind regMap aval
+  in if (length ts) > 0 then
+       if (mod (length ts) 2) == 1 then let
+           (l, _) = 
+             foldr (\t -> \(acc, i) -> 
+                     case regFind regMap $ ALoc $ ATemp t of
+                       (Stk j) -> ([Movl (Stk (j+8)) (Reg R15D),
+                                    Movl (Reg R15D) (Stk (-i*8))] : acc, i+1)
+                       s -> ([Movl s (Stk (-i*8))] : acc, i+1)) ([], 1) ts
+           saves = concat l
+           restores = map (\(Movl x y) -> Movl y x) (reverse saves)
+           in
+            case reg of
+              (Reg _) -> saves ++ [AsmCallFn reg] ++ restores
+              _ -> saves ++ [Movq reg (Reg R15), AsmCallFn (Reg R15)] ++ restores
+       else
+         saves ++ [Subq (Val $ (length ts)*8) (Reg RSP)] ++ [AsmCallFn reg] ++ 
+         [Addq (Val $ (length ts)*8) (Reg RSP)] ++ restores
+     else
+       [AsmCallFn reg]
 translate regMap n (ACtrl (Call s ts)) = let
   (l, _) = 
     foldr (\t -> \(acc, i) -> 

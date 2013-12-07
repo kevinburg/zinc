@@ -17,8 +17,8 @@ data GDecl = TypeDef Type String SourcePos
            | FDecl Type String [Param] SourcePos
            | FDefn Type String [Param] Block SourcePos
            | SDecl String SourcePos
-           | SDefn String (Maybe [String]) [Param] SourcePos deriving Show
-data Param = Param Type String deriving (Show, Eq)
+           | SDefn String (Maybe String) [Param] SourcePos deriving Show
+data Param = Param Type String
 data Block = Block [Stmt] SourcePos 
 data Simp = Decl Type String (Maybe Expr) SourcePos
           | Asgn LValue (Maybe Op) Expr SourcePos
@@ -46,7 +46,8 @@ data Expr = TempLoc Int
           | ExpUnOp Op Expr SourcePos
           | ExpBinOp Op Expr Expr SourcePos
           | ExpTernOp Expr Expr Expr SourcePos
-          | App String [Expr] SourcePos
+          | App Expr [Expr] SourcePos
+          | FuncName String
           | Alloc Type SourcePos
           | AllocArray Type Expr SourcePos
           | Subscr Expr Expr SourcePos deriving (Eq,Ord)
@@ -85,7 +86,8 @@ instance Show Expr where
   show (ExpUnOp op e _) = "(ExpUnOp " ++ (show op) ++ " " ++ (show e) ++ ")"
   show (ExpBinOp op e1 e2 _) = "(ExpBinOp " ++ (show op) ++ " " ++ (show e1) ++ " " ++ (show e2) ++ ")"
   show (ExpTernOp e1 e2 e3 _) = "(ExpTernOp " ++ (show e1) ++ " " ++ (show e2) ++ " " ++ (show e3) ++ ")"
-  show (App f a _) = "(App " ++ f ++ " " ++ (show a) ++ ")"
+  show (App f a _) = "(App " ++ (show f) ++ " " ++ (show a) ++ ")"
+  show (FuncName f) = "(Function "++f++")"
   show (Alloc t _) = "(Alloc " ++ (show t) ++ ")"
   show (AllocArray t e _) = "(AllocArray " ++ (show t) ++ " " ++ (show e) ++ ")"
   show (Subscr e1 e2 _) = "(Subscr " ++ (show e1) ++ " " ++ (show e2) ++ ")"

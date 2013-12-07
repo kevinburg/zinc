@@ -31,6 +31,8 @@ data COp = Ret AVal
          | IfzP AVal String Bool [(ALoc, Maybe AVal)]
          | CompP AVal AVal Op String [(ALoc, Maybe AVal)]
          | Call String [Int]
+         | Lea String AVal
+         | CallFn AVal [Int]
          deriving (Show, Ord, Eq)
 
 data AVal = ALoc ALoc

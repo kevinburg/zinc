@@ -42,7 +42,9 @@ data Asm = AsmRet
          | Setle Arg
          | Sete Arg
          | Setne Arg
-         | AsmCall String deriving (Eq, Ord)
+         | AsmCall String
+         | Leaq String Arg
+         | AsmCallFn Arg deriving (Eq, Ord)
 
 data Arg = Loc Arg
          | Reg Register
@@ -109,6 +111,8 @@ instance Show Asm where
        s == "ftoi" || s == "print_fpt" || s == "print_int" ||
        s == "print_hex" then "\tcall _" ++ s
     else "\tcall _c0_" ++ s
+  show (AsmCallFn v) = "\txorb %al, %al\n\tcall *"++(show v) 
+  show (Leaq f v) = "\tleaq "++f++", "++(show v)
   show (Setl e) = "\tsetl " ++ (show e)
   show (Sete e) = "\tsete " ++ (show e)
   show (Setne e) = "\tsetne " ++ (show e)
