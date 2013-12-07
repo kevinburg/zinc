@@ -15,9 +15,9 @@ checkAST :: (Map.Map String Type, [(String,
                                   (Type, [Param], S,
                                    Map.Map String Type,
                                    Map.Map String (Type, [Type]),
-                                   Map.Map String (Maybe String, [Param])))],
-             Map.Map String (Maybe String, [Param])) ->
-            Either String (Map.Map String (Maybe String, [Param]))
+                                   Map.Map String (Maybe [String], [Param])))],
+             Map.Map String (Maybe [String], [Param])) ->
+            Either String (Map.Map String (Maybe [String], [Param]))
 checkAST (typedef, fdefns, sdefns) =
   let
     (_, ctx) = addHeader typedef
@@ -44,10 +44,10 @@ checkAST (typedef, fdefns, sdefns) =
                                       Map.singleton fun (Map ts output)]
                    ctx'' = Map.map (findType tdefs Set.empty) ctx'
                    sdefns'' = Map.map
-                              (\(typeParam, x) -> (typeParam, 
-                                map (\(Param t s) -> case typeParam of
+                              (\(typeParams, x) -> (typeParams, 
+                                map (\(Param t s) -> case typeParams of
                                         Nothing -> Param (findType typedef Set.empty t) s
-                                        (Just t') -> Param (findPolyType typedef (Type t') t) s
+                                        Just l -> Param (findPolyType typedef l t) s
                                     ) x))
                               sdefns'
                    in case checkFunction tdefs ctx'' (t,p,b) fdefns sdefns'' of
@@ -58,18 +58,18 @@ checkAST (typedef, fdefns, sdefns) =
 
 {- Like findType but we dont replace the (Type a) field if it matches
  the type paramter of the struct -}     
-findPolyType m t' (Type s) =
-  if (Type s) == t' then t'
+findPolyType m l (Type s) =
+  if elem s l then (Type s)
   else let
     res = m Map.! s
-    in res `seq` findPolyType m t' res
-findPolyType m t' (Map t1 t2) = Map (map (findPolyType m t') t1) (findPolyType m t' t2)
-findPolyType m t' (Pointer t) = let
-  t'' = findPolyType m t' t
-  in t'' `seq` Pointer t''
-findPolyType m t' (Array t) = let
-  t'' = findPolyType m t' t
-  in t'' `seq` Array (findPolyType m t' t'')
+    in res `seq` findPolyType m l res
+findPolyType m l (Map t1 t2) = Map (map (findPolyType m l) t1) (findPolyType m l t2)
+findPolyType m l (Pointer t) = let
+  t' = findPolyType m l t
+  in t' `seq` Pointer t'
+findPolyType m l (Array t) = let
+  t' = findPolyType m l t
+  in t' `seq` Array (findPolyType m l t')
 findPolyType _ _ x = x
                  
 addHeader typedef = let
@@ -94,7 +94,8 @@ fixTypes m (t, p, s) =
   in (t', p', s') where
 
 freeTypeVars s [] = s
-freeTypeVars s ((Param (Poly (Type t) _) _) : xs) = freeTypeVars (Set.insert t s) xs
+freeTypeVars s ((Param (Poly ts _) _) : xs) =
+  freeTypeVars (Set.fromList $ map (\(Type s) -> s) ts) xs
 freeTypeVars s ((Param (Pointer t) _) : xs) = freeTypeVars s ((Param t "") : xs)
 freeTypeVars s (_ : xs) = freeTypeVars s xs
     
@@ -136,10 +137,10 @@ findType m f (Pointer t) = let
 findType m f (Array t) = let
   t' = findType m f t
   in t' `seq` Array t'
-findType m f (Poly t s) = let
-  t' = findType m f t
+findType m f (Poly ts s) = let
+  ts' = map (findType m f) ts
   s' = findType m f s
-  in Poly t' s'
+  in Poly ts' s'
 findType _ _ x = x
              
 checkFunction m ctx val defined sdefns =
@@ -240,7 +241,7 @@ type Context = Map.Map String Type
 
 -- Performs static type checking on a statements  under a typing context
 checkS :: S -> Context -> Context -> Set.Set String -> Type ->
-          Map.Map String (Maybe String, [Param]) -> CheckS
+          Map.Map String (Maybe [String], [Param]) -> CheckS
 checkS ANup ctx _ _ _ _ = ValidS
 checkS (AAssert e) ctx m d _ smap =
   case checkE e ctx d smap of
@@ -321,7 +322,7 @@ checkS (AExpr e s) ctx m d t smap =
     ValidE _ -> checkS s ctx m d t smap
 
 lvalType :: LValue -> Context -> Set.Set String ->
-            Map.Map String (Maybe String, [Param]) -> Maybe Type
+            Map.Map String (Maybe [String], [Param]) -> Maybe Type
 lvalType (LIdent i) ctx _ _ = Map.lookup i ctx
 lvalType (LDeref l) ctx d smap =
   case lvalType l ctx d smap of
@@ -335,12 +336,12 @@ lvalType (LArrow l s) ctx d smap =
         Just (Param t _) -> Just t
         _ -> Nothing
       _ -> Nothing
-    Just (Pointer (Poly t (Struct s1))) ->
+    Just (Pointer (Poly ts (Struct s1))) ->
       case Map.lookup s1 smap of
-        Just (Just typeParam, ps) ->
+        Just (Just l, ps) ->
           case List.find (\(Param _ f) -> f == s) ps of
             Just (Param t' _) ->
-              Just $ findType (Map.singleton typeParam t) Set.empty t'
+              Just $ findType (Map.fromList $ zip l ts) Set.empty t'
             _ -> Nothing
         _ -> Nothing
     _ -> Nothing
@@ -362,7 +363,8 @@ lvalType (LArray l e) ctx d smap =
     _ -> Nothing
   
 -- Performs static type checking on an expression under a typing context
-checkE :: Expr -> Context -> Set.Set String -> Map.Map String (Maybe String, [Param]) -> CheckE
+checkE :: Expr -> Context -> Set.Set String -> Map.Map String (Maybe [String], [Param])
+          -> CheckE
 checkE (ExpInt Dec i _) _ _ _ = if i > (2^31) then BadE "const too large"
                               else ValidE Int
 checkE (ExpInt Hex i _) _ _ _ = if i > (2^32 - 1) then BadE "const too large"
@@ -403,12 +405,13 @@ checkE (ExpBinOp Arrow e (Ident s2 _) _) ctx d smap =
               case List.find (\(Param _ fieldName) -> fieldName == s2) fields of
                 Nothing -> BadE $ "field " ++ s2 ++ " undefined in struct " ++ s
                 Just (Param t' _) -> ValidE t'
-        (Pointer (Poly t (Struct s1))) ->
+        (Pointer (Poly ts (Struct s1))) ->
           case Map.lookup s1 smap of
-            Just (Just typeParam, ps) ->
+            Just (Just l, ps) ->
               case List.find (\(Param _ f) -> f == s2) ps of
                 Just (Param t' _) ->
-                  ValidE $ findType (Map.singleton typeParam t) Set.empty t'
+                  if ((length l) /= (length ts)) then BadE "length"
+                  else ValidE $ findType (Map.fromList $ zip l ts) Set.empty t'
                 _ -> BadE "wat"
             _ -> BadE $ "undefined struct " ++ s1
         _ -> BadE "Invalid exp on LHS of arrow op"
@@ -493,9 +496,9 @@ checkE (Alloc t _) ctx d smap =
     Struct s -> case Map.lookup s smap of
       Just t' -> ValidE (Pointer (Struct s))
       Nothing -> BadE "Allocating undefined struct"
-    Poly t (Struct s) -> case Map.lookup s smap of
-      Just t' -> ValidE $ Pointer ((Poly t (Struct s)))
-      Nothing -> BadE "Allocatin undefined struct"
+    Poly ts (Struct s) -> case Map.lookup s smap of
+      Just t' -> ValidE $ Pointer ((Poly ts (Struct s)))
+      Nothing -> BadE "Allocating undefined struct"
     _ -> ValidE (Pointer t)
 checkE (AllocArray t e _) ctx d smap =
   case checkE e ctx d smap of
@@ -526,36 +529,38 @@ typeCompare (t1, t2) = t1 == t2
 
 --TODO: not exhaustive, plz fix
 subContext m ((Pointer t1, Pointer t2) : xs) = subContext m ((t1,t2) : xs)
-subContext m ((Poly (Type t1) s1, Poly t2 s2) : xs) =
-  case Map.lookup t1 m of
-    Nothing ->
-      subContext (Map.insert t1 t2 m) xs
-    Just t3 ->
-      if typeCompare(t2,t3) then subContext m xs
-      else Nothing
-subContext m ((Poly t1 s1, Poly (Type t2) s2) : xs) =
-  case Map.lookup t2 m of
-    Nothing ->
-      subContext (Map.insert t2 t1 m) xs
-    Just t3 ->
-      if typeCompare(t1,t3) then subContext m xs
-      else Nothing
 subContext m ((Poly t1 s1, Poly t2 s2) : xs) =
-  if typeCompare (t1,t2) then subContext m xs else Nothing
-subContext m ((Type t1, t2) : xs) =
-  case Map.lookup t1 m of
-    Nothing ->
-      subContext (Map.insert t1 t2 m) xs
-    Just t3 ->
-      if typeCompare(t2,t3) then subContext m xs
-      else Nothing
-subContext m ((t1, Type t2) : xs) =
-  case Map.lookup t2 m of
-    Nothing ->
-      subContext (Map.insert t2 t1 m) xs
-    Just t3 ->
-      if typeCompare(t1,t3) then subContext m xs
-      else Nothing
+  if (length t1) /= (length t2) then Nothing
+  else let
+    (t1Front : _) = t1
+    (t2Front : _) = t2
+    (list1, list2) = case t1Front of
+      (Type _) -> (t1,t2)
+      _ -> (t2,t1)
+    in case foldr (\(t1, t2) -> \acc ->
+                    case (t1,t2) of
+                      (Type t1, t2) ->
+                        case acc of
+                          Nothing -> Nothing
+                          Just m -> case Map.lookup t1 m of
+                            Nothing -> Just $ Map.insert t1 t2 m
+                            Just t3 -> if typeCompare(t2,t3) then Just m
+                                       else Nothing
+                      (t2, Type t1) ->
+                        case acc of
+                          Nothing -> Nothing
+                          Just m -> case Map.lookup t1 m of
+                            Nothing -> Just $ Map.insert t1 t2 m
+                            Just t3 -> if typeCompare(t2,t3) then Just m
+                                       else Nothing
+                      (t1, t2) -> case acc of
+                        Nothing -> Nothing
+                        Just m ->
+                          if typeCompare(t1,t2) then Just m
+                          else Nothing
+                  ) (Just m) $ zip list1 list2 of
+         Nothing -> Nothing
+         Just m' -> subContext m' xs
 subContext m ((t1,t2) : xs) =
   if typeCompare (t1,t2) then subContext m xs else Nothing
 subContext m [] = Just m

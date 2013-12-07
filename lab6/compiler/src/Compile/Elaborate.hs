@@ -11,18 +11,18 @@ elaborate :: Program -> Either String
              ((Map.Map String Type, [(String,
                                       (Type, [Param], S, Map.Map String Type,
                                        Map.Map String (Type, [Type]),
-                                       Map.Map String (Maybe String, [Param])))],
-               Map.Map String (Maybe String, [Param])), Program)
+                                       Map.Map String (Maybe [String], [Param])))],
+               Map.Map String (Maybe [String], [Param])), Program)
 elaborate (Program gdecls) =
   case partProgram gdecls (Map.singleton "fpt" Int, Map.empty, [], Map.empty) of
     Left err -> Left err
     Right (typedef, fdecl, fdefn, sdefn) -> let
       res = map (\(key,(t, p, Block b _, t1, t2, t3)) ->
                   (key,(t, p, elaborate' b, t1, t2, t3))) fdefn
-      sdefn' = Map.map (\(typeParam, x) -> (typeParam, 
-                         map (\(Param t s) -> case typeParam of
+      sdefn' = Map.map (\(typeParams, x) -> (typeParams, 
+                         map (\(Param t s) -> case typeParams of
                                  Nothing -> Param (findType typedef Set.empty t) s
-                                 Just t' -> Param (findPolyType typedef (Type t') t) s
+                                 Just l -> Param (findPolyType typedef l t) s
                              ) x)) sdefn
       in case foldr
               (\(key, val) -> \acc ->
@@ -123,7 +123,7 @@ partProgram ((FDefn t s p b _) : xs) (typedef, fdecl, fdefn, sdefn) =
      Right () -> partProgram xs (typedef, fdecl, (s, (t,p',b,typedef,fdecl,sdefn)) : fdefn, sdefn)
 partProgram ((SDecl _ _) : xs) acc =
   partProgram xs acc
-partProgram ((SDefn s typeParam f _) : xs) (typedef, fdecl, fdefn, sdefn) =
+partProgram ((SDefn s typeParams f _) : xs) (typedef, fdecl, fdefn, sdefn) =
   (let
       fieldList = map (\(Param _ i) -> i) f
       fieldSet = Set.fromList fieldList
@@ -135,9 +135,9 @@ partProgram ((SDefn s typeParam f _) : xs) (typedef, fdecl, fdefn, sdefn) =
       Just fs -> Left $ "Struct " ++ s ++ " defined more than once.") >>= \_ ->
   (let
       f' = map(\(Param t i) -> case pType t of Type s'-> case Map.lookup s' typedef of
-                                                 Nothing -> case typeParam of
+                                                 Nothing -> case typeParams of
                                                    Nothing -> False
-                                                   (Just typeParam') -> s' == typeParam'
+                                                   (Just l) -> elem s' l
                                                  _ -> True
                                                _ -> True) f
         where pType t = case t of
@@ -164,10 +164,10 @@ partProgram ((SDefn s typeParam f _) : xs) (typedef, fdecl, fdefn, sdefn) =
                                                 True -> (True,b)) (True,"asdf") sts' of
       (False,a) -> Left $ "'struct "++a++"' used but not defined."
       (True,a) -> Right ()) >>= \_ ->
-  partProgram xs (typedef, fdecl, fdefn, Map.insert s (typeParam, f) sdefn)
+  partProgram xs (typedef, fdecl, fdefn, Map.insert s (typeParams, f) sdefn)
 
 addPolyParam m (Type s) = Map.insert s SmallType m
-addPolyParam m (Pointer (Poly t _)) = addPolyParam m t
+addPolyParam m (Pointer (Poly ts _)) = Map.unions $ map (addPolyParam m) ts
 addPolyParam m _ = m
 
 check (t, s, p) (typedef, fdecl, fdefn) = 

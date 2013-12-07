@@ -19,7 +19,8 @@ import qualified Compile.CheckAST as Check
 {- TODO: Our IR sucks pretty bad. I dont think we should need to use
 a typechecker in the cogen phase (we are now). A lot of information is
 being thrown out after elaboration. -}
-codeGen :: (Program, Map.Map String (Maybe String, [Param]), Bool, Int) -> Map.Map String [Asm]
+codeGen :: (Program, Map.Map String (Maybe [String], [Param]), Bool, Int)
+           -> Map.Map String [Asm]
 codeGen (Program gdecls, sdefn, safe, opt) =
   let
     smap = Map.map (\(a,b,c,d) -> (a,b,d)) $ structInfo sdefn
@@ -38,7 +39,6 @@ codeGen (Program gdecls, sdefn, safe, opt) =
                                          (Map.insert s t acc)
                                          p
                     _ -> acc) Map.empty gdecls'
-    sinl=foldr(\(x,y,z)-> \acc->(show x)++(show y)++"\n"++(foldr(\a -> \b->(show a)++"\n"++b) "" z)++"\n"++acc) "" inl
     (res, _) = foldr (\f -> \(m, l) -> let
                     (s, aasm, l') = genFunction f l lengths (ctx, smap) safe opt
                     in (Map.insert s aasm m, l')) (Map.empty,0) inl
@@ -224,15 +224,15 @@ inline' func fmap nst (s:st) =
         
 
 -- Computes struct size and field offsets in bytes.
-structInfo :: Map.Map String (Maybe String, [Param]) ->
-              Map.Map String (Maybe String, Int, Int, Map.Map String (Int, Type))
+structInfo :: Map.Map String (Maybe [String], [Param]) ->
+              Map.Map String (Maybe [String], Int, Int, Map.Map String (Int, Type))
 structInfo sdefn = 
-  Map.foldWithKey (\s -> \(typeParam, params) -> \acc -> let
+  Map.foldWithKey (\s -> \(typeParams, params) -> \acc -> let
                       (largest, size, ps, acc') = computeStruct s params sdefn acc
                       size' = if largest == 0 then 0 else case mod size largest of
                          0 -> size
                          n -> size + largest - n
-                      acc'' = Map.insert s (typeParam, size', largest, ps) acc'
+                      acc'' = Map.insert s (typeParams, size', largest, ps) acc'
                       in acc'') Map.empty sdefn
 
 computeStruct s params sdefn m =
@@ -249,12 +249,12 @@ addField sdefn =
         (Struct s) -> case Map.lookup s m of
           Just (_, len, align, _) -> (len, align, m)
           Nothing -> let
-            (typeParam, params) = sdefn Map.! s
+            (typeParams, params) = sdefn Map.! s
             (constraint, size, ps, m') = computeStruct s params sdefn m
             size' = if constraint == 0 then size else case mod size constraint of
               0 -> size
               n -> size + constraint - n
-            m'' = Map.insert s (typeParam, size', constraint, ps) m'
+            m'' = Map.insert s (typeParams, size', constraint, ps) m'
             in (size', constraint, m'')
       offset = if align == 0 then size else case mod size align of
         0 -> size
@@ -430,7 +430,7 @@ getLvalAddr (LArrow (LIdent s) i) t n lbl (ctx, smap) _ safe = let
     Just (Pointer (Struct st)) -> case Map.lookup st smap of
       Just (_, _, m) -> case Map.lookup i m of
         Just (offset, _) -> offset
-    Just (Pointer (Poly t' (Struct st))) -> case Map.lookup st smap of
+    Just (Pointer (Poly _ (Struct st))) -> case Map.lookup st smap of
       Just (_, _, m) -> case Map.lookup i m of
         Just (offset, _) -> offset
   in if safe then let
@@ -476,11 +476,11 @@ lvalType (LArrow l i) (ctx, smap) =
         (Just (_, _, fields)) ->
           case Map.lookup i fields of
             (Just (_, t)) -> t
-    Pointer (Poly t (Struct s)) ->
+    Pointer (Poly ts (Struct s)) ->
       case Map.lookup s smap of
-        Just (Just typeParam, _, fields) ->
+        Just (Just l, _, fields) ->
           case Map.lookup i fields of
-            Just (_, t') -> Check.findType (Map.singleton typeParam t) Set.empty t'
+            Just (_, t') -> Check.findType (Map.fromList $ zip l ts) Set.empty t'
         Just (_, _, fields) ->
           case Map.lookup i fields of
             Just (_, t) -> t
@@ -530,11 +530,11 @@ typecheck (ExpBinOp Arrow e (Ident i _) _) (ctx, smap) typs =
               case Map.lookup i m of
                 Just (_, t) -> let typs'' = Map.insert e t typs'
                                in (typs'',t)
-        (typs',(Pointer (Poly t (Struct s)))) ->
+        (typs',(Pointer (Poly ts (Struct s)))) ->
           case Map.lookup s smap of
-            Just (Just typeParam, _, m) ->
+            Just (Just l, _, m) ->
               case Map.lookup i m of
-                Just (_, t') -> (typs', Check.findType (Map.singleton typeParam t) Set.empty t')
+                Just (_, t') -> (typs', Check.findType (Map.fromList $ zip l ts) Set.empty t')
             Just (_, _, m) ->
               case Map.lookup i m of
                 Just (_, t) -> (typs', t)
@@ -574,11 +574,11 @@ typExpr (ExpBinOp Arrow e (Ident i _) _) (ctx, smap) l =
         Just (_, _, m) ->
           case Map.lookup i m of
             Just (_, t) -> t : l'
-    Pointer (Poly t (Struct s)) ->
+    Pointer (Poly ts (Struct s)) ->
       case Map.lookup s smap of
-        Just (Just typeParam, _, m) ->
+        Just (Just l, _, m) ->
           case Map.lookup i m of
-            Just (_, t') -> (Check.findType (Map.singleton typeParam t) Set.empty t') : l'
+            Just (_, t') -> (Check.findType (Map.fromList $ zip l ts) Set.empty t') : l'
         Just (_, _, m) ->
           case Map.lookup i m of
             Just (_, t) -> t : l'
@@ -788,7 +788,7 @@ genStmt acc ((Ctrl (Assert e _) p) : xs) lens ctx safe = let
   in genStmt acc (s : xs) lens ctx safe
 
 genExp :: (Int, Int) -> Expr -> ALoc -> [(String, Int)] ->
-          (Map.Map String Type, Map.Map String (Maybe String, Int, Map.Map String (Int, Type))) ->
+          (Map.Map String Type, Map.Map String (Maybe [String], Int, Map.Map String (Int, Type))) ->
           Bool -> ([AAsm], Int, Int)
 genExp (n,l) (TempLoc i) loc _ _ _ = ([AAsm [loc] Nop [ALoc $ Pt $ ATemp i]], n, l)
 genExp (n,l) (ExpInt _ i _) loc _ _ _ = ([AAsm [loc] Nop [AImm $ fromIntegral i]], n, l)

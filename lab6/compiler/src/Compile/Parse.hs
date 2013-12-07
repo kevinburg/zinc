@@ -82,11 +82,11 @@ gdecl = try (do
                 reserved "struct"
                 i <- identifier
                 reservedOp "<"
-                typeParam <- identifier
+                typeParams <- commaSep identifier
                 reservedOp ">"
                 fields <- braces $ fieldList
                 semi
-                return $ SDefn i (Just typeParam) fields p) <|>
+                return $ SDefn i (Just typeParams) fields p) <|>
         try (do
                 p <- getPosition
                 reserved "struct"
@@ -289,10 +289,10 @@ typeEnd = try (do
                   return (\x -> f $ Pointer x)) <|>
           try (do
                   reservedOp "<"
-                  t <- typeParse
+                  ts <- commaSep typeParse
                   reservedOp ">"
                   f <- typeEnd
-                  return (\x -> f $ Poly t x)) <|>
+                  return (\x -> f $ Poly ts x)) <|>
           (do return (\x -> x)) 
           <?> "typeEnd"
 
