@@ -1,1 +1,6 @@
 *.s
+*.s.old
+*.output
+*.result
+*.c
+*-l4
