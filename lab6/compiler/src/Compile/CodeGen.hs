@@ -927,6 +927,7 @@ genExp (n, l) (App f es _) loc lens ctx safe =
                     $ zip [0..] front
     call = case f of
       Ident s _ -> ([ACtrl $ Call s rest] ++ [AAsm {aAssign = [loc], aOp = Nop, aArgs = [ALoc $ ARes]}], n',l')
+      FuncName s -> ([ACtrl $ Call s rest] ++ [AAsm {aAssign = [loc], aOp = Nop, aArgs = [ALoc $ ARes]}], n',l')
       ExpUnOp Deref f _ -> let (aasm,n'',l'') = genExp (n'+1,l') f (ATemp n') lens ctx safe in
         (aasm ++ [ACtrl $ CallFn (ALoc $ ATemp n') rest, AAsm {aAssign=[loc], aOp = Nop, aArgs=[ALoc $ ARes]}],n'',l'')
     (caasm, n'', l'') = call

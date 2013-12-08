@@ -166,7 +166,9 @@ partProgram ((SDefn s typeParams f _) : xs) (typedef, fdecl, fdefn, sdefn) =
       (True,a) -> Right ()) >>= \_ ->
   partProgram xs (typedef, fdecl, fdefn, Map.insert s (typeParams, f) sdefn)
 
-addPolyParam m (Type s) = Map.insert s SmallType m
+addPolyParam m (Type s) = case Map.lookup s m of
+  Nothing -> Map.insert s SmallType m
+  Just _ -> m
 addPolyParam m (Pointer (Poly ts _)) = Map.unions $ map (addPolyParam m) ts
 addPolyParam m _ = m
 
@@ -181,7 +183,7 @@ check (t, s, p) (typedef, fdecl, fdefn) =
       (Just _) -> Left $ "Function decl/defn " ++ s ++ " collides with typedef"
       Nothing -> Right ()) >>= \_ ->
   (case Map.lookup s fdecl of
-      (Just (t', p')) ->
+      (Just (t', p')) -> trace ((show t')++"\np': "++(show p')++"\nTypedef: "++(show typedef)) $
         case (typeEq typedef (t,t')) &&
              length(p) == length(p') &&
              (all (typeEq typedef) $ zip p' $ typeFromParams p) of
