@@ -1,0 +1,7 @@
+We did polymorphism including function pointers.
+
+To run tests, run the following from the compilers directory
+
+   ./driver.pl ../examples/*.l4
+
+YAY
