@@ -117,7 +117,7 @@ param =
           p <- parens $ commaSep typeParse
           case f of
             ExpUnOp Deref (Ident s p0) p1 -> return $ Param (Pointer (Map p t)) s
-            _ -> Text.ParsecCombinators.Parsec.unexpected "Bad Params") <|>
+            _ -> Text.ParserCombinators.Parsec.unexpected "Bad Params") <|>
   try (do
           t <- typeParse
           i <- identifier
@@ -207,21 +207,6 @@ simp = try (do
                case op of
                  Just o -> return $ PostOp o dest pos
                  Nothing -> Text.ParserCombinators.Parsec.unexpected "asdfdsf") <|>
-       try (do
-               pos <- getPosition
-               c <- ctrl
-               e1 <- expr
-               e2 <- parens $ commaSep expr
-               case e1 of
-                 ExpUnOp Deref (Ident s p0) p1 -> return $ Expr (App (FuncName s) e2 p1) pos
-                 _ -> Text.ParserCombinators.Parsec.unexpected "FnPtr Ctrl") <|>
-       try (do
-               pos <- getPosition
-               e1 <- expr
-               e2 <- parens $ commaSep expr
-               case e1 of
-                 ExpUnOp Deref (Ident s p0) p1 -> return $ Expr (App (FuncName s) e2 p1) pos
-                 _ -> Text.ParserCombinators.Parsec.unexpected "FnPtr")<|> --return $ Expr (App e1 e2 pos) pos) <|>
        try (do
                pos <- getPosition
                e <- expr
@@ -408,6 +393,11 @@ termEnd = try (do
                   i <- identifier
                   f <- termEnd
                   return (\t -> f $ ExpBinOp Dot t (Ident i p) p)) <|>
+          try (do
+                  p <- getPosition
+                  args <- parens $ commaSep expr
+                  f <- termEnd
+                  return $ (\t -> f $ App t args p)) <|>
           (do return (\t -> t))
 
 termFront :: C0Parser Expr
@@ -434,12 +424,7 @@ termFront = do
             p <- getPosition
             reserved "alloc"
             t <- parens typeParse
-            return $ Alloc t p) <|>
-    try (do
-            p <- getPosition
-            i <- identifier
-            args <- parens $ commaSep expr
-            return $ App (FuncName i) args p) <|>
+            return $ Alloc t p) <|> 
    (do p <- getPosition
        i <- identifier
        return $ Ident i p) <|>

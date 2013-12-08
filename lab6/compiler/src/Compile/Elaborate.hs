@@ -48,7 +48,6 @@ mRepSimp m (Just s) = let
   in Just s'
 
 replacePType m (Param t s) = Param (findType m Set.empty t) s
-replacePType m (FnParam t e ts) = FnParam (findType m Set.empty t) e $ map(\x->findType m Set.empty x) ts
 
 replaceTypeS m (Simp (Decl t s Nothing pos1) pos2) =
   Simp (Decl (findType m Set.empty t) s Nothing pos1) pos2
@@ -90,20 +89,14 @@ partProgram ((TypeDef t s _) : xs) (typedef, fdecl, fdefn, sdefn) =
   partProgram xs (Map.insert s t typedef, fdecl, fdefn, sdefn)
 partProgram ((FDecl t s p _) : xs) (typedef, fdecl, fdefn, sdefn) =
   (let
-      ps = map (\x -> case x of
-                   (Param _ name) -> name
-                   (FnParam _ (ExpUnOp _ (Ident s _) _) _) -> s
-               ) p 
+      ps = map (\(Param _ name) -> name) p 
    in if any (\x -> Map.member x typedef) ps then Left "bleh" else Right ()) >>= \_ ->
   case check (t, s, p) (typedef, fdecl, fdefn) of
     Left err -> Left err
     Right () -> partProgram xs (typedef, Map.insert s (t, typeFromParams p) fdecl, fdefn, sdefn)
 partProgram ((FDefn t s p b _) : xs) (typedef, fdecl, fdefn, sdefn) =
   (let
-      ps = map (\x -> case x of
-                   (Param _ name) -> name
-                   (FnParam _ (ExpUnOp _ (Ident s _) _) _) -> s
-               ) p
+      ps = map (\(Param _ name) -> name) p
    in if any (\x -> Map.member x typedef) ps then Left "bleh" else Right ()) >>= \_ ->
   (case lookup s fdefn of
       (Just _) -> Left $ "Multiple definitions of function " ++ s
@@ -113,28 +106,17 @@ partProgram ((FDefn t s p b _) : xs) (typedef, fdecl, fdefn, sdefn) =
      True -> Left "defining external function"
      False -> Right ()) >>= \_ ->
   (let p' = concat $
-            map (\x -> case x of
-                    (Param t i) -> case t of
+            map (\(Param t i) -> case t of
                       Type s' -> [Map.lookup s' typedef]
-                      _ -> [Just Int]
-                    (FnParam t _ ts) ->map (\x -> case x of
-                                               Type s' -> Map.lookup s' typedef
-                                               _ -> Just Int) (t:ts)) p
+                      _ -> [Just Int]) p
    in case any (\x -> case x of {Nothing -> True; _->False}) p' of
      True -> Left "type not in typedef context"
      False -> Right()) >>= \_->
   let
-    p' = map (\x -> case x of
-                 (Param t i) -> case t of
+    p' = map (\(Param t i) -> case t of
                    Type s' -> Param (typedef Map.! s') i
-                   _ -> Param t i
-                 (FnParam t f ts) -> let ts' = map(\y-> case y of {Type s'->typedef Map.! s';_->y}) ts in
-                   case t of
-                     Type s'-> FnParam (typedef Map.! s') f ts'
-                     _ -> FnParam t f ts') p
-    typedef' = foldr (\x -> \acc -> case x of
-                         (Param t _) -> addPolyParam acc t
-                         (FnParam t e ts) -> addPolyParam acc t) typedef p'
+                   _ -> Param t i) p
+    typedef' = foldr (\(Param t _) -> \acc-> addPolyParam acc t) typedef p'
   in
    case check (t, s, p') (typedef', fdecl, fdefn) of
      Left err -> Left err
@@ -143,9 +125,7 @@ partProgram ((SDecl _ _) : xs) acc =
   partProgram xs acc
 partProgram ((SDefn s typeParams f _) : xs) (typedef, fdecl, fdefn, sdefn) =
   (let
-      fieldList = map (\x-> case x of
-                          (Param _ i) -> i
-                          (FnParam t (ExpUnOp _ (Ident s _) _) ts) -> s) f
+      fieldList = map (\(Param _ i) -> i) f
       fieldSet = Set.fromList fieldList
    in case (length fieldList) == (Set.size fieldSet) of
      True -> Right ()
@@ -159,12 +139,7 @@ partProgram ((SDefn s typeParams f _) : xs) (typedef, fdecl, fdefn, sdefn) =
                                                    Nothing -> False
                                                    (Just l) -> elem s' l
                                                  _ -> True
-                  (FnParam t e ts) -> case pType t of Type s'-> case Map.lookup s' typedef of
-                                                        Nothing -> case typeParam of
-                                                          Nothing -> False
-                                                          (Just typeParam') -> s' == typeParam'
-                                                        _ -> True
-                                                      _ -> True) f
+                                               _ -> True) f
         where pType t = case t of
                 Pointer t' -> pType t'
                 t' -> t'
@@ -173,14 +148,13 @@ partProgram ((SDefn s typeParams f _) : xs) (typedef, fdecl, fdefn, sdefn) =
       False -> Left $ "Type in struct not in typedef context"
       True -> Right ()) >>= \_ ->
   (let
-      sts0 = filter (\x -> case x of {Param _ _->True; FnParam _ _ _ -> False}) f
       sts = filter (\(Param t i) -> case t of Struct _ -> True
                                               Type s' -> case Map.lookup s' typedef of
                                                 Just t' -> case t' of
                                                   Struct _ -> True
                                                   _ -> False
                                                 Nothing -> False
-                                              _ -> False) sts0
+                                              _ -> False) f
       sts'' = map (\(Param t i) -> case t of Struct s' -> Param (Struct s') i
                                              Type s' ->
                                                Param (typedef Map.! s') i) sts
@@ -221,6 +195,7 @@ check (t, s, p) (typedef, fdecl, fdefn) =
         where pType t = case t of
                 Type s -> Map.notMember s typedef
                 Struct s -> False -- False for implicit struct declaration? maybe? --Map.notMember s typedef
+                Pointer (Map i o) -> pType o
                 Pointer t' -> pType t'
                 Array t' -> pType t'
                 Int -> False
@@ -256,7 +231,7 @@ check (t, s, p) (typedef, fdecl, fdefn) =
         True -> Right ()
     Nothing -> Right ()
 
-typeFromParams l = map (\x -> case x of {(Param t _) -> t; FnParam t _ _ -> t}) l 
+typeFromParams l = map (\(Param t _) -> t) l 
 
 elaborate' [] = Right ANup
 elaborate' ((Simp (Decl t i Nothing _) _) : xs) =

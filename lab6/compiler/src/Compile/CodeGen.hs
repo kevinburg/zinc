@@ -35,9 +35,7 @@ codeGen (Program gdecls, sdefn, safe, opt) =
                            _ -> x) gdecls
               else gdecls
     ctx = foldr (\x -> \acc -> case x of
-                    (FDefn t s p _ _) -> foldr (\x -> \a -> case x of
-                                                   (Param ty st)-> Map.insert st ty a
-                                                   (FnParam t (ExpUnOp _ (Ident s _)_) ts) -> Map.insert s t a)
+                    (FDefn t s p _ _) -> foldr (\(Param ty st)-> \a -> Map.insert st ty a)
                                          (Map.insert s t acc)
                                          p
                     _ -> acc) Map.empty gdecls'
@@ -49,7 +47,6 @@ codeGen (Program gdecls, sdefn, safe, opt) =
 
 ptoe [] = []
 ptoe ((Param t s):xs) = (Ident s $ newPos "" 0 0) : ptoe xs
-ptoe ((FnParam t e ts):xs) = e : ptoe xs
 
 funcVarE f (Ident s p0) = Ident (f++"_"++s) p0
 funcVarE f (ExpUnOp o e p0) = ExpUnOp o (funcVarE f e) p0
@@ -101,7 +98,6 @@ funcVar f ((Ctrl c p0) : xs) =
 funcVar f ((BlockStmt(Block s p1) p0):xs) = (BlockStmt (Block (funcVar f s) p1) p0) : funcVar f xs
 
 parVar f (Param t s) = Param t (f++"_"++s)
-parVar f x = x
 
 numStmts l = sum $ map (\x -> case x of
                            Simp _ _ -> 1
@@ -279,15 +275,11 @@ addField sdefn =
         
 genFunction (fun,p,b) l lengths (c, smap) safe opt =
   let
-    ctx = foldr (\x -> \acc -> case x of
-                    (Param t i) -> Map.insert i t acc
-                    (FnParam t (ExpUnOp _ (Ident i _) _) ts) -> Map.insert i t acc) c p 
+    ctx = foldr (\(Param t i) -> \acc-> Map.insert i t acc) c p 
     sb = fun ++"\n"++ foldr (\x -> \acc -> (show x) ++ "\n" ++ acc) "" b
     (aasm, _, l', ep) = --trace sb $
       genStmt ([], length(p), l, Nothing) b lengths (ctx, smap) safe
-    p' = zip (map (\x -> case x of
-                      (Param _ i) -> i
-                      (FnParam _ (ExpUnOp _ (Ident i _) _) _) -> i) p) [0..]
+    p' = zip (map (\(Param _ i) -> i) p) [0..]
     prefix = map (\(i, n) ->
                    AAsm {aAssign = [AVar i], aOp = Nop, aArgs = [ALoc $ AArg n]}) p'
     setup = [Push (Reg RBP),
@@ -868,8 +860,8 @@ genExp (n,l) (ExpBinOp op e1 e2 _) loc lens ctx safe =
       (i2, n'', l'') = genExp (n' + 1, l') e2 (ATemp n') lens ctx safe
       aasm  = [AAsm [loc] op [ALoc $ ATemp n, ALoc $ ATemp $ n']]
       in (i1 ++ i2 ++ aasm, n'', l'')
-genExp (n,l) (ExpUnOp FnPtr (App (Ident f _) e _) _) loc lens ctx safe =
-  let aasm = [ACtrl $ Lea f $ ALoc (ATemp n)]
+genExp (n,l) (ExpUnOp FnPtr (Ident f _) _) loc lens ctx safe =
+  let aasm = [ACtrl $ Lea f $ ALoc loc]
   in (aasm, n+1, l)
 genExp (n,l) (ExpUnOp Deref e _) loc lens ctx safe = let
   (aasm, n', l') = genExp (n+1, l) e (ATemp n) lens ctx safe
@@ -924,24 +916,22 @@ genExp (n, l) (ExpTernOp e1 e2 e3 _) loc lens ctx safe =
                         ACtrl $ Lbl (show $ l3+3)]
           in (aasm, n3, l3+3)
 genExp (n, l) (App f es _) loc lens ctx safe =
-  let f' = case f of {FuncName s->s; Ident s _->s} in
-  case lookup f' lens of
-    Just 0 -> ([], n, l)
-    _ ->
-      let
-        (computeArgs, temps, n', l') =
-          foldr (\e -> \(aasm, temps, n1, l1) -> let
-                    (code, n2, l2) = genExp (n1+1, l1) e (ATemp n1) lens ctx safe
-                    in (code ++ aasm, n1 : temps, n2, l2)) ([], [], n, l) es
-        (front,rest) = splitAt 6 temps
-        moveFrontArgs = map (\(i, t) ->
-                              AAsm {aAssign = [AArg i], aOp = Nop, aArgs = [ALoc $ ATemp t]})
-                        $ zip [0..] front
-        call = case f of
-          FuncName s -> [ACtrl $ Call f' rest] ++ [AAsm {aAssign = [loc], aOp = Nop, aArgs = [ALoc $ ARes]}]
-          Ident s _ -> [ACtrl $ CallFn (ALoc $ AVar s) rest]
-        aasm = computeArgs ++ moveFrontArgs ++ call
-      in (aasm, n', l')
+  let
+    (computeArgs, temps, n', l') =
+      foldr (\e -> \(aasm, temps, n1, l1) -> let
+                (code, n2, l2) = genExp (n1+1, l1) e (ATemp n1) lens ctx safe
+                in (code ++ aasm, n1 : temps, n2, l2)) ([], [], n, l) es
+    (front,rest) = splitAt 6 temps
+    moveFrontArgs = map (\(i, t) ->
+                          AAsm {aAssign = [AArg i], aOp = Nop, aArgs = [ALoc $ ATemp t]})
+                    $ zip [0..] front
+    call = case f of
+      Ident s _ -> ([ACtrl $ Call s rest] ++ [AAsm {aAssign = [loc], aOp = Nop, aArgs = [ALoc $ ARes]}], n',l')
+      ExpUnOp Deref f _ -> let (aasm,n'',l'') = genExp (n'+1,l') f (ATemp n') lens ctx safe in
+        (aasm ++ [ACtrl $ CallFn (ALoc $ ATemp n') rest, AAsm {aAssign=[loc], aOp = Nop, aArgs=[ALoc $ ARes]}],n'',l'')
+    (caasm, n'', l'') = call
+    aasm = computeArgs ++ moveFrontArgs ++ caasm
+  in (aasm, n'', l'')
 genExp (n, l) (Subscr e1 e2 _) loc lens ctx safe =
   let 
     (typs',size') = typecheck e1 ctx Map.empty
@@ -1362,12 +1352,12 @@ translate regMap _ (AAsm {aAssign = [dest], aOp = BOr, aArgs = [src1, src2]}) =
   binOp (dest,src1,src2) BOr regMap
 translate regMap _ (AAsm {aAssign = [dest], aOp = BXor, aArgs = [src1, src2]}) =
   binOp (dest,src1,src2) BXor regMap
-translate regMap n (ACtrl (Lea f aval)) =
-  let reg = regFind regMap aval
+translate regMap n (ACtrl (Lea f aval)) = 
+  let reg = fullReg $ regFind regMap aval
   in
    case reg of
-     (Reg _) -> [Leaq ("_"++f++"(%rip)") reg]
-     _ -> [Leaq ("_"++f++"(%rip)") (Reg R15), Movq (Reg R15) reg]
+     (Reg _) -> [Leaq ("_c0_"++f++"(%rip)") reg]
+     _ -> [Leaq ("_c0_"++f++"(%rip)") (Reg R15), Movq (Reg R15) reg]
 translate regMap n (ACtrl (CallFn aval ts)) = let
   (l, _) = 
     foldr (\t -> \(acc, i) -> 
@@ -1377,7 +1367,7 @@ translate regMap n (ACtrl (CallFn aval ts)) = let
               s -> ([Movl s (Stk (-i*8))] : acc, i+1)) ([], 1) ts
   saves = concat l
   restores = map (\(Movl x y) -> Movl y x) (reverse saves)
-  reg = regFind regMap aval
+  reg = fullReg $ regFind regMap aval
   in if (length ts) > 0 then
        if (mod (length ts) 2) == 1 then let
            (l, _) = 

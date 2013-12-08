@@ -39,9 +39,7 @@ checkAST (typedef, fdefns, sdefns) =
                case acc of
                  Left s -> Left s
                  Right ctx -> let
-                   ts = map (\x -> case x of
-                                (Param ty i) -> ty
-                                (FnParam t _ _) -> t) args
+                   ts = map (\(Param ty i) -> ty) args
                    ctx' = Map.unions [ctx, Map.map (\(t1,t2) -> Map t2 t1) fdecls,
                                       Map.singleton fun (Map ts output)]
                    ctx'' = Map.map (findType tdefs Set.empty) ctx'
@@ -90,13 +88,7 @@ fixTypes m (t, p, s) =
   let
     freeVars = freeTypeVars Set.empty p
     t' = findType m freeVars t
-    p' = map (\x -> case x of
-                 (Param t1 s) -> Param (findType m freeVars t1) s
-                 (FnParam t e ts) -> case e of
-                   ExpUnOp Deref i _ -> FnParam (Pointer (findType m freeVars t)) e $ map(\x->findType m freeVars x) ts
-                   ExpUnOp FnPtr i _ -> case findType m freeVars t of
-                     Pointer t -> FnParam t e $ map(\x->findType m freeVars x) ts
-                     q -> FnParam q e $ map(\x->findType m freeVars x) ts) p
+    p' = map (\(Param t1 s) -> Param (findType m freeVars t1) s) p
     s' = fixTypes' m freeVars s
   in (t', p', s') where
 
@@ -104,8 +96,6 @@ freeTypeVars s [] = s
 freeTypeVars s ((Param (Poly ts _) _) : xs) =
   freeTypeVars (Set.fromList $ map (\(Type s) -> s) ts) xs
 freeTypeVars s ((Param (Pointer t) _) : xs) = freeTypeVars s ((Param t "") : xs)
-freeTypeVars s ((FnParam (Poly (Type t) _) e ts) : xs) = freeTypeVars (Set.insert t s) xs
-freeTypeVars s ((FnParam (Pointer t) e ts) : xs) = freeTypeVars s ((FnParam t e ts) : xs)
 freeTypeVars s (_ : xs) = freeTypeVars s xs
     
 {- TODO: I feel like we run this fixTypes routine in a bunch of
@@ -168,12 +158,7 @@ checkFunction m ctx val defined sdefns =
         True -> Right ()
         False -> Left "error in returns check") >>= \_ ->
      (let
-         ctx' = foldr (\x -> \acc -> case x of
-                          (Param t s) -> Map.insert s t acc
-                          (FnParam t (ExpUnOp _ (Ident s _) _) ts) -> Map.insert s (Map ts t) acc
-                          --(FnParam t (ExpUnOp Deref (Ident s _) _) ts) -> Map.insert s (Map ts (Pointer t)) acc
-                          --(FnParam (Pointer t) (ExpUnOp FnPtr (Ident s _) _) ts) -> Map.insert s (Map ts t) acc
-                      ) ctx p'
+         ctx' = foldr (\(Param t s) -> \acc -> Map.insert s t acc) ctx p'
          ctx'' = Map.foldWithKey (\s -> \_ -> \acc -> Map.insert s (Struct s) acc)
                  ctx' sdefns
       in case checkS s' (Map.insert "main" (Map [] Int) ctx') m defined' t' sdefns of
@@ -184,15 +169,9 @@ checkFunction m ctx val defined sdefns =
                           (Param t i) -> case t of
                             Void -> False
                             Map _ _ -> False
-                            _ -> True
-                          (FnParam t e ts) -> case t of
-                            Map _ _ -> False
-                            _ -> True
-                      ) p'
+                            _ -> True) p'
          aVoid = any (\x -> x==False) paramT
-         vars = map (\x -> case x of
-                        (Param t i) -> i
-                        (FnParam t (ExpUnOp _(Ident s _)_) _) -> s) p'
+         vars = map (\(Param t i) -> i) p'
          defn = Set.fromList vars
       in if aVoid then Left "Parameter with invalid type"
          else if not(Set.size(defn) == length(p')) then Left "duplicate args" else
@@ -357,11 +336,8 @@ lvalType (LDeref l) ctx d smap =
 lvalType (LArrow l s) ctx d smap =
   case lvalType l ctx d smap of
     Just (Pointer(Struct s1)) -> case Map.lookup s1 smap of
-      Just (_, ps) -> case List.find (\x -> case x of
-                                         (Param _ f) -> f == s
-                                         (FnParam _ (ExpUnOp _ (Ident s' _)_) _) ->  s' == s) ps of
+      Just (_, ps) -> case List.find (\(Param _ f) -> f == s) ps of
         Just (Param t _) -> Just t
-        Just (FnParam t _ _) -> Just t
         _ -> Nothing
       _ -> Nothing
     Just (Pointer (Poly ts (Struct s1))) ->
@@ -376,11 +352,8 @@ lvalType (LArrow l s) ctx d smap =
 lvalType (LDot l s) ctx d smap =
   case lvalType l ctx d smap of
     Just (Struct s1) -> case Map.lookup s1 smap of
-      Just (_, ps) -> case List.find (\x -> case x of
-                                         (Param _ f) -> f == s
-                                         (FnParam _ (ExpUnOp _ (Ident s' _)_) _) ->  s' == s) ps of
+      Just (_, ps) -> case List.find (\(Param _ f) -> f == s) ps of
         Just (Param t _) -> Just t
-        Just (FnParam t _ _) -> Just t
         _ -> Nothing
       _ -> Nothing
     _ -> Nothing
@@ -433,9 +406,7 @@ checkE (ExpBinOp Arrow e (Ident s2 _) _) ctx d smap =
           case Map.lookup s smap of
             Nothing -> BadE $ "undefined struct " ++ s
             Just (_, fields) ->
-              case List.find (\x -> case x of
-                                 (Param _ fieldName) -> fieldName == s2
-                                 (FnParam _ (ExpUnOp _ (Ident s _) _) _) -> s == s2) fields of
+              case List.find (\(Param _ fieldName) -> fieldName == s2) fields of
                 Nothing -> BadE $ "field " ++ s2 ++ " undefined in struct " ++ s
                 Just (Param t' _) -> ValidE t'
         (Pointer (Poly ts (Struct s1))) ->
@@ -459,12 +430,9 @@ checkE (ExpBinOp Dot e (Ident s2 _) _) ctx d smap =
           case Map.lookup i smap of
             Nothing -> BadE $ "undefined struct " ++ i
             Just (_, fields) ->
-              case List.find (\x -> case x of
-                                 (Param _ fieldName) -> fieldName == s2
-                                 (FnParam _ (ExpUnOp _ (Ident s _)_) _) -> s == s2) fields of
+              case List.find (\(Param _ fieldName) -> fieldName == s2) fields of
                 Nothing -> BadE $ "field " ++ s2 ++ " undefined in struct " ++ i
                 Just (Param t' _) -> ValidE t'
-                Just (FnParam t' _ _) -> ValidE t'
         _ -> BadE "Invalid exp on LHS of dot op"
 checkE (ExpBinOp Dot _ _ _) _ _ _ =
   BadE $ "exp on RHS of dot op is not identifier."
@@ -509,25 +477,41 @@ checkE (ExpTernOp e1 e2 e3 _) ctx d smap =
   case checkE e ctx d smap of
     BadE s -> BadE s
     ValidE t -> ValidE $ Pointer t-}
-checkE (App fun args p) ctx d smap =
-  let fun' = case fun of {FuncName f->f;Ident f _->f} in
-  if Set.notMember fun' d then BadE $ "undefined fun "++fun'++".\n"++(show p) else
+checkE (App fun args p) ctx d smap = let
+  fun' = case fun of {Ident i _-> Set.notMember i d; _-> False} in
+  if fun' then BadE $ "undefined function"++(show fun)++".\n"++(show p) else
     let
       ts = map (\e -> checkE e ctx d smap) args
     in case any(\x -> case x of {BadE _ -> True; _ -> False}) ts of
-      True -> BadE $ "Error in params to function call " ++ (show fun')
-      False -> let ts' = map (\(ValidE t) -> t) ts
-               in
-                case Map.lookup fun' ctx of
-                  (Just (Map input output)) ->
-                    if length(ts') /= length(input) then
-                       BadE "Too many arguments to function call"
-                    else case subContext Map.empty (zip ts' input) of
-                      Nothing -> BadE $ "function input type mismatch" ++ (show input) ++"\n"++(show args)++"\n"++(show ctx)
-                      (Just m) -> case output of
-                        (Type _) -> ValidE $ findType m Set.empty output
-                        _ -> ValidE output
-                  _ -> BadE $ "undefined function call" ++ fun' ++"\n"++(show ctx)
+      True -> BadE $ "Error in params to function call " ++ (show fun)
+      False -> let ts' = map (\(ValidE t) -> t) ts in
+        case fun of
+          Ident i p -> 
+            case Map.lookup i ctx of
+              (Just t) | case t of {(Map input output)->True; Pointer(Map input output)->True; _->False} ->
+                let
+                  (input,output) = case t of
+                    Map i o -> (i, o)
+                    Pointer (Map i o) -> (i, o)
+                in
+                 if length(ts') /= length(input) then
+                   BadE "Too many arguments to function call"
+                 else case subContext Map.empty (zip ts' input) of
+                   Nothing -> BadE $ "function input type mismatch" ++ (show input) ++"\n"++(show args)++"\n"++(show ctx)
+                   (Just m) -> case output of
+                     (Type _) -> ValidE $ findType m Set.empty output
+                     _ -> ValidE output
+              _ -> BadE $ "undefined function call " ++ i ++"\n"++(show ctx)
+          _ -> case checkE fun ctx d smap of
+            BadE s -> BadE s
+            ValidE (Map input output) ->
+              if length(ts') /= length(input) then
+                BadE "Too many arguments to function call"
+              else case subContext Map.empty (zip ts' input) of
+                Nothing -> BadE $ "function input type mismatch" ++ (show input) ++"\n"++(show args)++"\n"++(show ctx)
+                (Just m) -> case output of
+                  (Type _) -> ValidE $ findType m Set.empty output
+                  _ -> ValidE output
 checkE (Null _) ctx d smap =
   ValidE (Pointer Void) -- Placeholder for Type Any
 checkE (Alloc t _) ctx d smap =

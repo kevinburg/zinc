@@ -91,7 +91,7 @@ opType Leq = ([opInt, opInt], \_ -> Bool)
 opType Gt = ([opInt, opInt], \_ -> Bool)
 opType Geq = ([opInt, opInt], \_ -> Bool)
 opType Deref = ([opPointer], \(Pointer t) -> t)
-opType FnPtr = ([opFunc], \(Map _ t) -> (Pointer t))
+opType FnPtr = ([opFunc], \(Map i o) -> (Pointer (Map i o)))
              
 instance Show Op where
   show Mul = "*"
