@@ -75,24 +75,23 @@ We need to introduce some notation to explain parameterized structure types. We 
 $a : \text{type}$ in our context. We write the type of a polymorphic structure in the following way
 
 \begin{center}
-$s : \forall a. s[a]$
+$s : \forall a_1, \ldots, a_n. s[a_1, \ldots, a_n]$
 \end{center}
 
 In the example from the introduction, we would write $\textbf{struct foo} : \forall a. \textbf{struct foo}[a]$.
 Now write the judgement which gives a type to instantiated polymorphic structures is given by
 \[
 \begin{tabular}{c}
-  \infer{\textbf{alloc}(s <\tau'>) : \tau[\tau']^*}
+  \infer{\textbf{alloc}(s <\tau_1, \ldots, \tau_n>) : \tau[\tau_1, \dots, \tau_n]^*}
         {	
-        	{\tau'~\text{small}} \vspace{.1cm}\\
-			{s : \forall a. \tau[a]}
+        	{\tau_1~\text{small}, \ldots, \tau_n~\text{small}} \vspace{.1cm}\\
+			{s : \forall a_1, \ldots, a_n. \tau[a_1, \ldots, a_n]}
         }
 \end{tabular}
 \]
 This says two important things. First, it says that any type substitution must occur with a small type.
-These are \texttt{int}, \texttt{bool}, etc. Because the small types are all concrete types, and structs are
-never parameterized by more than one type variable, an allocation may never return an object of
-existential type.
+These are \texttt{int}, \texttt{bool}, etc. Because the small types are all concrete types, and all type
+parameters must be provided at allocation, an allocation may never return an object of existential type.
 
 Function types may also be parameterized by type variables. For example, from the introduction,
 $$\texttt{getSize} : \forall a. (\textbf{struct foo}[a]) -> \texttt{int}$$
@@ -112,8 +111,48 @@ functions is given by
 \end{tabular}
 \]
 
+The only way that a function may be parameterized by type variables, is if the type variables occur free in
+struct types. We have not yet implemented the functionality that would allow us to write a function that
+has the following type
+$$\texttt{foo} : \forall a. (a~\textbf{list}) -> \texttt{int}$$
+
+This is something we would implement in the future.
+
 \newpage
 \section{Implementation}
+
+First we will describe the execution of our compiler before going into detail about the parts which were changed
+in lab 6. the program is parsed into a form we call PST before being elaborated into a form we call AST. 
+Elaboration follows a set of rules for translating sequences of statements into a form that makes type checking
+more natural. The elaboration phase also takes care of separating all the information in the PST into groups
+such as function definitions, type definitions, and structure definitions. The CheckAST module then reads
+through this AST structure to check that it is well-formed according to the statics of our language definition.
+
+Upon success, we send the \emph{PST} to the CodeGen module where the rest of translation, register allocation,
+and optimization happens. This means that we \emph{throw out} the AST after static checks and return to
+the data structure we had before elaboration. Obviously, some information is lost here, burin the earlier labs,
+it seemed more natural to generate code from the PST than the AST. Now it means we have to type check
+expressions \emph{during} code generation to ensure we do everything correctly. This isn't ideal. If we could 
+do it all again, we would sort out this problem with our IR.
+
+Parametric polymorphism itself does not require much change to the code generation part of the compiler. Most
+of the changes were to the CheckAST module. One of the changes that needed to be made was determining the types
+of struct field accesses when the structs are parameterized by type variables. From the example in introduction,
+we needed to determine the type of \texttt{s->array} on line 14. The way we did this was to extend the datatype
+which held the type of structs with a field for map of types that may have been substituted in at allocation.
+Then, when the access happens, we see that \texttt{s->array} has type \texttt{$a$ list}. By looking into the
+map, we see that $a$ was substituted with \texttt{int}, making the actual type \texttt{int list}.
+
+Another problem is checking that function calls to polymorphic functions are correct. Consider the following function definition.\\
+
+\lstset{language=C, tabsize=3, backgroundcolor=\color{gray}, basicstyle=\small, frame=single,
+		commentstyle=\color{BrickRed}, numbers=none}
+\lstinputlisting{PolyFunction.c}
+
+We would like to only allow calls to this function where the first and second argument have the same substitution
+for $a$. To do this, we build up the substitution from left to right, making sure that any additional 
+substitutions are consistent with what we already have.
+
 
 \newpage
 \section{Testing Methodology}
