@@ -25,6 +25,8 @@
 \definecolor{gray}{gray}{.96}
 \newcommand{\labtitle}{Lab 6 - Polymorphism}
 \newcommand{\authorname}{Kevin Burg - John Cole}
+\newcommand{\ttt}[1]{\texttt{#1}}
+\newcommand{\bb}[1]{\textbf{#1}}
 
 \begin{document}
 
@@ -57,6 +59,16 @@ At line 12, we see an example of instantiating a value of type \texttt{struct fo
 \texttt{int} is substituted for the type parameter \texttt{a}. We enforce that only small types may be
 substituted for these type parameters.
 
+Another addition in Lab 6 that we included, was function pointers. While this
+seems like a small addition, it allowed us to more effectively use
+parametric polymorphism. We could pass function with specific types to a more
+general execution function, and reuse the general execution function for
+many different specifically typed functions with our polymorphic data.
+
+Our implementation of function pointers only extended to the point of using
+function pointers only as expressions or parameters to functions. Function
+pointers could not be stored in structs, which is something we wish we could
+have implemented if we had the opportunity to do this again.
 
 \newpage
 \section{Specification}
@@ -118,32 +130,66 @@ $$\texttt{foo} : \forall a. (a~\textbf{list}) -> \texttt{int}$$
 
 This is something we would implement in the future.
 
+We also implemented function pointers which extended the grammar of L4 to
+contain the following:\\
+\begin{tabular}{ll}
+$\langle$param$\rangle$ & $::=$ $\dots|\;\langle$type$\rangle($\ttt{*}
+                                 \bb{ident}$)\langle$type-list$\rangle$\\
+$\langle$type-list$\rangle$ & $::=$ $\bb{( )} |\;\bb{(}\langle$type$\rangle$
+                                     $\langle$type-list-follow$\rangle$\bb{)}\\
+$\langle$type-list-follow$\rangle$ & $::=$ $\epsilon\;|\;,\langle$type$\rangle$
+                                           $\langle$type-list-follow$\rangle$\\
+$\langle$expr$\rangle$ & $::=$ $\dots|\;($\ttt{*}$\langle$\bb{ident}$\rangle)$
+                               $\langle$arg-list$\rangle\;|\;($\ttt{\&}
+                               \bb{ident}$)\langle$expr$\rangle$\\
+\end{tabular}\\
+We use the \ttt{\&} symbol as an operator to retrieve the address of a
+function, similar to C. We call function pointers, similar to how we call
+functions, except we dereference the function pointer first, and then apply
+the arguments to the dereferenced function pointer. We can have function
+pointers as parameters to functions, and in this case, we require a list of
+types of input to the function as part of the parameter to fully know what
+type of function with which we are dealing.
+
+The rules for getting the address of a function pointer are similar to those
+of dereferencing a pointer, and the rules for applying arguments to a
+dereferenced function pointer are the same as those for function calls with
+the addition of dereferencing the pointer to begin with.
+
 \newpage
 \section{Implementation}
-
+\subsection{Background}
 First we will describe the execution of our compiler before going into detail about the parts which were changed
-in lab 6. the program is parsed into a form we call PST before being elaborated into a form we call AST. 
+in lab 6. The program is parsed into a form we call PST before being elaborated into a form we call AST. 
 Elaboration follows a set of rules for translating sequences of statements into a form that makes type checking
 more natural. The elaboration phase also takes care of separating all the information in the PST into groups
 such as function definitions, type definitions, and structure definitions. The CheckAST module then reads
 through this AST structure to check that it is well-formed according to the statics of our language definition.
 
-Upon success, we send the \emph{PST} to the CodeGen module where the rest of translation, register allocation,
-and optimization happens. This means that we \emph{throw out} the AST after static checks and return to
-the data structure we had before elaboration. Obviously, some information is lost here, burin the earlier labs,
-it seemed more natural to generate code from the PST than the AST. Now it means we have to type check
-expressions \emph{during} code generation to ensure we do everything correctly. This isn't ideal. If we could 
+Upon success, we send the \emph{PST} to the CodeGen module where the rest of
+translation, register allocation, and optimization happens. This means that we
+\emph{throw out} the AST after static checks and return to the data structure
+we had before elaboration. Obviously, some information is lost here, but in
+the earlier labs, it seemed more natural to generate code from the PST than
+the AST. Now it means we have to type check expressions \emph{during} code
+generation to ensure we do everything correctly. This isn't ideal. If we could 
 do it all again, we would sort out this problem with our IR.
 
-Parametric polymorphism itself does not require much change to the code generation part of the compiler. Most
-of the changes were to the CheckAST module. One of the changes that needed to be made was determining the types
-of struct field accesses when the structs are parameterized by type variables. From the example in introduction,
-we needed to determine the type of \texttt{s->array} on line 14. The way we did this was to extend the datatype
-which held the type of structs with a field for map of types that may have been substituted in at allocation.
-Then, when the access happens, we see that \texttt{s->array} has type \texttt{$a$ list}. By looking into the
-map, we see that $a$ was substituted with \texttt{int}, making the actual type \texttt{int list}.
+\subsection{Parametric Polymorphism}
+Parametric polymorphism itself does not require much change to the code
+generation part of the compiler. Most of the changes were to the CheckAST
+module. One of the changes that needed to be made was determining the types
+of struct field accesses when the structs are parameterized by type variables.
+From the example in introduction, we needed to determine the type of
+\texttt{s->array} on line 14. The way we did this was to extend the datatype
+which held the type of structs with a field for map of types that may have
+been substituted in at allocation. Then, when the access happens, we see that
+\texttt{s->array} has type \texttt{$a$ list}. By looking into themap, we see
+that $a$ was substituted with \texttt{int}, making the actual type
+\texttt{int list}.
 
-Another problem is checking that function calls to polymorphic functions are correct. Consider the following function definition.\\
+Another problem is checking that function calls to polymorphic functions are
+correct. Consider the following function definition.\\
 
 \lstset{language=C, tabsize=3, backgroundcolor=\color{gray}, basicstyle=\small, frame=single,
 		commentstyle=\color{BrickRed}, numbers=none}
@@ -153,127 +199,116 @@ We would like to only allow calls to this function where the first and second ar
 for $a$. To do this, we build up the substitution from left to right, making sure that any additional 
 substitutions are consistent with what we already have.
 
+\subsection{Function Pointers}
+Function pointers are extremely useful in polymorphic code because it allows
+users to define functions that can take in another function that will process
+the polymorphic objects. Take for example the following code:
+\lstset{language=C,tabsize=3,backgroundcolor=\color{gray},basicstyle=\small,
+        frame=single, commentstyle=\color{BrickRed},numbers=none}
+\lstinputlisting{fnptrs.c}
+
+Here we can see that the function \ttt{doInt} takes in two ints and a
+function pointer that does some action on integers and return an int. The
+\ttt{doInt} function then returns the result of the function pointer. This
+allows the user to write simple functions on ints and use them as arguments
+to a broader do some action on ints function. It lets programmers reuse
+code to a greater extent.
+
+To implement function pointers, we first looked at how \ttt{gcc} compiles
+them and set about reverse engineering the functionality. The first thing we
+realized is that x86 has the capability to call a function from a register.
+The instruction \ttt{call} can take a register argument preceded by an
+asterisks. The next thing we saw, was that to load the address into a function
+was to use the \ttt{lea} instruction with the \ttt{\%rip} register. The
+exact syntax is to use the name of the function as an offset to \ttt{\%rip}
+and use the \ttt{leaq} instruction to store the address of the function into
+some register you specify as a destination. Shown in the example below
+we load the function \ttt{func\_pointer} into the \ttt{\%rax} register and then
+call the function by using the \ttt{call} instruction with the \ttt{\%rax}
+register preceded by an asterisk.\\
+\lstset{language={[x86masm]Assembler},tabsize=3,backgroundcolor=\color{gray},
+        basicstyle=\small,frame=single,numbers=none,
+        escapeinside={\^*}{*^}}
+\begin{lstlisting}
+leaq    _func_pointer(%rip),%rax
+call    *%rax
+\end{lstlisting}
+From this we could begin to parse, check and generate code for function
+pointers.
+
+Parsing function pointers forced us to change up the parse a bit, to work with
+different formats for expressions and parameters to functions. We also had
+to parse the \ttt{\&} operator, which we used for obtaining the address of
+a function. Expressions now had to include function application, or applying
+arguments to a dereferenced function. Parameters now could be parsed like
+expressions in the case of function pointers, but had to be formatted in the
+correct way otherwise the compiler would fail to parse the source code. The
+example above shows the correct way to include a function pointer as a
+parameter in the function definition or declaration.
+
+We had to make some modifications to our semantic checker and typechecker.
+Parameters were more complicated, but how we represented the type of functions
+as a map from input types to output certainly helped simplify things. We could
+allow functions as arguments to functions, but only in the form of a pointer
+to a function. We dealt with checking expressions with the \ttt{\&} operator,
+and calling function pointers as expressions. When calling function pointers
+we had to make sure that the arguments to the function pointer matched the
+parameters to the function.
+
+Generating code for function pointers wasn't difficult. We added
+implementations for the \ttt{\&} operator, and calling function pointers,
+which wasn't much different than normal function calls with moving
+arguments into the correct registers, and moving the result into the correct
+location as well. The only real difference was, as mentioned, the call
+instruction with a register as an argument. We also took care of allocating
+registers for the function pointer, which acted just like a variable or temp.
+
+Function pointers provided a great benefit to polymorphism, with not too large
+of a cost of implementation difficulties. Code reuse is important and function
+pointers are another great way to accomplish that.
 
 \newpage
 \section{Testing Methodology}
+We went about testing in a similar manner to the rest of the labs. We wrote
+some tests that would test different parts of what we implemented for Lab 6.
+We started with tests for the polymorphism we implemented. We also wrote
+some short functions to test that we implemented function pointers correctly.
+
+We also ran the previous labs testing suites on our compiler too, testing to
+make sure we didn't accidentally break any of the basic functionality of
+\ttt{C0} in the process of implementing polymorphism or function pointers.\\
 
 \newpage
 \section{Analysis}
+We wanted to extend our compiler in a direction in which was relevant to
+popular language aspects that was not already a part of \ttt{C0}. We decided
+on polymorphism because we felt it increased the functionality of the language
+the largest without changing the semantics too much.
 
+We implemented some of the most important features of polymorphism, as we
+thought. Given more time, we would have liked to implement more general
+aspects of polymorphism, as mentioned in the introduction. We would have also
+liked to extend the use of function pointers to be included in structs, so
+that a polymorphic struct could have its own functions which could be used
+more effectively for data abstraction.
 
+We made some questionable design decisions in the beginning that came back
+to haunt us, as we mentioned with the intermediate representation. We also
+had trouble in the beginning and through out writing clean Haskell code, since
+neither of us knew Haskell previously. We felt like we were trying to write
+ML code in Haskell instead of using the powerful features of the Haskell
+language. We eventually realized some of the features and started to use them
+more effectively, but we still had large amounts of messy code. Given the
+opportunity to do this again, we wouldn't change our choice to use Haskell,
+but should have tried to understand the effective techniques of coding in
+Haskell, instead of trying to write ML like code in Haskell.
+
+We made some good decisions, especially with regard to what optimizations we
+implemented in Lab 5. We implemented a number of optimizations that
+increased the efficiency of our generated code incredibly, and given the
+chance, or more time, would have implemented many more. We both enjoyed
+writing this compiler for many reasons both different and the same. Although
+we spent many nights debugging hard to find errors, and being frustrated at
+the tests other students wrote, we thoroughly enjoyed being in this class and
+learning about compiler design and implementing a compiler.
 \end{document}
-
-
-%%%%%%%%%%%%%%%%
-COMMON COMMANDS:
-%%%%%%%%%%%%%%%%
-% IMAGES
-\begin{figure}[H]
-   \begin{center}
-      \includegraphics[width=0.6\textwidth]{RTL_SCHEM.png}
-   \end{center}
-\caption{A screenshot of the RTL Schematics produced from the Verilog code.}
-\label{RTL}
-\end{figure}
-
-% SUBFIGURES IMAGES
-\begin{figure}[H]
-  \centering
-  \subfloat[LED4 Period]{\label{fig:Per4}\includegraphics[width=0.4\textwidth]{period_led4.png}} \\                
-  \subfloat[LED5 Period]{\label{fig:Per5}\includegraphics[width=0.4\textwidth]{period_led5.png}}
-  \subfloat[LED6 Period]{\label{fig:Per6}\includegraphics[width=0.4\textwidth]{period_led6.png}}
-  \caption{Period of LED blink rate captured by osciliscope.}
-  \label{fig:oscil}
-\end{figure}
-
-% INSERT SOURCE CODE
-\lstset{language=Verilog, tabsize=3, backgroundcolor=\color{mygrey}, basicstyle=\small, commentstyle=\color{BrickRed}}
-\lstinputlisting{MODULE.v}
-
-% TEXT TABLE
-\begin{table}
-\begin{center}
-\begin{tabular}{|l|c|c|l|}
-	x & x & x & x \\ \hline
-	x & x & x & x \\
-	x & x & x & x \\ \hline
-\end{tabular}
-\caption{Caption}
-\label{label}
-\end{center}
-\end{table}
-
-% MATHMATICAL ENVIRONMENT
-$ 8 = 2 \times 4 $
-
-% CENTERED FORMULA
-\[  \]
-
-% NUMBERED EQUATION
-\begin{equation}
-	
-\end{equation}
-
-% ARRAY OF EQUATIONS (The splat supresses the numbering)
-\begin{align*}
-	
-\end{align*}
-
-% NUMBERED ARRAY OF EQUATIONS
-\begin{align}
-	
-\end{align}
-
-% ACCENTS
-\dot{x} % dot
-\ddot{x} % double dot
-\bar{x} % bar
-\tilde{x} % tilde
-\vec{x} % vector
-\hat{x} % hat
-\acute{x} % acute
-\grave{x} % grave
-\breve{x} % breve
-\check{x} % dot (cowboy hat)
-
-% FONTS
-\mathrm{text} % roman
-\mathsf{text} % sans serif
-\mathtt{text} % Typewriter
-\mathbb{text} % Blackboard bold
-\mathcal{text} % Caligraphy
-\mathfrak{text} % Fraktur
-
-\textbf{text} % bold
-\textit{text} % italic
-\textsl{text} % slanted
-\textsc{text} % small caps
-\texttt{text} % typewriter
-\underline{text} % underline
-\emph{text} % emphasized
-
-\begin{tiny}text\end{tiny} % Tiny
-\begin{scriptsize}text\end{scriptsize} % Script Size
-\begin{footnotesize}text\end{footnotesize} % Footnote Size
-\begin{small}text\end{small} % Small
-\begin{normalsize}text\end{normalsize} % Normal Size
-\begin{large}text\end{large} % Large
-\begin{Large}text\end{Large} % Larger
-\begin{LARGE}text\end{LARGE} % Very Large
-\begin{huge}text\end{huge}   % Huge
-\begin{Huge}text\end{Huge}   % Very Huge
-
-
-% GENERATE TABLE OF CONTENTS AND/OR TABLE OF FIGURES
-% These seem to have some issues with the "revtex4" document class.  To use, change
-% the very first line of this document to "article" like this:
-% \documentclass[aps,letterpaper,10pt]{article}
-\tableofcontents
-\listoffigures
-\listoftables
-
-% INCLUDE A HYPERLINK OR URL
-\url{http://www.derekhildreth.com}
-\href{http://www.derekhildreth.com}{Derek Hildreth's Website}
-
-% FOR MORE, REFER TO THE "LINUX CHEAT SHEET.PDF" FILE INCLUDED!
